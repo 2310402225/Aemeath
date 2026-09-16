@@ -28,14 +28,53 @@ const {
 		const friendClickPreviewStorageKey = "rainzt:umami:friend-click-preview";
 		const shareCacheTtl = 24 * 60 * 60 * 1000;
 		const metricsCacheTtl = 60 * 1000;
+		const pendingRequests = new Map();
+		const requestOnce = (key, factory) => {
+			const pending = pendingRequests.get(key);
+			if (pending) return pending;
+
+			const request = Promise.resolve()
+				.then(factory)
+				.finally(() => {
+					if (pendingRequests.get(key) === request) pendingRequests.delete(key);
+				});
+			pendingRequests.set(key, request);
+			return request;
+		};
 		const apiBase = String(shareApiBase || "").replace(/\/+$/, "");
 		const historicalVisitorCount = Math.max(0, Math.floor(Number(historicalVisitors) || 0));
 		const historicalPageviewCount = Math.max(0, Math.floor(Number(historicalPageviews) || 0));
 		const localPreviewHosts = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
+		const numberAnimationFrames = new WeakMap();
+		const animationClockKey = "__rainztAnalyticsAnimationClock";
+		let summaryCounterObserver;
 		const isLocalHost = localPreviewHosts.has(window.location.hostname.toLowerCase()) || window.location.protocol === "file:";
 		const isLocalAnalytics = localPreview || isLocalHost;
+		const isAnalyticsPage = () => window.location.pathname.replace(/\/+$/u, "") === "/analytics";
+		const shouldBlockLocalStats = () => isLocalAnalytics && !isAnalyticsPage();
+		const getAnimationClock = () => {
+			const root = document.querySelector("[data-umami-dashboard]");
+			const current = window[animationClockKey];
+			if (current?.root === root) return current;
+			const clock = {
+				root,
+				duration: 4500,
+				startedAt: null,
+				start() {
+					if (this.startedAt === null) this.startedAt = performance.now();
+					return this.startedAt;
+				},
+				replay() {
+					this.startedAt = null;
+					window.dispatchEvent(new CustomEvent("rainzt-analytics-animation-replay"));
+				},
+			};
+			window[animationClockKey] = clock;
+			return clock;
+		};
 
 		const markLocalPreview = () => {
+			if (!shouldBlockLocalStats()) return;
 			document.documentElement.dataset.analyticsMode = "local";
 			document.querySelectorAll("[data-umami-pageviews], [data-umami-stat]").forEach((element) => {
 				element.textContent = "不统计";
@@ -45,7 +84,7 @@ const {
 			});
 		};
 
-		if (isLocalAnalytics) {
+		if (shouldBlockLocalStats()) {
 			markLocalPreview();
 			const localPreviewObserver = new MutationObserver(() => {
 				if (!document.querySelector("[data-umami-pageviews], [data-umami-stat], [data-friend-clicks-value], .waline-pageview-count")) return;
@@ -140,16 +179,107 @@ const {
 			return new Intl.NumberFormat("zh-CN").format(Number(value) || 0);
 		}
 
+		function flushPendingSummaryCounts(summary) {
+			summary.querySelectorAll("[data-analytics-pending-count]").forEach((element) => {
+				const target = Number(element.dataset.analyticsPendingCount);
+				delete element.dataset.analyticsPendingCount;
+				if (Number.isFinite(target)) renderStatValue(element, target, true);
+			});
+		}
+
+		function observeSummaryCounters(summary) {
+			if (!summary) return;
+			if ("IntersectionObserver" in window) {
+				if (!summaryCounterObserver) {
+					summaryCounterObserver = new IntersectionObserver((entries) => {
+						entries.forEach((entry) => {
+							if (entry.isIntersecting) flushPendingSummaryCounts(entry.target);
+						});
+					}, { threshold: 0.18 });
+				}
+				summaryCounterObserver.observe(summary);
+				return;
+			}
+			const rect = summary.getBoundingClientRect();
+			if (rect.bottom > 0 && rect.top < window.innerHeight) flushPendingSummaryCounts(summary);
+		}
+
+		function renderStatValue(element, value, force = false) {
+			const target = Math.max(0, Math.round(Number(value) || 0));
+			element.dataset.analyticsTarget = String(target);
+			const summary = element.closest(".analytics-summary");
+			if (summary && !force) {
+				const rect = summary.getBoundingClientRect();
+				const isVisible = rect.bottom > 0 && rect.top < window.innerHeight;
+				if (!isVisible) {
+					element.dataset.analyticsPendingCount = String(target);
+					element.dataset.analyticsCount = "0";
+					element.textContent = formatNumber(0);
+					observeSummaryCounters(summary);
+					return;
+				}
+			}
+			if (!summary) {
+				element.textContent = formatNumber(target);
+				return;
+			}
+			delete element.dataset.analyticsPendingCount;
+
+			const previousFrame = numberAnimationFrames.get(element);
+			if (previousFrame) cancelAnimationFrame(previousFrame);
+			if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+				element.dataset.analyticsCount = String(target);
+				element.textContent = formatNumber(target);
+				return;
+			}
+			const storedValue = Number(element.dataset.analyticsCount);
+			const start = Number.isFinite(storedValue) ? storedValue : 0;
+			const animationClock = getAnimationClock();
+			const duration = animationClock.duration;
+			const startedAt = animationClock.start();
+			const liveRegion = element.getAttribute("aria-live");
+			if (liveRegion) element.removeAttribute("aria-live");
+			const easeCountProgress = (progress) => progress < 0.18
+				? 0.08 * Math.pow(progress / 0.18, 2)
+				: progress < 0.9
+					? 0.08 + 0.82 * ((progress - 0.18) / 0.72)
+					: 0.9 + 0.1 * (1 - Math.pow(1 - ((progress - 0.9) / 0.1), 3));
+
+			const tick = (timestamp) => {
+				const progress = Math.min(1, (timestamp - startedAt) / duration);
+				const current = Math.round(start + (target - start) * easeCountProgress(progress));
+				element.dataset.analyticsCount = String(current);
+				element.textContent = formatNumber(current);
+				if (progress < 1) {
+					const frame = requestAnimationFrame(tick);
+					numberAnimationFrames.set(element, frame);
+					return;
+				}
+				element.dataset.analyticsCount = String(target);
+				element.textContent = formatNumber(target);
+				if (liveRegion) element.setAttribute("aria-live", liveRegion);
+				numberAnimationFrames.delete(element);
+			};
+
+			const frame = requestAnimationFrame(tick);
+			numberAnimationFrames.set(element, frame);
+		}
+
 		async function getShare() {
 			const cached = readCache(shareCacheKey, shareId, shareCacheTtl);
 			if (cached) return cached;
 
-			const response = await fetch(`${apiBase}/api/share/${encodeURIComponent(shareId)}`);
-			if (!response.ok) throw new Error(`share ${response.status}`);
-			const result = await response.json();
-			if (!result?.websiteId || !result?.token) throw new Error("invalid share response");
-			writeCache(shareCacheKey, shareId, result);
-			return result;
+			return requestOnce(`share:${shareId}`, async () => {
+				const freshCached = readCache(shareCacheKey, shareId, shareCacheTtl);
+				if (freshCached) return freshCached;
+
+				const response = await fetch(`${apiBase}/api/share/${encodeURIComponent(shareId)}`);
+				if (!response.ok) throw new Error(`share ${response.status}`);
+				const result = await response.json();
+				if (!result?.websiteId || !result?.token) throw new Error("invalid share response");
+				writeCache(shareCacheKey, shareId, result);
+				return result;
+			});
 		}
 
 		async function getMetrics(share, forceRefresh = false) {
@@ -158,22 +288,29 @@ const {
 				: readCache(metricsCacheKey, share.websiteId, metricsCacheTtl);
 			if (cached) return cached;
 
-			const url = new URL(`${apiBase}/api/websites/${share.websiteId}/metrics`);
-			url.searchParams.set("startAt", "0");
-			url.searchParams.set("endAt", String(Date.now()));
-			url.searchParams.set("type", "path");
-			url.searchParams.set("limit", "1000");
+			return requestOnce(`metrics:${share.websiteId}`, async () => {
+				const freshCached = forceRefresh
+					? null
+					: readCache(metricsCacheKey, share.websiteId, metricsCacheTtl);
+				if (freshCached) return freshCached;
 
-			const response = await fetch(url, {
-				headers: {
-					"x-umami-share-token": share.token,
-					"x-umami-share-context": "1",
-				},
+				const url = new URL(`${apiBase}/api/websites/${share.websiteId}/metrics`);
+				url.searchParams.set("startAt", "0");
+				url.searchParams.set("endAt", String(Date.now()));
+				url.searchParams.set("type", "path");
+				url.searchParams.set("limit", "1000");
+
+				const response = await fetch(url, {
+					headers: {
+						"x-umami-share-token": share.token,
+						"x-umami-share-context": "1",
+					},
+				});
+				if (!response.ok) throw new Error(`metrics ${response.status}`);
+				const result = await response.json();
+				writeCache(metricsCacheKey, share.websiteId, result);
+				return result;
 			});
-			if (!response.ok) throw new Error(`metrics ${response.status}`);
-			const result = await response.json();
-			writeCache(metricsCacheKey, share.websiteId, result);
-			return result;
 		}
 
 		async function getStats(share, startAt, endAt, cacheScope, forceRefresh = false) {
@@ -183,20 +320,27 @@ const {
 				: readCache(cacheKey, share.websiteId, metricsCacheTtl);
 			if (cached) return cached;
 
-			const url = new URL(`${apiBase}/api/websites/${share.websiteId}/stats`);
-			url.searchParams.set("startAt", String(startAt));
-			url.searchParams.set("endAt", String(endAt));
+			return requestOnce(`stats:${share.websiteId}:${cacheScope}`, async () => {
+				const freshCached = forceRefresh
+					? null
+					: readCache(cacheKey, share.websiteId, metricsCacheTtl);
+				if (freshCached) return freshCached;
 
-			const response = await fetch(url, {
-				headers: {
-					"x-umami-share-token": share.token,
-					"x-umami-share-context": "1",
-				},
+				const url = new URL(`${apiBase}/api/websites/${share.websiteId}/stats`);
+				url.searchParams.set("startAt", String(startAt));
+				url.searchParams.set("endAt", String(endAt));
+
+				const response = await fetch(url, {
+					headers: {
+						"x-umami-share-token": share.token,
+						"x-umami-share-context": "1",
+					},
+				});
+				if (!response.ok) throw new Error(`stats ${response.status}`);
+				const result = await response.json();
+				writeCache(cacheKey, share.websiteId, result);
+				return result;
 			});
-			if (!response.ok) throw new Error(`stats ${response.status}`);
-			const result = await response.json();
-			writeCache(cacheKey, share.websiteId, result);
-			return result;
 		}
 
 		async function getEventDataValues(share, eventName, propertyName) {
@@ -225,19 +369,26 @@ const {
 				: readCache(friendClickCacheKey, share.websiteId, metricsCacheTtl);
 			if (cached) return cached;
 
-			const results = await Promise.allSettled([
-				getEventDataValues(share, friendClickEventName, "site"),
-				getEventDataValues(share, legacyFriendClickEventName, "url"),
-			]);
-			if (results.every((result) => result.status === "rejected")) {
-				throw results[0].reason || new Error("friend click counts unavailable");
-			}
-			const result = {
-				friendClicks: results[0].status === "fulfilled" ? results[0].value : [],
-				legacyOutboundClicks: results[1].status === "fulfilled" ? results[1].value : [],
-			};
-			writeCache(friendClickCacheKey, share.websiteId, result);
-			return result;
+			return requestOnce(`friend-clicks:${share.websiteId}`, async () => {
+				const freshCached = forceRefresh
+					? null
+					: readCache(friendClickCacheKey, share.websiteId, metricsCacheTtl);
+				if (freshCached) return freshCached;
+
+				const results = await Promise.allSettled([
+					getEventDataValues(share, friendClickEventName, "site"),
+					getEventDataValues(share, legacyFriendClickEventName, "url"),
+				]);
+				if (results.every((result) => result.status === "rejected")) {
+					throw results[0].reason || new Error("friend click counts unavailable");
+				}
+				const result = {
+					friendClicks: results[0].status === "fulfilled" ? results[0].value : [],
+					legacyOutboundClicks: results[1].status === "fulfilled" ? results[1].value : [],
+				};
+				writeCache(friendClickCacheKey, share.websiteId, result);
+				return result;
+			});
 		}
 
 		function getLocalDayStart(timestamp = Date.now()) {
@@ -262,20 +413,16 @@ const {
 
 		function renderSiteStats(stats, todayStats) {
 			document.querySelectorAll('[data-umami-stat="todayVisitors"]').forEach((element) => {
-				element.textContent = todayStats ? formatNumber(todayStats.visitors) : "加载中";
+				if (todayStats) renderStatValue(element, todayStats.visitors);
 			});
 			document.querySelectorAll('[data-umami-stat="todayPageviews"]').forEach((element) => {
-				element.textContent = todayStats ? formatNumber(todayStats.pageviews) : "加载中";
+				if (todayStats) renderStatValue(element, todayStats.pageviews);
 			});
 			document.querySelectorAll('[data-umami-stat="visitors"]').forEach((element) => {
-				element.textContent = stats
-					? formatNumber((Number(stats.visitors) || 0) + historicalVisitorCount)
-					: "加载中";
+				if (stats) renderStatValue(element, (Number(stats.visitors) || 0) + historicalVisitorCount);
 			});
 			document.querySelectorAll('[data-umami-stat="pageviews"]').forEach((element) => {
-				element.textContent = stats
-					? formatNumber((Number(stats.pageviews) || 0) + historicalPageviewCount)
-					: "加载中";
+				if (stats) renderStatValue(element, (Number(stats.pageviews) || 0) + historicalPageviewCount);
 			});
 		}
 
@@ -307,6 +454,20 @@ const {
 				if (valueElement) valueElement.textContent = formatNumber(count);
 				element.setAttribute("aria-label", `从本站点击 ${formatNumber(count)} 次`);
 			});
+		}
+
+		const replaySummaryAnimations = () => {
+			document.querySelectorAll(".analytics-summary [data-umami-stat]").forEach((element) => {
+				const target = Number(element.dataset.analyticsTarget);
+				if (!Number.isFinite(target)) return;
+				element.dataset.analyticsCount = "0";
+				element.textContent = formatNumber(0);
+				renderStatValue(element, target);
+			});
+		};
+		if (!window.__rainztAnalyticsReplayBound) {
+			window.addEventListener("rainzt-analytics-animation-replay", replaySummaryAnimations);
+			window.__rainztAnalyticsReplayBound = true;
 		}
 
 		function handleLocalFriendClick(event) {
@@ -341,8 +502,9 @@ const {
 		}
 
 		async function refresh(forceRefresh = false) {
-			const needsViews = !isLocalAnalytics && Boolean(document.querySelector("[data-umami-pageviews]"));
-			const statElements = isLocalAnalytics ? [] : [...document.querySelectorAll("[data-umami-stat]")];
+			const blockLocalStats = shouldBlockLocalStats();
+			const needsViews = !blockLocalStats && Boolean(document.querySelector("[data-umami-pageviews]"));
+			const statElements = blockLocalStats ? [] : [...document.querySelectorAll("[data-umami-stat]")];
 			const needsStats = statElements.length > 0;
 			const needsTodayStats = statElements.some((element) =>
 				["todayVisitors", "todayPageviews"].includes(element.getAttribute("data-umami-stat")),

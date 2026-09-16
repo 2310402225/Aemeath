@@ -75,7 +75,7 @@ Icons/LQIP data are generated into `src/constants/` and committed. Regenerate wi
 
 ## Deployment
 
-- **Vercel** (default, `vercel.json`)
-- **Cloudflare Workers** (`wrangler.jsonc`, set `CF_WORKERS` env var)
+- Deployment-specific configuration is kept outside this public snapshot. Use
+  the Astro deployment adapter and platform configuration appropriate for the
+  target environment without committing credentials or host-specific files.
 - Static output to `dist/`
-

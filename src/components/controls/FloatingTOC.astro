@@ -24,7 +24,7 @@ const hideSidebarOnPostPage =
 ---
 
 <!-- 悬浮TOC按钮 -->
-<div id="floating-toc-wrapper" class="floating-toc-wrapper" data-is-sidebar-toc-enabled={String(isSidebarTocEnabled)} data-sidebar-position={sidebarPosition} data-show-both-sidebars-on-post={String(sidebarLayoutConfig.showBothSidebarsOnPostPage ?? false)} data-hide-sidebar-on-post={String(hideSidebarOnPostPage)}>
+<div id="floating-toc-wrapper" class="floating-toc-wrapper hide" data-is-sidebar-toc-enabled={String(isSidebarTocEnabled)} data-sidebar-position={sidebarPosition} data-show-both-sidebars-on-post={String(sidebarLayoutConfig.showBothSidebarsOnPostPage ?? false)} data-hide-sidebar-on-post={String(hideSidebarOnPostPage)}>
   <FloatingButton
     id="floating-toc-btn"
     icon="material-symbols:format-list-bulleted"
@@ -76,6 +76,9 @@ const hideSidebarOnPostPage =
 	position: relative
 	z-index: 999
 	overflow: visible
+
+	&.hide
+		display: none
 
 .floating-toc-panel
 	position: absolute
@@ -261,10 +264,14 @@ const hideSidebarOnPostPage =
     const btn = window.FloatingTOC.btn;
     if (!btn) return;
 
+    const wrapper = document.querySelector('.floating-toc-wrapper');
+
     if (shouldShowFloatingTOC()) {
       btn.classList.remove("hide");
+      wrapper?.classList.remove("hide");
     } else {
       btn.classList.add("hide");
+      wrapper?.classList.add("hide");
       // 同时关闭面板
       closeTOC();
     }
@@ -348,6 +355,11 @@ const hideSidebarOnPostPage =
     // 密码解密后重新初始化 TOC
     document.addEventListener("password:decrypted", () => {
       setTimeout(initFloatingTOC, 200);
+    });
+
+    // 动态文章在切换阅读版本后，重新读取当前可见版本的标题
+    window.addEventListener("article-toc-refresh", () => {
+      setTimeout(initFloatingTOC, 0);
     });
 
     // 监听窗口大小变化

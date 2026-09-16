@@ -22,7 +22,7 @@ const changelogEntries = [
 		title: "博客视觉与友链体验",
 		description: "把友链、朋友圈、开屏动画和评论区的视觉连接重新梳理成一套更完整的体验。",
 		href: "/blog-changelog/",
-		tags: ["Aemeath V3.0.2", "UI"],
+		tags: ["Aemeath V3.4.0", "UI"],
 		tone: "blue",
 		icon: "material-symbols:auto-awesome-rounded",
 	},
@@ -30,7 +30,7 @@ const changelogEntries = [
 		title: "站点版本整理",
 		description: "统一关于我、导航和站点信息中的博客版本展示，让每个入口都说同一种语言。",
 		href: "/blog-changelog/",
-		tags: ["Aemeath V3.0.2", "维护"],
+		tags: ["Aemeath V3.4.0", "维护"],
 		tone: "mint",
 		icon: "material-symbols:history-rounded",
 	},
@@ -38,7 +38,7 @@ const changelogEntries = [
 		title: "朋友圈 RSS 聚合",
 		description: "把友链博客最近写下的文章收进一条持续发生的时间线。",
 		href: "/moments/",
-		tags: ["Aemeath V3.0.2", "RSS"],
+		tags: ["Aemeath V3.4.0", "RSS"],
 		tone: "gold",
 		icon: "material-symbols:rss-feed-rounded",
 	},
@@ -46,7 +46,7 @@ const changelogEntries = [
 		title: "正在持续记录",
 		description: "项目复盘、踩坑经验与商业化思考，会继续在这里慢慢留下。",
 		href: "/blog-changelog/",
-		tags: ["Aemeath V3.0.2", "持续更新"],
+		tags: ["Aemeath V3.4.0", "持续更新"],
 		tone: "violet",
 		icon: "material-symbols:edit-note-rounded",
 	},
@@ -103,44 +103,13 @@ const recentActivity = [
 	},
 	{
 		kind: "系统",
-		title: "朋友圈 RSS 聚合与 GitHub Actions 刷新",
+		title: "朋友圈 RSS 聚合与快照更新",
 		href: "/moments/",
 	},
 ];
 
 const interests = ["效率工具", "AI 工程化", "跨境电商", "开源", "网络安全", "逆向工程"];
 const stack = ["React", "TypeScript", "Astro", "ExtendScript", "Shopee", "TikTok", "BigSeller"];
-const serverStatusEndpoint = import.meta.env.DEV ? "/api/server-status.json" : "/api/server-status.php";
-const serverStats = [
-	{
-		key: "cpu",
-		label: "处理器",
-		value: "2 vCPU",
-		detail: "AMD EPYC 7A23",
-		icon: "material-symbols:memory-rounded",
-	},
-	{
-		key: "memory",
-		label: "内存",
-		value: "3.8 GiB",
-		detail: "可用约 1.5 GiB",
-		icon: "material-symbols:memory-alt-rounded",
-	},
-	{
-		key: "disk",
-		label: "存储",
-		value: "99 GB",
-		detail: "已用约 25 GB",
-		icon: "material-symbols:database",
-	},
-	{
-		key: "system",
-		label: "系统",
-		value: "Debian 12",
-		detail: "Linux 6.1 · x86_64",
-		icon: "material-symbols:dns",
-	},
-];
 ---
 
 <MainGridLayout title={i18n(I18nKey.about)} description={i18n(I18nKey.about)}>
@@ -337,27 +306,6 @@ const serverStats = [
 					</div>
 				</section>
 
-				<section class="profile-panel profile-side-panel profile-server-panel card-base" aria-labelledby="server-title" data-server-metrics data-server-endpoint={serverStatusEndpoint}>
-					<header class="profile-side-heading profile-server-heading">
-						<Icon is:inline name="material-symbols:cloud-outline" aria-hidden="true" />
-						<h2 id="server-title">服务器状态</h2>
-						<span class="server-status" data-server-status><span aria-hidden="true"></span><span data-server-status-text>连接中</span></span>
-					</header>
-					<div class="server-stat-list">
-						{serverStats.map((stat) => (
-							<div class="server-stat" data-server-stat={stat.key}>
-								<span class="server-stat__icon" aria-hidden="true"><Icon is:inline name={stat.icon} /></span>
-								<span class="server-stat__copy">
-									<strong>{stat.label}</strong>
-									<small data-server-detail>{stat.detail}</small>
-								</span>
-								<strong class="server-stat__value" data-server-value>{stat.value}</strong>
-								<span class="server-stat__meter" aria-hidden="true"><span data-server-meter></span></span>
-							</div>
-						))}
-					</div>
-					<p class="profile-side-note server-note" data-server-note>实时刷新 · 每 1 秒更新一次</p>
-				</section>
 			</aside>
 		</div>
 
@@ -374,192 +322,6 @@ const serverStats = [
 	</section>
 </MainGridLayout>
 
-<script is:inline>
-	(() => {
-		const runtimeKey = "__rainztAboutServerRuntime";
-		const runtime = window[runtimeKey] || {
-			activeRoot: null,
-			cleanup: null,
-			eventsBound: false,
-			hooksBound: false,
-			scheduledFrame: 0,
-		};
-
-		const clearActiveRuntime = () => {
-			if (typeof runtime.cleanup === "function") runtime.cleanup();
-			runtime.cleanup = null;
-			runtime.activeRoot = null;
-		};
-
-		const clampPercent = (value) => Math.min(100, Math.max(0, Number(value) || 0));
-		const formatBytes = (bytes) => {
-			const value = Number(bytes);
-			if (!Number.isFinite(value) || value <= 0) return "--";
-			const units = ["B", "KiB", "MiB", "GiB", "TiB"];
-			let size = value;
-			let unit = 0;
-			while (size >= 1024 && unit < units.length - 1) {
-				size /= 1024;
-				unit += 1;
-			}
-			return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
-		};
-
-		const setupServerMetrics = () => {
-			const root = document.querySelector("[data-server-metrics]");
-			if (!root) {
-				clearActiveRuntime();
-				return;
-			}
-			if (runtime.activeRoot === root) return;
-
-			clearActiveRuntime();
-			runtime.activeRoot = root;
-
-			const endpoint = root.dataset.serverEndpoint || "/api/server-status.php";
-			const status = root.querySelector("[data-server-status]");
-			const statusText = root.querySelector("[data-server-status-text]");
-			const note = root.querySelector("[data-server-note]");
-			let timer;
-			let refreshInFlight = false;
-			let hasReceivedMetrics = false;
-			let requestController;
-			const cleanups = [];
-			runtime.cleanup = () => {
-				for (const cleanup of cleanups.splice(0)) cleanup();
-				runtime.activeRoot = null;
-			};
-
-			const setStatus = (state, text) => {
-				if (status) status.dataset.state = state;
-				if (statusText) statusText.textContent = text;
-			};
-
-			const setMetric = (key, value, detail, percent) => {
-				const item = root.querySelector(`[data-server-stat="${key}"]`);
-				if (!item) return;
-				const valueElement = item.querySelector("[data-server-value]");
-				const detailElement = item.querySelector("[data-server-detail]");
-				const meter = item.querySelector("[data-server-meter]");
-				if (valueElement) valueElement.textContent = value;
-				if (detailElement) detailElement.textContent = detail;
-				if (meter && percent !== null) meter.style.setProperty("--meter-scale", String(clampPercent(percent) / 100));
-			};
-
-			const applyMetrics = (data) => {
-				const cpu = data.cpu || {};
-				const memory = data.memory || {};
-				const disk = data.disk || {};
-				const system = data.system || {};
-				const cpuUsage = Number(cpu.usage);
-				const memoryUsage = Number(memory.usage);
-				const diskUsage = Number(disk.usage);
-				const load = Number(cpu.load1);
-				const cores = Number(cpu.cores);
-
-				setMetric(
-					"cpu",
-					Number.isFinite(cpuUsage) ? `${cpuUsage.toFixed(1)}%` : "--",
-					`${Number.isFinite(cores) ? `${cores} vCPU` : "CPU"} · ${cpu.model || ""} · 负载 ${Number.isFinite(load) ? load.toFixed(2) : "--"}`,
-					cpuUsage,
-				);
-				setMetric(
-					"memory",
-					Number.isFinite(memoryUsage) ? `${memoryUsage.toFixed(1)}%` : "--",
-					`${formatBytes(memory.usedBytes)} / ${formatBytes(memory.totalBytes)} · 可用 ${formatBytes(memory.availableBytes)}`,
-					memoryUsage,
-				);
-				setMetric(
-					"disk",
-					Number.isFinite(diskUsage) ? `${diskUsage.toFixed(1)}%` : "--",
-					`${formatBytes(disk.usedBytes)} / ${formatBytes(disk.totalBytes)} · 可用 ${formatBytes(disk.availableBytes)}`,
-					diskUsage,
-				);
-				setMetric(
-					"system",
-					system.name || "Linux",
-					`${system.kernel || ""}${system.arch ? ` · ${system.arch}` : ""}`,
-					null,
-				);
-
-				if (note) {
-					const stamp = data.timestamp ? new Date(data.timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "刚刚";
-					note.textContent = `实时刷新 · 最近更新 ${stamp} · 每 1 秒检查一次`;
-				}
-			};
-
-			const refresh = async () => {
-				if (refreshInFlight) return;
-				refreshInFlight = true;
-				if (!hasReceivedMetrics) setStatus("loading", "连接中");
-				requestController?.abort();
-				requestController = new AbortController();
-				try {
-					const separator = endpoint.includes("?") ? "&" : "?";
-					const response = await fetch(`${endpoint}${separator}t=${Date.now()}`, {
-						cache: "no-store",
-						headers: { Accept: "application/json" },
-						signal: requestController.signal,
-					});
-					if (!response.ok) throw new Error(`server status ${response.status}`);
-					const data = await response.json();
-					if (!data?.ok) throw new Error("invalid server status response");
-					applyMetrics(data);
-					hasReceivedMetrics = true;
-					setStatus("online", "在线");
-				} catch (error) {
-					if (error?.name === "AbortError") return;
-					setStatus("offline", "暂不可用");
-					if (note) note.textContent = "实时接口未连接 · 当前保留规格信息";
-				} finally {
-					refreshInFlight = false;
-				}
-			};
-
-			refresh();
-			timer = window.setInterval(refresh, 1_000);
-			cleanups.push(() => {
-				window.clearInterval(timer);
-				requestController?.abort();
-			});
-		};
-
-		const scheduleServerMetricsInit = () => {
-			if (runtime.scheduledFrame) cancelAnimationFrame(runtime.scheduledFrame);
-			runtime.scheduledFrame = requestAnimationFrame(() => {
-				runtime.scheduledFrame = 0;
-				setupServerMetrics();
-			});
-		};
-
-		const bindSwupHooks = () => {
-			if (runtime.hooksBound || !window.swup?.hooks) return;
-			window.swup.hooks.on("visit:start", clearActiveRuntime);
-			window.swup.hooks.on("content:replace", scheduleServerMetricsInit);
-			window.swup.hooks.on("page:view", scheduleServerMetricsInit);
-			runtime.hooksBound = true;
-		};
-
-		if (!runtime.eventsBound) {
-			for (const eventName of [
-				"astro:page-load",
-				"astro:after-swap",
-				"swup:contentReplaced",
-				"swup:content:replace",
-				"swup:page:view",
-			]) {
-				document.addEventListener(eventName, scheduleServerMetricsInit);
-			}
-			document.addEventListener("astro:before-swap", clearActiveRuntime);
-			document.addEventListener("swup:enable", bindSwupHooks);
-			runtime.eventsBound = true;
-		}
-
-		bindSwupHooks();
-		window[runtimeKey] = runtime;
-		scheduleServerMetricsInit();
-	})();
-</script>
 
 <style>
 	.github-profile {
@@ -1129,138 +891,6 @@ const serverStats = [
 
 	.profile-side-note {
 		font-size: 0.7rem !important;
-	}
-
-	.profile-server-heading {
-		justify-content: flex-start;
-	}
-
-	.server-status {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3rem;
-		flex: 0 0 auto;
-		margin-left: auto;
-		color: #159b62;
-		font-size: 0.66rem;
-		font-weight: 720;
-		white-space: nowrap;
-	}
-
-	.server-status > span:first-child {
-		width: 0.42rem;
-		height: 0.42rem;
-		border-radius: 999px;
-		background: #34c759;
-		box-shadow: 0 0 0 0.2rem rgb(52 199 89 / 14%);
-	}
-
-	.server-status[data-state="loading"] {
-		color: var(--content-meta);
-	}
-
-	.server-status[data-state="loading"] > span:first-child {
-		background: #f2b94b;
-		box-shadow: 0 0 0 0.2rem rgb(242 185 75 / 14%);
-	}
-
-	.server-status[data-state="offline"] {
-		color: #c5782e;
-	}
-
-	.server-status[data-state="offline"] > span:first-child {
-		background: #e19a45;
-		box-shadow: 0 0 0 0.2rem rgb(225 154 69 / 14%);
-	}
-
-	.server-stat-list {
-		display: grid;
-		gap: 0.35rem;
-		margin-top: 0.8rem;
-	}
-
-	.server-stat {
-		display: grid;
-		grid-template-columns: 1.45rem minmax(0, 1fr) auto;
-		align-items: center;
-		gap: 0.5rem;
-		min-width: 0;
-		padding: 0.5rem 0.45rem;
-		border: 1px solid color-mix(in srgb, var(--primary) 10%, var(--line-divider));
-		border-radius: 0.55rem;
-		background: color-mix(in srgb, var(--card-bg) 96%, var(--primary) 4%);
-	}
-
-	.server-stat__icon {
-		display: grid;
-		place-items: center;
-		width: 1.35rem;
-		height: 1.35rem;
-		border-radius: 0.42rem;
-		background: color-mix(in srgb, var(--primary) 11%, transparent);
-		color: var(--primary);
-		font-size: 0.9rem;
-	}
-
-	.server-stat__copy {
-		display: grid;
-		gap: 0.08rem;
-		min-width: 0;
-	}
-
-	.server-stat__copy strong {
-		overflow: hidden;
-		color: var(--text-color);
-		font-size: 0.72rem;
-		font-weight: 720;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.server-stat__copy small {
-		overflow: hidden;
-		color: var(--content-meta);
-		font-size: 0.62rem;
-		line-height: 1.35;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.server-stat__value {
-		color: var(--text-color);
-		font-size: 0.72rem;
-		font-weight: 780;
-		white-space: nowrap;
-	}
-
-	.server-stat__meter {
-		display: block;
-		grid-column: 2 / -1;
-		height: 0.24rem;
-		overflow: hidden;
-		border-radius: 999px;
-		background: color-mix(in srgb, var(--primary) 12%, var(--line-divider));
-	}
-
-	.server-stat__meter > span {
-		display: block;
-		width: 100%;
-		height: 100%;
-		border-radius: inherit;
-		background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 68%, #fff), var(--primary));
-		transform: scaleX(var(--meter-scale, 0));
-		transform-origin: left center;
-		transition: transform 420ms ease;
-	}
-
-	.server-stat[data-server-stat="system"] .server-stat__meter {
-		display: none;
-	}
-
-	.server-note {
-		margin-top: 0.7rem !important;
-		font-size: 0.62rem !important;
-		line-height: 1.5 !important;
 	}
 
 	.profile-connect-list {

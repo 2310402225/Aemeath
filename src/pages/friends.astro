@@ -12,6 +12,7 @@ import {
 	getEnabledFriends,
 	siteConfig,
 } from "@/config";
+import friendsLatencySnapshot from "@/data/friends-latency-snapshot.json";
 import I18nKey from "@/i18n/i18nKey";
 import { i18n } from "@/i18n/translation";
 import MainGridLayout from "@/layouts/MainGridLayout.astro";
@@ -48,6 +49,21 @@ const normalizeFriendUrl = (url: string) =>
 		.replace(/\/+$/, "")
 		.toLowerCase();
 const ownSiteUrl = normalizeFriendUrl(siteConfig.site_url);
+type FriendLatencyState = "fast" | "normal" | "slow" | "down";
+type FriendLatencySnapshot = {
+	generatedAt: string | null;
+	timezone: string;
+	slot: string | null;
+	results: Record<
+		string,
+		{
+			state: FriendLatencyState;
+			milliseconds?: number;
+			checkedAt: string;
+		}
+	>;
+};
+const latencySnapshot = friendsLatencySnapshot as FriendLatencySnapshot;
 
 // 页面标题和描述
 const title = friendsPageConfig.title || i18n(I18nKey.friends);
@@ -108,7 +124,7 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
   <div
     class="flex w-full rounded-(--radius-large) overflow-hidden relative min-h-32"
   >
-    <div class="card-base z-10 px-9 py-6 relative w-full">
+      <div class="card-base z-10 px-9 py-6 relative w-full">
       <!-- 页面标题和描述 -->
       <div class="friends-heading-row mb-4">
         <div class="friends-heading-copy">
@@ -215,13 +231,29 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
           )
         }
         {
-          items.map((item) => {
-            const isOwnSite = normalizeFriendUrl(item.siteurl) === ownSiteUrl;
-            const isRecommended = !isOwnSite && item.recommended === true;
+		items.map((item) => {
+			const isOwnSite = normalizeFriendUrl(item.siteurl) === ownSiteUrl;
+			const isRecommended = !isOwnSite && item.recommended === true;
 			const isDegradedRecommended = isRecommended && item.recommendedTier === "degraded";
+			const scheduledLatency = latencySnapshot.results[normalizeFriendUrl(item.siteurl)];
 			const isTemporarilyUnavailable = item.temporarilyUnavailable === true;
+			const latencyState = isTemporarilyUnavailable
+				? "down"
+				: scheduledLatency?.state || "checking";
+			const latencyValue =
+				latencyState === "down"
+					? "失联"
+					: scheduledLatency?.milliseconds
+						? `${scheduledLatency.milliseconds}ms`
+						: "待探测";
+			const latencyLabel =
+				latencyState === "down"
+					? `${item.title}，最近一次定时 GET 探测未连通`
+					: scheduledLatency?.milliseconds
+						? `${item.title}，最近一次东八区定时 GET 探测响应时间 ${scheduledLatency.milliseconds} 毫秒`
+						: `${item.title}，等待东八区定时 GET 探测`;
 
-            return (
+			return (
               <a
                 href={item.siteurl}
                 target="_blank"
@@ -239,7 +271,7 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
                 data-umami-event={isOwnSite ? undefined : "friend-link-click"}
                 data-umami-event-site={isOwnSite ? undefined : item.siteurl}
                 class:list={[
-                  "friend-card friend-list-card group flex items-center gap-3 p-2.5 rounded-xl border border-(--line-divider) hover:border-(--primary) hover:bg-(--card-bg) transition-all duration-300 hover:shadow-lg relative overflow-visible",
+                  "friend-card friend-list-card group flex items-center gap-3 p-2.5 rounded-xl relative overflow-visible",
                   isOwnSite && "friend-card--own",
                   isRecommended && "friend-card--recommended",
                   isDegradedRecommended && "friend-card--recommended-degraded",
@@ -258,31 +290,52 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
                 }
               </div>
 
+              {
+                (isRecommended || isOwnSite) && (
+                  <span
+                    class:list={[
+                      "friend-recommended-badge",
+                      isOwnSite && "friend-site-owner-badge",
+                    ]}
+                    aria-hidden="true"
+                  >
+                    <svg
+                      class:list={[isOwnSite ? "friend-owner-icon" : "friend-recommended-icon"]}
+                      viewBox="0 0 24 24"
+                      role="presentation"
+                    >
+                      {isOwnSite ? (
+                        <path d="m4.7 10.4 7.3-5.6 7.3 5.6v7.3c0 .83-.67 1.5-1.5 1.5H6.2c-.83 0-1.5-1.5-1.5-1.5v-7.3Zm3.1 1.1v6.2h2.8v-3.3h2.8v3.3h2.8v-6.2L12 8.6l-4.2 2.9Z" />
+                      ) : (
+                        <path d="M12 3.1c.7 0 1.32.42 1.6 1.06l1.41 3.32c.18.43.58.73 1.04.77l3.59.32c.7.06 1.29.54 1.49 1.22.2.67-.03 1.4-.59 1.82l-2.73 2.08c-.37.28-.53.76-.4 1.2l.84 3.49c.17.69-.09 1.41-.68 1.79-.58.39-1.35.39-1.94 0l-3.02-1.96a1.37 1.37 0 0 0-1.5 0l-3.02 1.96c-.59.39-1.36.39-1.94 0-.59-.38-.85-1.1-.68-1.79l.84-3.49c.13-.44-.03-.92-.4-1.2l-2.73-2.08c-.56-.42-.79-1.15-.59-1.82.2-.68.79-1.16 1.49-1.22l3.59-.32c.46-.04.86-.34 1.04-.77l1.41-3.32A1.73 1.73 0 0 1 12 3.1Z" />
+                      )}
+                    </svg>
+                    <span>{isOwnSite ? "本站主理人" : "推荐"}</span>
+                  </span>
+                )
+              }
+
               {/* 头像 */}
               <div class="friend-card-avatar relative z-10 w-16 h-16 shrink-0 rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 border border-black/5 dark:border-white/5 group-hover:scale-105 transition-transform duration-300">
                 <img
                   src={item.imgurl}
                   alt={item.title}
+                  data-friend-avatar
                   class="w-full h-full object-cover"
                 />
               </div>
 
               {/* 内容 */}
-              <div class="relative z-10 grow min-w-0 flex flex-col justify-center gap-0.5">
+              <div class="friend-card-content relative z-10 grow min-w-0 flex flex-col justify-center gap-0.5">
                 <div class="flex items-center justify-between">
                   <div
                     class:list={[
-                      "friend-card-title font-bold text-base text-neutral-900 dark:text-neutral-100 transition-colors truncate pr-4",
+                      "friend-card-title font-bold text-base text-neutral-900 dark:text-neutral-100 transition-colors truncate",
                       isRecommended && "friend-card-title--recommended",
                     ]}
                   >
                     {item.title}
                   </div>
-                  {/* 外部链接图标 */}
-                  <Icon is:inline
-                    name="material-symbols:arrow-outward-rounded"
-                    class="text-(--primary) text-lg opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300"
-                  />
                 </div>
 
                 <div
@@ -298,7 +351,7 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
                     ? item.tags
                         .slice(0, isOwnSite ? 4 : 3)
                         .map((tag) => (
-                          <span class="friend-card-tag text-[0.65rem] font-medium px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 transition-colors duration-300">
+                          <span class="friend-card-tag text-[0.65rem] font-medium px-1.5 py-0.5 rounded transition-colors duration-300">
                             {tag}
                           </span>
                         ))
@@ -318,6 +371,23 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
                   <span class="friend-click-count-unit" aria-hidden="true">次</span>
                 </span>
               )}
+
+              <span
+                class:list={[
+                  "friend-latency",
+                  `friend-latency--${latencyState}`,
+                ]}
+                data-friend-latency-for={item.siteurl}
+                data-friend-latency-name={item.title}
+                data-friend-latency-state={latencyState}
+                title={latencyLabel}
+                aria-label={latencyLabel}
+              >
+                <span class="friend-latency-dot" aria-hidden="true"></span>
+                <span data-friend-latency-value aria-live="polite">
+                  {latencyValue}
+                </span>
+              </span>
 
               {
                 isTemporarilyUnavailable && (
@@ -373,33 +443,33 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={`${item.title}，加入的项目`}
-                class="friend-card group flex items-center gap-3 p-2.5 rounded-xl border border-(--line-divider) hover:border-(--primary) hover:bg-(--card-bg) transition-all duration-300 hover:shadow-lg relative overflow-visible"
+                class="friend-card group flex items-center gap-3 p-2.5 rounded-xl relative overflow-visible"
               >
                 <div class="friend-card-surface absolute inset-0 rounded-xl overflow-hidden pointer-events-none">
                   <div class="absolute inset-0 bg-(--primary) opacity-0 group-hover:opacity-5 transition-opacity duration-300" />
                 </div>
 
                 <div class="friend-card-avatar relative z-10 w-16 h-16 shrink-0 rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 border border-black/5 dark:border-white/5 group-hover:scale-105 transition-transform duration-300">
-                  <img src={item.imgurl} alt={item.title} class="w-full h-full object-cover" />
+                  <img
+                    src={item.imgurl}
+                    alt={item.title}
+                    data-friend-avatar
+                    class="w-full h-full object-cover"
+                  />
                 </div>
 
-                <div class="relative z-10 grow min-w-0 flex flex-col justify-center gap-0.5">
+                <div class="friend-card-content relative z-10 grow min-w-0 flex flex-col justify-center gap-0.5">
                   <div class="flex items-center justify-between">
-                    <div class="friend-card-title font-bold text-base text-neutral-900 dark:text-neutral-100 transition-colors truncate pr-4">
+                    <div class="friend-card-title font-bold text-base text-neutral-900 dark:text-neutral-100 transition-colors truncate">
                       {item.title}
                     </div>
-                    <Icon
-                      is:inline
-                      name="material-symbols:arrow-outward-rounded"
-                      class="text-(--primary) text-lg opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300"
-                    />
                   </div>
                   <div class="friend-card-description text-sm line-clamp-1" title={item.desc}>
                     {item.desc}
                   </div>
                   <div class="flex flex-wrap items-center gap-1 mt-1">
                     {item.tags?.slice(0, 3).map((tag) => (
-                      <span class="friend-card-tag text-[0.65rem] font-medium px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 transition-colors duration-300">
+                      <span class="friend-card-tag text-[0.65rem] font-medium px-1.5 py-0.5 rounded transition-colors duration-300">
                         {tag}
                       </span>
                     ))}
@@ -442,6 +512,28 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
   )}
 
   <script slot="head" is:inline>
+    (() => {
+      const avatarFallbackNamespace = "__rainztFriendAvatarFallback";
+      if (window[avatarFallbackNamespace]) return;
+
+      document.addEventListener(
+        "error",
+        (event) => {
+          const image = event.target instanceof HTMLImageElement ? event.target : null;
+          if (!image?.matches("[data-friend-avatar]")) return;
+          if (image.dataset.friendAvatarFallback === "true") return;
+
+          image.dataset.friendAvatarFallback = "true";
+          image.removeAttribute("srcset");
+          image.src = "/favicon/chaoc-tingyu-avatar-512.png?v=20260907";
+          image.alt = "小爱客服头像";
+        },
+        true,
+      );
+
+      window[avatarFallbackNamespace] = true;
+    })();
+
     if (!customElements.get("friend-filter")) {
       class FriendFilter extends HTMLElement {
         selectedTag = "all";
@@ -1246,6 +1338,7 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
 
       customElements.define("recommended-star-flow", RecommendedStarFlow);
     }
+
   </script>
 
   <style is:global>
@@ -1600,22 +1693,23 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
       align-items: center;
       gap: 0.2rem;
       min-width: 2.45rem;
-      height: 1.42rem;
-      padding: 0 0.42rem;
-      overflow: hidden;
-      border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--line-divider));
-      border-radius: 999px;
-      background: color-mix(in srgb, var(--card-bg) 88%, transparent);
-      box-shadow: 0 0.16rem 0.5rem color-mix(in srgb, var(--primary) 8%, transparent);
-      color: var(--content-meta);
-      font-size: 0.62rem;
-      font-weight: 700;
+      height: 1.72rem;
+      padding: 0 0.5rem;
+      border: 1px dashed rgba(255, 246, 219, 0.42);
+      border-radius: 8px 11px 7px 10px;
+      background-color: transparent;
+      box-shadow:
+        0 0.3rem 0.5rem rgba(17, 17, 25, 0.12),
+        0 0.08rem 0.24rem rgba(17, 17, 25, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.22);
+      color: color-mix(in srgb, var(--content-meta) 88%, var(--text-color));
+      font-size: 0.68rem;
+      font-weight: 800;
       font-variant-numeric: tabular-nums;
       line-height: 1;
       white-space: nowrap;
       pointer-events: none;
-      backdrop-filter: blur(0.35rem);
-      -webkit-backdrop-filter: blur(0.35rem);
+      transform: none;
       transition:
         border-color 220ms ease,
         color 220ms ease,
@@ -1632,28 +1726,28 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
 
     .friend-click-count-unit {
       color: color-mix(in srgb, currentColor 72%, transparent);
-      font-size: 0.56rem;
-      font-weight: 600;
+      font-size: 0.6rem;
+      font-weight: 700;
     }
 
     .friend-card:hover .friend-click-count,
     .friend-card:focus-visible .friend-click-count {
-      border-color: color-mix(in srgb, var(--primary) 38%, var(--line-divider));
-      box-shadow: 0 0.22rem 0.62rem color-mix(in srgb, var(--primary) 14%, transparent);
+      border-color: rgba(255, 246, 219, 0.62);
+      box-shadow:
+        0 0.34rem 0.5rem rgba(17, 17, 25, 0.16),
+        0 0.1rem 0.26rem rgba(17, 17, 25, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
       color: var(--primary);
-      transform: translateY(-0.05rem);
+      transform: translateY(-0.04rem);
     }
 
     :global(.dark) .friend-click-count {
-      border-color: color-mix(in srgb, var(--primary) 25%, var(--line-divider));
-      background: color-mix(in srgb, var(--card-bg) 84%, transparent);
+      border-color: rgba(255, 246, 219, 0.26);
+      background-color: transparent;
       color: color-mix(in srgb, var(--content-meta) 92%, white);
     }
 
     .friend-card--recommended .friend-click-count {
-      border-color: color-mix(in srgb, #e8ae2d 38%, var(--line-divider));
-      background: color-mix(in srgb, #fff2ae 68%, var(--card-bg));
-      box-shadow: 0 0.16rem 0.5rem color-mix(in srgb, #e7b83e 12%, transparent);
       color: #9a6a0b;
     }
 
@@ -1662,8 +1756,6 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
     }
 
     :global(.dark) .friend-card--recommended .friend-click-count {
-      border-color: color-mix(in srgb, #e2ac3f 42%, var(--line-divider));
-      background: color-mix(in srgb, #8b6419 38%, var(--card-bg));
       color: #f4cd6b;
     }
 
@@ -1671,7 +1763,139 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
       color: #f1be4c;
     }
 
+    .friend-card-content {
+      padding-right: 4.65rem;
+    }
+
+    .friend-latency {
+      position: absolute;
+      right: 0.62rem;
+      bottom: 0.55rem;
+      z-index: 24;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.32rem;
+      min-width: 4.08rem;
+      height: 1.72rem;
+      padding: 0 0.52rem;
+      border: 1px dashed rgba(255, 246, 219, 0.42);
+      border-radius: 10px 7px 12px 8px;
+      background-color: transparent;
+      box-shadow:
+        0 0.3rem 0.5rem rgba(17, 17, 25, 0.12),
+        0 0.08rem 0.24rem rgba(17, 17, 25, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.22);
+      color: color-mix(in srgb, var(--content-meta) 88%, var(--text-color));
+      font-size: 0.68rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      white-space: nowrap;
+      pointer-events: none;
+      transform: none;
+      transition:
+        border-color 220ms ease,
+        color 220ms ease,
+        box-shadow 220ms ease,
+        transform 220ms ease;
+    }
+
+    .friend-latency-dot {
+      width: 0.42rem;
+      height: 0.42rem;
+      flex: none;
+      border-radius: 999px;
+      background: currentColor;
+      box-shadow: 0 0 0.35rem color-mix(in srgb, currentColor 42%, transparent);
+    }
+
+    .friend-latency--checking {
+      color: #6daee2;
+    }
+
+    .friend-latency--checking .friend-latency-dot {
+      animation: friend-latency-pulse 1.2s ease-in-out infinite;
+    }
+
+    .friend-latency--fast {
+      color: #69b78e;
+    }
+
+    .friend-latency--normal {
+      color: #78a8dd;
+    }
+
+    .friend-latency--slow {
+      color: #d4a15e;
+    }
+
+    .friend-latency--down {
+      color: #dc879b;
+    }
+
+    .friend-card:hover .friend-latency,
+    .friend-card:focus-visible .friend-latency {
+      border-color: rgba(255, 246, 219, 0.62);
+      box-shadow:
+        0 0.34rem 0.5rem rgba(17, 17, 25, 0.16),
+        0 0.1rem 0.26rem rgba(17, 17, 25, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+      transform: translateY(-0.04rem);
+    }
+
+    :global(.dark) .friend-latency {
+      border-color: rgba(255, 246, 219, 0.26);
+      background-color: transparent;
+      color: color-mix(in srgb, var(--content-meta) 92%, white);
+    }
+
+    :global(.dark) .friend-latency--checking {
+      color: #a7d7f8;
+    }
+
+    :global(.dark) .friend-latency--fast {
+      color: #a6e8c6;
+    }
+
+    :global(.dark) .friend-latency--normal {
+      color: #b1d8ff;
+    }
+
+    :global(.dark) .friend-latency--slow {
+      color: #ffdaa0;
+    }
+
+    :global(.dark) .friend-latency--down {
+      color: #ffb9c7;
+    }
+
+    @keyframes friend-latency-pulse {
+      0%,
+      100% {
+        opacity: 0.42;
+        transform: scale(0.8);
+      }
+
+      50% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
     .friend-card {
+      --friend-card-border-color: rgba(255, 246, 219, 0.28);
+      --friend-card-hover-border-color: color-mix(in srgb, var(--primary) 42%, var(--line-divider));
+      isolation: isolate;
+      border: 1px solid var(--friend-card-border-color);
+      border-radius: 10px 7px 12px 8px;
+      background-color: color-mix(in srgb, var(--card-bg) 26%, transparent);
+      box-shadow:
+        0 0.48rem 1.05rem rgba(68, 128, 164, 0.09),
+        0 0.12rem 0.32rem rgba(67, 108, 139, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.68);
+      -webkit-backdrop-filter: blur(4px) saturate(1.04);
+      backdrop-filter: blur(4px) saturate(1.04);
       transition:
         transform 220ms ease,
         border-color 220ms ease,
@@ -1681,7 +1905,7 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
 
     .friend-card--temporarily-unavailable {
       isolation: isolate;
-      border-color: color-mix(in srgb, #8ca6b8 42%, var(--line-divider));
+      border-color: var(--friend-card-border-color);
       background:
         radial-gradient(125% 150% at 0% 0%, rgba(255, 255, 255, 0.38), transparent 52%),
         linear-gradient(135deg, rgba(247, 253, 255, 0.24), rgba(206, 229, 239, 0.16)),
@@ -1716,7 +1940,7 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
       border-radius: inherit;
       pointer-events: none;
       overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.42);
+      border: 1px solid rgba(255, 255, 255, 0.18);
       background:
         radial-gradient(110% 120% at 8% -20%, rgba(255, 255, 255, 0.42), transparent 50%),
         linear-gradient(112deg, rgba(255, 255, 255, 0.1), rgba(223, 238, 245, 0.18) 48%, rgba(248, 252, 254, 0.08)),
@@ -1801,7 +2025,7 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
     }
 
     :global(.dark) .friend-card--temporarily-unavailable {
-      border-color: color-mix(in srgb, #8aa9bc 42%, var(--line-divider));
+      border-color: var(--friend-card-border-color);
       background:
         radial-gradient(125% 150% at 0% 0%, rgba(181, 222, 234, 0.16), transparent 52%),
         linear-gradient(135deg, rgba(40, 62, 74, 0.34), rgba(24, 43, 54, 0.26)),
@@ -1842,25 +2066,73 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
       .friend-card-status-overlay::before {
         animation: none;
       }
+
+      .friend-latency--checking .friend-latency-dot {
+        animation: none;
+      }
     }
 
     .friend-card:hover,
     .friend-card:focus-visible {
       z-index: 100;
       transform: translateY(-0.125rem);
+      border-style: dashed;
+      border-color: var(--friend-card-hover-border-color);
+      background-color: color-mix(in srgb, var(--card-bg) 52%, transparent);
+      box-shadow:
+        0 0.7rem 1.45rem rgba(65, 143, 188, 0.15),
+        0 0.18rem 0.44rem rgba(73, 113, 151, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.86);
+    }
+
+    .friend-card-tag {
+      border: 1px dashed color-mix(in srgb, var(--primary) 18%, var(--line-divider));
+      background: color-mix(in srgb, var(--card-bg) 32%, transparent);
+      color: color-mix(in srgb, var(--text-color) 66%, var(--primary));
+    }
+
+    :global(.dark) .friend-card {
+      --friend-card-border-color: color-mix(in srgb, var(--primary) 42%, var(--line-divider));
+      --friend-card-hover-border-color: color-mix(in srgb, var(--primary) 48%, var(--line-divider));
+      border-color: var(--friend-card-border-color);
+      background-color: color-mix(in srgb, var(--card-bg) 48%, transparent);
+      box-shadow:
+        0 0.55rem 1.2rem rgba(0, 0, 0, 0.2),
+        0 0.12rem 0.35rem rgba(0, 0, 0, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    }
+
+    :global(.dark) .friend-card:hover,
+    :global(.dark) .friend-card:focus-visible {
+      border-color: var(--friend-card-hover-border-color);
+      background-color: color-mix(in srgb, var(--card-bg) 72%, transparent);
+      box-shadow:
+        0 0.78rem 1.6rem rgba(0, 0, 0, 0.28),
+        0 0.16rem 0.45rem rgba(0, 0, 0, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    }
+
+    :global(.dark) .friend-card-tag {
+      border-color: color-mix(in srgb, var(--primary) 22%, var(--line-divider));
+      background: color-mix(in srgb, var(--card-bg) 46%, transparent);
+      color: color-mix(in srgb, var(--text-color) 78%, var(--primary));
     }
 
     .friend-card--own {
       isolation: isolate;
-      border-color: color-mix(in srgb, var(--primary) 34%, var(--line-divider));
-      background: color-mix(in srgb, var(--primary) 14%, var(--card-bg));
-      box-shadow: 0 0.28rem 0.9rem color-mix(in srgb, var(--primary) 13%, transparent);
+      border-color: var(--friend-card-border-color);
+      background-color: color-mix(in srgb, var(--primary) 12%, transparent);
+      box-shadow:
+        0 0.42rem 1.18rem color-mix(in srgb, var(--primary) 22%, transparent),
+        0 0 1.05rem color-mix(in srgb, var(--primary) 12%, transparent);
     }
 
     .friend-card--own:hover {
-      border-color: color-mix(in srgb, var(--primary) 56%, var(--line-divider));
-      background: color-mix(in srgb, var(--primary) 19%, var(--card-bg));
-      box-shadow: 0 0.45rem 1.15rem color-mix(in srgb, var(--primary) 19%, transparent);
+      border-color: var(--friend-card-hover-border-color);
+      background-color: color-mix(in srgb, var(--primary) 18%, transparent);
+      box-shadow:
+        0 0.58rem 1.42rem color-mix(in srgb, var(--primary) 29%, transparent),
+        0 0 1.35rem color-mix(in srgb, var(--primary) 17%, transparent);
     }
 
     .friend-card--own .friend-card-surface::after {
@@ -1900,8 +2172,8 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
 
     .friend-card--own .friend-card-tag {
       color: #0c5f8b;
-      border: 1px solid color-mix(in srgb, #2a9dcc 42%, #acd7ef);
-      background: color-mix(in srgb, #2a9dcc 26%, #f4fbff);
+      border: 1px dashed color-mix(in srgb, #2a9dcc 42%, #acd7ef);
+      background: transparent;
     }
 
     .friend-card--own .friend-card-title {
@@ -1918,9 +2190,138 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
     .friend-card--recommended {
       --friend-recommended-cycle: 3.8s;
       isolation: isolate;
-      border-color: color-mix(in srgb, #e9bd51 42%, var(--line-divider));
-      background: color-mix(in srgb, #fff1b8 48%, var(--card-bg));
-      box-shadow: 0 0.28rem 0.9rem color-mix(in srgb, #e7b83e 14%, transparent);
+      border-color: var(--friend-card-border-color);
+      background-color: color-mix(in srgb, #fff1b8 25%, transparent);
+      box-shadow:
+        0 0.42rem 1.18rem color-mix(in srgb, #e7b83e 24%, transparent),
+        0 0 1.08rem color-mix(in srgb, #e7b83e 14%, transparent);
+    }
+
+    .friend-recommended-badge {
+      position: absolute;
+      top: -0.62rem;
+      left: 0.62rem;
+      z-index: 40;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.24rem;
+      min-height: 1.58rem;
+      padding: 0.22rem 0.62rem 0.24rem 0.5rem;
+      border: 0;
+      border-radius: 10px 7px 12px 8px;
+      background: transparent;
+      box-shadow: none;
+      color: #9b650b;
+      font-size: 0.64rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      line-height: 1;
+      white-space: nowrap;
+      pointer-events: none;
+      isolation: isolate;
+    }
+
+    .friend-recommended-badge::before {
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      content: "";
+      border: 1px dashed color-mix(in srgb, #e0a322 48%, rgba(255, 246, 219, 0.42));
+      border-radius: inherit;
+      background: color-mix(in srgb, #fff0b3 24%, transparent);
+      box-shadow:
+        0 0.3rem 0.5rem rgba(17, 17, 25, 0.12),
+        0 0.08rem 0.24rem rgba(17, 17, 25, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+      -webkit-backdrop-filter: blur(2px) saturate(1.02);
+      backdrop-filter: blur(2px) saturate(1.02);
+      transform: rotate(-2deg);
+      transform-origin: 50% 100%;
+      transition: transform 220ms ease, box-shadow 220ms ease;
+    }
+
+    .friend-recommended-badge > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .friend-recommended-icon {
+      width: 0.82rem;
+      height: 0.82rem;
+      color: #e09d13;
+      fill: currentColor;
+      filter: drop-shadow(0 0 0.12rem rgba(224, 157, 19, 0.25));
+    }
+
+    .friend-site-owner-badge {
+      color: #176e98;
+    }
+
+    .friend-site-owner-badge::before {
+      border-color: color-mix(in srgb, #42a9d8 48%, rgba(230, 248, 255, 0.42));
+      background: color-mix(in srgb, #b9eafa 24%, transparent);
+      box-shadow:
+        0 0.3rem 0.5rem rgba(17, 17, 25, 0.12),
+        0 0.08rem 0.24rem rgba(17, 17, 25, 0.08),
+        inset 0 1px rgba(255, 255, 255, 0.3);
+    }
+
+    .friend-owner-icon {
+      width: 0.82rem;
+      height: 0.82rem;
+      color: #2a9bca;
+      fill: currentColor;
+      filter: drop-shadow(0 0 0.12rem rgba(42, 155, 202, 0.24));
+    }
+
+    .friend-card:hover .friend-recommended-badge,
+    .friend-card:focus-visible .friend-recommended-badge {
+      transform: none;
+    }
+
+    .friend-card:hover .friend-recommended-badge::before,
+    .friend-card:focus-visible .friend-recommended-badge::before {
+      box-shadow:
+        0 0.34rem 0.5rem rgba(17, 17, 25, 0.16),
+        0 0.1rem 0.26rem rgba(17, 17, 25, 0.1),
+        inset 0 1px rgba(255, 255, 255, 0.36);
+      transform: translateY(-1px) rotate(-2deg);
+    }
+
+    :global(.dark) .friend-recommended-badge {
+      color: #ffe39a;
+    }
+
+    :global(.dark) .friend-recommended-badge::before {
+      border-color: color-mix(in srgb, #e9bd51 48%, rgba(255, 246, 219, 0.26));
+      background: color-mix(in srgb, #8b641b 24%, transparent);
+      box-shadow:
+        0 0.3rem 0.5rem rgba(0, 0, 0, 0.16),
+        0 0.08rem 0.24rem rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 236, 155, 0.2);
+    }
+
+    :global(.dark) .friend-site-owner-badge {
+      color: #d3f4ff;
+    }
+
+    :global(.dark) .friend-site-owner-badge::before {
+      border-color: color-mix(in srgb, #64c2e8 48%, rgba(213, 245, 255, 0.24));
+      background: color-mix(in srgb, #1d6f91 24%, transparent);
+      box-shadow:
+        0 0.3rem 0.5rem rgba(0, 0, 0, 0.16),
+        0 0.08rem 0.24rem rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(213, 245, 255, 0.2);
+    }
+
+    :global(.dark) .friend-recommended-icon {
+      color: #ffd56a;
+      filter: drop-shadow(0 0 0.14rem rgba(255, 213, 106, 0.28));
+    }
+
+    :global(.dark) .friend-owner-icon {
+      color: #87d8f5;
+      filter: drop-shadow(0 0 0.14rem rgba(135, 216, 245, 0.28));
     }
 
     .friend-card--recommended::before {
@@ -1942,35 +2343,6 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
       opacity: 0.76;
       mix-blend-mode: screen;
       animation: friend-recommended-outer-beam var(--friend-recommended-cycle) cubic-bezier(0.42, 0, 0.22, 1) infinite;
-    }
-
-    .friend-card--recommended::after {
-      position: absolute;
-      inset: -1px;
-      z-index: 6;
-      padding: 1px;
-      border-radius: calc(0.75rem + 1px);
-      content: "";
-      pointer-events: none;
-      background: linear-gradient(
-        105deg,
-        transparent 12%,
-        rgba(244, 181, 47, 0.12) 34%,
-        rgba(255, 235, 143, 0.92) 49%,
-        rgba(231, 157, 17, 0.48) 57%,
-        transparent 78%
-      );
-      background-size: 240% 100%;
-      -webkit-mask:
-        linear-gradient(#000 0 0) content-box,
-        linear-gradient(#000 0 0);
-      mask:
-        linear-gradient(#000 0 0) content-box,
-        linear-gradient(#000 0 0);
-      -webkit-mask-composite: xor;
-      mask-composite: exclude;
-      opacity: 0;
-      animation: friend-recommended-border-glint var(--friend-recommended-cycle) cubic-bezier(0.42, 0, 0.22, 1) infinite;
     }
 
     .friend-recommended-flow {
@@ -2170,30 +2542,6 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
       }
     }
 
-    @keyframes friend-recommended-border-glint {
-      0% {
-        background-position: 118% 0;
-        opacity: 0;
-      }
-
-      12% {
-        opacity: 0.42;
-      }
-
-      48% {
-        opacity: 0.9;
-      }
-
-      86% {
-        opacity: 0.38;
-      }
-
-      100% {
-        background-position: -118% 0;
-        opacity: 0;
-      }
-    }
-
     @keyframes friend-recommended-title-glow {
       0%,
       100% {
@@ -2290,21 +2638,25 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
     }
 
     .friend-card--recommended:hover {
-      border-color: color-mix(in srgb, #dfa92e 62%, var(--line-divider));
-      background: color-mix(in srgb, #ffeda4 58%, var(--card-bg));
-      box-shadow: 0 0.45rem 1.15rem color-mix(in srgb, #e7b83e 20%, transparent);
+      border-color: var(--friend-card-hover-border-color);
+      background-color: color-mix(in srgb, #ffeda4 36%, transparent);
+      box-shadow:
+        0 0.58rem 1.42rem color-mix(in srgb, #e7b83e 31%, transparent),
+        0 0 1.42rem color-mix(in srgb, #e7b83e 19%, transparent);
     }
 
     .friend-card--recommended .friend-card-tag {
       color: #8b620c;
-      border: 1px solid color-mix(in srgb, #dba922 24%, transparent);
-      background: color-mix(in srgb, #ffe89a 62%, white);
+      border: 1px dashed color-mix(in srgb, #dba922 24%, transparent);
+      background: transparent;
     }
 
     :global(.dark) .friend-card--recommended {
-      border-color: color-mix(in srgb, #e9bd51 32%, var(--line-divider));
-      background: color-mix(in srgb, #7a5714 18%, var(--card-bg));
-      box-shadow: 0 0.28rem 0.9rem color-mix(in srgb, #d39b24 12%, transparent);
+      border-color: var(--friend-card-border-color);
+      background-color: color-mix(in srgb, #7a5714 22%, transparent);
+      box-shadow:
+        0 0.42rem 1.18rem color-mix(in srgb, #d39b24 19%, transparent),
+        0 0 1.08rem color-mix(in srgb, #d39b24 12%, transparent);
     }
 
     :global(.dark) .friend-card--recommended .friend-card-title {
@@ -2328,17 +2680,19 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
     }
 
     :global(.dark) .friend-card--recommended:hover {
-      background: color-mix(in srgb, #8a6218 24%, var(--card-bg));
+      background-color: color-mix(in srgb, #8a6218 30%, transparent);
     }
 
     :global(.dark) .friend-card--own {
-      border-color: color-mix(in srgb, var(--primary) 28%, var(--line-divider));
-      background: color-mix(in srgb, var(--primary) 12%, var(--card-bg));
-      box-shadow: 0 0.28rem 0.9rem color-mix(in srgb, var(--primary) 10%, transparent);
+      border-color: var(--friend-card-border-color);
+      background-color: color-mix(in srgb, var(--primary) 16%, transparent);
+      box-shadow:
+        0 0.42rem 1.18rem color-mix(in srgb, var(--primary) 17%, transparent),
+        0 0 1.08rem color-mix(in srgb, var(--primary) 12%, transparent);
     }
 
     :global(.dark) .friend-card--own:hover {
-      background: color-mix(in srgb, var(--primary) 17%, var(--card-bg));
+      background-color: color-mix(in srgb, var(--primary) 22%, transparent);
     }
 
     :global(.dark) .friend-card--own .friend-card-title {
@@ -2355,13 +2709,13 @@ const friendsAiRecommendation = friendsAiRecommendationSegments
     :global(.dark) .friend-card--own .friend-card-tag {
       color: #a7def6;
       border-color: rgba(70, 175, 221, 0.42);
-      background: color-mix(in srgb, #187eae 28%, var(--card-bg));
+      background: transparent;
     }
 
     :global(.dark) .friend-card--recommended .friend-card-tag {
       color: #f2cf78;
       border-color: color-mix(in srgb, #d9a82e 24%, transparent);
-      background: color-mix(in srgb, #8b6419 28%, var(--card-bg));
+      background: transparent;
     }
 
     /* 降级推荐：保留黄色卡片与静态大星星，不启动扫光、流动层或标题发光。 */

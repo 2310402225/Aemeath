@@ -12,7 +12,7 @@ export const siteConfig: SiteConfig = {
 	subtitle: "物物而不物于物，念念而不念于念",
 
 	// Aemeath 主题版本
-	themeVersion: "V3.0.2",
+	themeVersion: "V3.4.0",
 
 	// 站点 URL
 	site_url: "https://rainzt.cn",
@@ -27,7 +27,7 @@ export const siteConfig: SiteConfig = {
 	// 主题色
 	themeColor: {
 		// 主题色的默认色相，范围从 0 到 360。例如：红色：0，青色：200，蓝绿色：250，粉色：345
-		hue: 240,
+		hue: 250,
 		// 是否对访问者隐藏主题色选择器
 		fixed: false,
 		// 默认模式："light" 亮色，"dark" 暗色，"system" 跟随系统

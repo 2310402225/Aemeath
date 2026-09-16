@@ -3,9 +3,15 @@ import "@waline/client/style";
 ---
 
 <script>
-	import { init } from "@waline/client";
+	import { getIconSvg } from "@/constants/icons";
 
 	(() => {
+		const runtimeWindow = window as typeof window & {
+			__rainztWalineManagerStarted?: boolean;
+		};
+		if (runtimeWindow.__rainztWalineManagerStarted) return;
+		runtimeWindow.__rainztWalineManagerStarted = true;
+
 		const rootSelector = "[data-waline-root]";
 		const localPreviewHosts = new Set(["localhost", "127.0.0.1", "::1", "0.0.0.0"]);
 		const isLocalPreview =
@@ -19,8 +25,14 @@ import "@waline/client/style";
 			});
 		};
 
-		let activeInstance: ReturnType<typeof init> | undefined;
+		type WalineInit = typeof import("@waline/client").init;
+		let walineModulePromise: Promise<WalineInit> | undefined;
+		let activeInstance: ReturnType<WalineInit> | undefined;
 		let activeRoot: HTMLElement | undefined;
+		let pendingRoot: HTMLElement | undefined;
+		let initGeneration = 0;
+		let rootObserver: IntersectionObserver | undefined;
+		let observedTarget: HTMLElement | undefined;
 		let avatarPreviewCleanup: (() => void) | undefined;
 		let pickerPositionCleanup: (() => void) | undefined;
 		let emojiFallbackCleanup: (() => void) | undefined;
@@ -28,7 +40,13 @@ import "@waline/client/style";
 		let ownedCommentFilterCleanup: (() => void) | undefined;
 		let replyCollapseCleanup: (() => void) | undefined;
 		let commentHintCleanup: (() => void) | undefined;
+		let commentAnchorCleanup: (() => void) | undefined;
 		let initQueued = false;
+
+		const loadWaline = () => {
+			walineModulePromise ??= import("@waline/client").then(({ init }) => init);
+			return walineModulePromise;
+		};
 
 		type WalineRole = "ai" | "owner" | "admin" | "recommended";
 
@@ -168,6 +186,75 @@ import "@waline/client/style";
 				observer.disconnect();
 				root.removeEventListener("input", onMailChange);
 				root.removeEventListener("change", onMailChange);
+				if (frameId !== undefined) cancelAnimationFrame(frameId);
+			};
+		};
+
+		const setupCommentAnchorNavigation = (root: HTMLElement) => {
+			let disposed = false;
+			let frameId: number | undefined;
+			let resolvedId = "";
+			let lastItemCount = -1;
+			let loadAttempts = 0;
+
+			const getCommentId = () => {
+				if (!window.location.hash) return "";
+				try {
+					const value = decodeURIComponent(window.location.hash.slice(1)).trim();
+					return /^(?:\d+|[a-f\d]{16,64})$/iu.test(value) ? value : "";
+				} catch {
+					return "";
+				}
+			};
+
+			const navigateToComment = () => {
+				frameId = undefined;
+				if (disposed) return;
+				const commentId = getCommentId();
+				if (!commentId || commentId === resolvedId) return;
+
+				const target = document.getElementById(commentId);
+				if (target instanceof HTMLElement) {
+					if (!root.contains(target) || !target.classList.contains("wl-card-item")) return;
+					resolvedId = commentId;
+					target.scrollIntoView({
+						behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+						block: "center",
+					});
+					return;
+				}
+
+				const itemCount = root.querySelectorAll(".wl-card-item").length;
+				const loadMore = root.querySelector<HTMLButtonElement>(
+					".wl-cards ~ .wl-operation > .wl-btn",
+				);
+				if (loadMore && itemCount > 0 && itemCount !== lastItemCount && loadAttempts < 20) {
+					lastItemCount = itemCount;
+					loadAttempts += 1;
+					loadMore.click();
+				}
+			};
+
+			const schedule = () => {
+				if (disposed || frameId !== undefined) return;
+				frameId = requestAnimationFrame(navigateToComment);
+			};
+			const reset = () => {
+				resolvedId = "";
+				lastItemCount = -1;
+				loadAttempts = 0;
+				schedule();
+			};
+
+			const observer = new MutationObserver(schedule);
+			observer.observe(root, { childList: true, subtree: true });
+			window.addEventListener("hashchange", reset);
+			schedule();
+
+			return () => {
+				disposed = true;
+				observer.disconnect();
+				window.removeEventListener("hashchange", reset);
 				if (frameId !== undefined) cancelAnimationFrame(frameId);
 			};
 		};
@@ -394,6 +481,63 @@ import "@waline/client/style";
 			let frameId: number | undefined;
 			let disposed = false;
 
+			const syncThreadStatus = (quote: HTMLElement) => {
+				const thread = quote.closest<HTMLElement>(".wl-card-item");
+				if (!thread || !thread.parentElement?.classList.contains("wl-cards")) return;
+
+				const card = thread.querySelector<HTMLElement>(":scope > .wl-card");
+				const head = card?.querySelector<HTMLElement>(":scope > .wl-head");
+				if (!card || !head) return;
+
+				const replyItems = Array.from(quote.querySelectorAll<HTMLElement>(".wl-card-item"));
+				const hasAiReply = replyItems.some((reply) => reply.dataset.walineRole === "ai");
+				const hasOwnerReply = replyItems.some((reply) => reply.dataset.walineRole === "owner");
+				const statusKind = hasAiReply && hasOwnerReply
+					? "both"
+					: hasAiReply
+						? "ai"
+						: hasOwnerReply
+							? "owner"
+							: "";
+				const statusLabel =
+					statusKind === "both"
+						? "AI · 站长已回复"
+						: statusKind === "ai"
+							? "AI 已回复"
+							: statusKind === "owner"
+								? "站长已回复"
+								: "";
+				const statusNodes = Array.from(
+					thread.querySelectorAll<HTMLElement>("[data-waline-thread-status]"),
+				);
+				const currentStatus = statusNodes.find((status) => status.parentElement === head);
+				statusNodes
+					.filter((status) => status !== currentStatus)
+					.forEach((status) => status.remove());
+
+				if (!statusKind) {
+					currentStatus?.remove();
+					delete thread.dataset.walineThreadStatus;
+					return;
+				}
+
+				const status = currentStatus || document.createElement("span");
+				status.className = "wl-thread-status";
+				status.dataset.walineThreadStatus = statusKind;
+				status.textContent = statusLabel;
+				status.setAttribute("aria-label", statusLabel);
+				status.title = statusLabel;
+				thread.dataset.walineThreadStatus = statusKind;
+				if (!currentStatus) {
+					const actions = head.querySelector<HTMLElement>(":scope > .wl-comment-actions");
+					if (actions) {
+						actions.insertAdjacentElement("afterend", status);
+					} else {
+						head.append(status);
+					}
+				}
+			};
+
 			const sync = () => {
 				frameId = undefined;
 				if (disposed) return;
@@ -406,41 +550,79 @@ import "@waline/client/style";
 					const toggle = quote.querySelector<HTMLButtonElement>(
 						":scope > [data-waline-reply-toggle]",
 					);
+					syncThreadStatus(quote);
 
-					if (replies.length <= 1) {
+					const expanded = quote.dataset.walineReplyExpanded === "true";
+					const firstAiReply = replies.find((reply) => reply.dataset.walineRole === "ai");
+					const hiddenReplySet = new Set(replies.slice(1));
+					if (firstAiReply) hiddenReplySet.add(firstAiReply);
+					const hiddenReplies = replies.filter((reply) => hiddenReplySet.has(reply));
+
+					if (hiddenReplies.length === 0) {
 						replies.forEach((reply) => {
 							reply.classList.remove("waline-reply-hidden");
 							reply.removeAttribute("aria-hidden");
 						});
 						toggle?.remove();
 						delete quote.dataset.walineReplyCollapse;
+						delete quote.dataset.walineAiReplyCollapse;
 						delete quote.dataset.walineReplyExpanded;
 						return;
 					}
 
-					const expanded = quote.dataset.walineReplyExpanded === "true";
-					const hiddenReplies = replies.slice(1);
-					hiddenReplies.forEach((reply) => {
-						reply.classList.toggle("waline-reply-hidden", !expanded);
-						reply.toggleAttribute("aria-hidden", !expanded);
+					replies.forEach((reply) => {
+						const shouldHide = hiddenReplySet.has(reply) && !expanded;
+						reply.classList.toggle("waline-reply-hidden", shouldHide);
+						reply.toggleAttribute("aria-hidden", shouldHide);
 					});
 					quote.dataset.walineReplyCollapse = "true";
+					if (firstAiReply) {
+						quote.dataset.walineAiReplyCollapse = "true";
+					} else {
+						delete quote.dataset.walineAiReplyCollapse;
+					}
 
 					const button = toggle || document.createElement("button");
 					button.type = "button";
 					button.className = "waline-reply-toggle";
 					button.dataset.walineReplyToggle = "true";
+					button.dataset.walineReplyKind = firstAiReply ? "ai" : "thread";
 					button.dataset.walineReplyExpanded = String(expanded);
 					button.setAttribute("aria-expanded", String(expanded));
-					button.textContent = expanded
-						? "收起回复"
-						: `展开其余 ${hiddenReplies.length} 条回复`;
-					button.title = expanded ? "收起回复" : "展开其余回复";
+					const aiHiddenCount = firstAiReply ? 1 : 0;
+					const accessibleLabel = expanded
+						? firstAiReply
+							? "收起 AI 回复"
+							: "收起回复"
+						: firstAiReply
+							? hiddenReplies.length === aiHiddenCount
+								? "展开 AI 回复"
+								: `展开 AI 回复及其余 ${hiddenReplies.length - aiHiddenCount} 条回复`
+							: `展开其余 ${hiddenReplies.length} 条回复`;
+					const visualLabel = firstAiReply
+						? expanded
+							? "收起回复"
+							: hiddenReplies.length === aiHiddenCount
+								? "展开回复"
+								: `展开回复及其余 ${hiddenReplies.length - aiHiddenCount} 条回复`
+						: accessibleLabel;
+					button.textContent = visualLabel;
+					button.setAttribute("aria-label", accessibleLabel);
+					button.title = accessibleLabel;
 
-					const firstReply = replies[0];
-					if (firstReply && firstReply.nextElementSibling !== button) {
-						firstReply.insertAdjacentElement("afterend", button);
+					const firstHiddenReply = hiddenReplies[0];
+					if (firstHiddenReply && firstHiddenReply.previousElementSibling !== button) {
+						firstHiddenReply.insertAdjacentElement("beforebegin", button);
 					}
+				});
+
+				root.querySelectorAll<HTMLElement>(".wl-card-item[data-waline-thread-status]").forEach((thread) => {
+					const quote = thread.querySelector<HTMLElement>(":scope > .wl-card > .wl-quote");
+					if (quote) return;
+					thread
+						.querySelectorAll<HTMLElement>("[data-waline-thread-status]")
+						.forEach((status) => status.remove());
+					delete thread.dataset.walineThreadStatus;
 				});
 			};
 
@@ -468,7 +650,12 @@ import "@waline/client/style";
 				signal: eventController.signal,
 			});
 			const observer = new MutationObserver(schedule);
-			observer.observe(root, { childList: true, subtree: true });
+			observer.observe(root, {
+				attributes: true,
+				attributeFilter: ["data-waline-role"],
+				childList: true,
+				subtree: true,
+			});
 			schedule();
 
 			return () => {
@@ -482,6 +669,12 @@ import "@waline/client/style";
 				root.querySelectorAll<HTMLElement>(".waline-reply-hidden").forEach((reply) => {
 					reply.classList.remove("waline-reply-hidden");
 					reply.removeAttribute("aria-hidden");
+				});
+				root.querySelectorAll<HTMLElement>(".wl-card-item[data-waline-thread-status]").forEach((thread) => {
+					thread
+						.querySelectorAll<HTMLElement>("[data-waline-thread-status]")
+						.forEach((status) => status.remove());
+					delete thread.dataset.walineThreadStatus;
 				});
 			};
 		};
@@ -995,8 +1188,6 @@ import "@waline/client/style";
 			const aiNick = "小爱客服";
 			const disclaimerLead = "本信息由Ai自动理解后调用";
 			const avatarSrc = "/favicon/chaoc-tingyu-avatar-512.png?v=20260907";
-			const adminUrl = "https://rainzt.cn/ai-comment-admin/";
-			const adminEntrySelector = '[data-waline-ai-admin-entry="true"]';
 			const ownSiteUrl = normalizeSiteUrl(root.dataset.walineSiteUrl || "");
 			const recommendedSiteUrls = new Set(
 				getRecommendedSiteUrls(root).map(normalizeSiteUrl).filter(Boolean),
@@ -1018,6 +1209,81 @@ import "@waline/client/style";
 						Array.from(head.querySelectorAll<HTMLElement>(":scope > .wl-badge:not(.wl-role-badge)"))
 							.some((badge) => badge.textContent?.trim() === "本站主理人"),
 				);
+
+			type WalineMetaIconKind = "browser" | "os";
+
+			const metaIconNames = {
+				android: "simple-icons:android",
+				brave: "simple-icons:brave",
+				chrome: "simple-icons:googlechrome",
+				firefox: "simple-icons:firefox",
+				ios: "material-symbols:phone-iphone",
+				linux: "simple-icons:linux",
+				macos: "simple-icons:apple",
+				mobile: "material-symbols:smartphone",
+				microsoftedge: "simple-icons:microsoftedge",
+				opera: "simple-icons:opera",
+				safari: "simple-icons:safari",
+				windows: "simple-icons:windows",
+			} as const;
+
+			type WalineMetaIcon = keyof typeof metaIconNames;
+
+			const normalizeMetaValue = (value: string) => value.trim().toLowerCase().replace(/\s+/gu, " ");
+
+			const getMetaIcon = (
+				field: HTMLElement,
+				kind: WalineMetaIconKind,
+			): WalineMetaIcon | null => {
+				const value = normalizeMetaValue(field.textContent || "");
+				if (!value) return null;
+
+				if (kind === "os") {
+					if (value.includes("windows")) return "windows";
+					if (value.includes("android")) return "android";
+					if (/iphone|ipad|ipod|ios/iu.test(value)) return "ios";
+					if (/macos|mac os|os x|macintosh/iu.test(value)) return "macos";
+					if (/linux|ubuntu|debian|fedora|arch/iu.test(value)) return "linux";
+					if (/mobile|tablet|phone/iu.test(value)) return "mobile";
+					return null;
+				}
+
+				if (/brave/iu.test(value)) return "brave";
+				if (/opera|opr\//iu.test(value)) return "opera";
+				if (/edge|edg\//iu.test(value)) return "microsoftedge";
+				if (/firefox|fxios/iu.test(value)) return "firefox";
+				if (/chrome|crios/iu.test(value)) return "chrome";
+				if (/safari/iu.test(value)) return "safari";
+				return null;
+			};
+
+			const syncMetaFieldIcon = (field: HTMLElement, kind: WalineMetaIconKind) => {
+				const iconKind = getMetaIcon(field, kind);
+				const currentIcon = field.querySelector<HTMLElement>(":scope > .waline-meta-icon");
+				if (!iconKind) {
+					currentIcon?.remove();
+					return;
+				}
+
+				const iconName = metaIconNames[iconKind];
+				const icon = currentIcon || document.createElement("span");
+				icon.className = "waline-meta-icon";
+				icon.dataset.walineMetaIcon = iconKind;
+				icon.dataset.walineMetaIconName = iconName;
+				icon.setAttribute("aria-hidden", "true");
+				if (icon.dataset.walineMetaIconRendered !== iconName) {
+					icon.innerHTML = getIconSvg(iconName);
+					icon.dataset.walineMetaIconRendered = iconName;
+				}
+				if (!currentIcon) field.prepend(icon);
+			};
+
+			const syncMetaIcons = (meta: HTMLElement) => {
+				const os = meta.querySelector<HTMLElement>(":scope > .wl-os");
+				const browser = meta.querySelector<HTMLElement>(":scope > .wl-browser");
+				if (os) syncMetaFieldIcon(os, "os");
+				if (browser) syncMetaFieldIcon(browser, "browser");
+			};
 
 			// This cache is used only for a local visual cue. Server-side Waline permissions remain
 			// authoritative, and no token or email is copied into the rendered DOM.
@@ -1192,51 +1458,11 @@ import "@waline/client/style";
 					});
 			};
 
-			const clearAiEntry = (nick: HTMLElement | null, content: HTMLElement | null) => {
-				if (nick?.dataset.walineAiAdminEntry === "true") {
-					delete nick.dataset.walineAiAdminEntry;
-					nick.removeAttribute("tabindex");
-					nick.removeAttribute("title");
-					nick.removeAttribute("aria-label");
-					if (!(nick instanceof HTMLAnchorElement) && nick.getAttribute("role") === "link") {
-						nick.removeAttribute("role");
-					}
-				}
+			const clearAiEntry = (content: HTMLElement | null) => {
 				content
 					?.querySelectorAll<HTMLElement>(".wl-ai-disclaimer")
 					.forEach((element) => element.classList.remove("wl-ai-disclaimer"));
 			};
-
-			const getAdminEntry = (target: EventTarget | null) =>
-				target instanceof Element
-					? target.closest<HTMLElement>(adminEntrySelector)
-					: null;
-
-			root.addEventListener(
-				"click",
-				(event) => {
-					if (getAdminEntry(event.target)) event.preventDefault();
-				},
-				{ signal: eventController.signal },
-			);
-			root.addEventListener(
-				"dblclick",
-				(event) => {
-					if (!getAdminEntry(event.target)) return;
-					event.preventDefault();
-					window.location.assign(adminUrl);
-				},
-				{ signal: eventController.signal },
-			);
-			root.addEventListener(
-				"keydown",
-				(event) => {
-					if (event.key !== "Enter" || !getAdminEntry(event.target)) return;
-					event.preventDefault();
-					window.location.assign(adminUrl);
-				},
-				{ signal: eventController.signal },
-			);
 
 			const decorate = () => {
 				frameId = undefined;
@@ -1303,10 +1529,11 @@ import "@waline/client/style";
 						} else if (!time && meta.parentElement !== head) {
 							head.append(meta);
 						}
+						syncMetaIcons(meta);
 					}
 
 					if (role !== "ai" || !nick || !content) {
-						clearAiEntry(nick, content);
+						clearAiEntry(content);
 						return;
 					}
 
@@ -1345,12 +1572,6 @@ import "@waline/client/style";
 						avatar.referrerPolicy = "no-referrer";
 						avatar.dataset.xiaoaiAvatar = "true";
 					}
-
-					nick.dataset.walineAiAdminEntry = "true";
-					nick.tabIndex = 0;
-					nick.title = "双击进入小爱客服后台";
-					nick.setAttribute("aria-label", "小爱客服，双击或按 Enter 进入管理后台");
-					if (!(nick instanceof HTMLAnchorElement)) nick.setAttribute("role", "link");
 
 					const disclaimer = Array.from(content.querySelectorAll<HTMLElement>("p, small, div"))
 						.find((element) => element.textContent?.trim().startsWith(disclaimerLead));
@@ -1407,6 +1628,9 @@ import "@waline/client/style";
 					item
 						.querySelectorAll<HTMLElement>("[data-waline-bubble-tail]")
 						.forEach((tail) => tail.remove());
+					item
+						.querySelectorAll<HTMLElement>(".waline-meta-icon")
+						.forEach((icon) => icon.remove());
 				});
 			};
 		};
@@ -1421,7 +1645,10 @@ import "@waline/client/style";
 		};
 
 		const teardownWaline = () => {
-			if (activeRoot) delete activeRoot.dataset.walineReady;
+			if (activeRoot) {
+				delete activeRoot.dataset.walineReady;
+				delete activeRoot.dataset.walineLoading;
+			}
 			try {
 				activeInstance?.destroy?.();
 			} catch (error) {
@@ -1441,34 +1668,64 @@ import "@waline/client/style";
 			ownedCommentFilterCleanup = undefined;
 			commentHintCleanup?.();
 			commentHintCleanup = undefined;
+			commentAnchorCleanup?.();
+			commentAnchorCleanup = undefined;
 			commentPresentationCleanup?.();
 			commentPresentationCleanup = undefined;
 			activeRoot = undefined;
 		};
 
-		const initWaline = () => {
-			hideLocalPageviewCounters();
-			const root = document.querySelector<HTMLElement>(rootSelector);
-			if (!root) {
-				teardownWaline();
-				return;
-			}
-			if (root === activeRoot && root.dataset.walineReady === "true") return;
+		const disconnectRootObserver = () => {
+			rootObserver?.disconnect();
+			rootObserver = undefined;
+			observedTarget = undefined;
+		};
 
+		const cancelPendingInit = () => {
+			initGeneration += 1;
+			if (pendingRoot) delete pendingRoot.dataset.walineLoading;
+			pendingRoot = undefined;
+		};
+
+		const initWaline = async (root: HTMLElement) => {
+			hideLocalPageviewCounters();
+			if (!root.isConnected || document.querySelector(rootSelector) !== root) return;
+			if (root === activeRoot && root.dataset.walineReady === "true") return;
+			if (root === pendingRoot) return;
+
+			cancelPendingInit();
 			teardownWaline();
-			delete root.dataset.walineReady;
 
 			const config = getConfig(root);
 			if (!config?.serverURL) return;
 
-			root.dataset.walineReady = "true";
+			const generation = ++initGeneration;
+			pendingRoot = root;
+			root.dataset.walineLoading = "true";
 			try {
+				const init = await loadWaline();
+				if (
+					generation !== initGeneration ||
+					pendingRoot !== root ||
+					!root.isConnected ||
+					document.querySelector(rootSelector) !== root
+				) {
+					return;
+				}
+
 				// Disable Waline's built-in image button. Its default uploader embeds files as
 				// Base64 in the comment body, which can exceed the configured word limit even
 				// for very small screenshots.
 				const runtimeConfig = isLocalPreview ? { ...config, pageview: false } : config;
-				activeInstance = init({ ...runtimeConfig, imageUploader: false, el: root });
+				const instance = init({ ...runtimeConfig, imageUploader: false, el: root });
+				if (generation !== initGeneration || pendingRoot !== root) {
+					instance?.destroy?.();
+					return;
+				}
+
+				activeInstance = instance;
 				activeRoot = root;
+				root.dataset.walineReady = "true";
 				avatarPreviewCleanup = setupAvatarPreview(root);
 				pickerPositionCleanup = setupPickerPositioning(root);
 				emojiFallbackCleanup = setupEmojiFallback(root, config.emoji);
@@ -1476,11 +1733,65 @@ import "@waline/client/style";
 				commentPresentationCleanup = setupCommentPresentation(root);
 				ownedCommentFilterCleanup = setupOwnedCommentFilter(root, config);
 				commentHintCleanup = setupCommentHint(root);
+				commentAnchorCleanup = setupCommentAnchorNavigation(root);
 			} catch (error) {
 				delete root.dataset.walineReady;
-				teardownWaline();
+				if (pendingRoot === root) teardownWaline();
 				console.error("[Waline] Failed to load the comment client.", error);
+			} finally {
+				if (pendingRoot === root) {
+					delete root.dataset.walineLoading;
+					pendingRoot = undefined;
+				}
 			}
+		};
+
+		const observeWalineRoot = (root: HTMLElement) => {
+			const config = getConfig(root);
+			const shouldLoadPageviewEarly = !isLocalPreview && config?.pageview === true;
+			const target = root.closest<HTMLElement>("#post-comments") || root;
+			if (observedTarget === target) return;
+
+			disconnectRootObserver();
+			if (
+				window.location.hash ||
+				!("IntersectionObserver" in window) ||
+				shouldLoadPageviewEarly
+			) {
+				void initWaline(root);
+				return;
+			}
+
+			observedTarget = target;
+			rootObserver = new IntersectionObserver(
+				(entries) => {
+					if (!entries.some((entry) => entry.isIntersecting)) return;
+					disconnectRootObserver();
+					void initWaline(root);
+				},
+				// The comments are intentionally below the friend list. Load them shortly
+				// before they enter the viewport, instead of during first paint.
+				{ rootMargin: "0px 0px 720px 0px", threshold: 0 },
+			);
+			rootObserver.observe(target);
+		};
+
+		const syncWalineRoot = () => {
+			const root = document.querySelector<HTMLElement>(rootSelector);
+			if (!root) {
+				disconnectRootObserver();
+				cancelPendingInit();
+				teardownWaline();
+				return;
+			}
+
+			if (root !== activeRoot && root !== pendingRoot) {
+				cancelPendingInit();
+				teardownWaline();
+			}
+			if (root === activeRoot && root.dataset.walineReady === "true") return;
+			if (root === pendingRoot) return;
+			observeWalineRoot(root);
 		};
 
 		const scheduleWalineInit = () => {
@@ -1488,24 +1799,14 @@ import "@waline/client/style";
 			initQueued = true;
 			requestAnimationFrame(() => {
 				initQueued = false;
-				initWaline();
-			});
-		};
-
-		const observeSwupContainer = () => {
-			const container = document.querySelector("#swup-container");
-			if (!container) return;
-
-			new MutationObserver(scheduleWalineInit).observe(container, {
-				childList: true,
-				subtree: true,
+				syncWalineRoot();
 			});
 		};
 
 		scheduleWalineInit();
-		observeSwupContainer();
 		document.addEventListener("astro:page-load", scheduleWalineInit);
 		document.addEventListener("swup:contentReplaced", scheduleWalineInit);
 		document.addEventListener("swup:page:view", scheduleWalineInit);
+		document.addEventListener("hashchange", scheduleWalineInit);
 	})();
 </script>

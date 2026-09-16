@@ -18,6 +18,7 @@ import {
 import { Icon } from "astro-icon/components";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
+import GrandmaTimeFilm from "@/components/article/GrandmaTimeFilm.svelte";
 import MonthlyExperiment from "@/components/article/MonthlyExperiment.svelte";
 import CoverImage from "@/components/common/CoverImage.astro";
 import PostMetadata from "@/components/layout/PostMeta.astro";
@@ -64,6 +65,7 @@ const processedImage = processCoverImageSync(entry.data.image, entry.id);
 const preservePostCoverRatio = [
 	"chao-chao-listening-rain-years-wind",
 	"others/youth-most-expensive/youth-most-expensive",
+	"in-grandmas-white-hair-i-saw-time",
 ].includes(entry.id);
 const forcePostTitleBreak = entry.id === "others/youth-most-expensive/youth-most-expensive";
 const postMarkdownClass = [
@@ -304,6 +306,7 @@ if (entry.id === "monthly-2026-08") {
           tags={entry.data.tags}
           category={entry.data.category || undefined}
           id={entry.id}
+          aiPolished={entry.data.aiPolished}
         />
         {
           !processedImage && (
@@ -315,7 +318,9 @@ if (entry.id === "monthly-2026-08") {
       <!-- always show cover as long as it has one -->
 
       {
-        processedImage && coverImageConfig.enableInPost && (
+        processedImage &&
+        coverImageConfig.enableInPost &&
+        (
           <div style="margin-top:1rem;">
             <CoverImage
               id="post-cover"
@@ -433,9 +438,17 @@ if (entry.id === "monthly-2026-08") {
         </EncryptedPost>
       ) : (
         <>
-          <Markdown class={`mb-6 markdown-content onload-animation ${postMarkdownClass}`}>
-            <Content />
-          </Markdown>
+          {entry.id === "in-grandmas-white-hair-i-saw-time" ? (
+            <GrandmaTimeFilm client:load>
+              <Markdown slot="plain" class={`mb-6 markdown-content onload-animation ${postMarkdownClass}`}>
+                <Content />
+              </Markdown>
+            </GrandmaTimeFilm>
+          ) : (
+            <Markdown class={`mb-6 markdown-content onload-animation ${postMarkdownClass}`}>
+              <Content />
+            </Markdown>
+          )}
 
           {/* 打赏按钮 & 分享按钮 */}
           {

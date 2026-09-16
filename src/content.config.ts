@@ -10,6 +10,7 @@ type PostData = {
 	draft: boolean;
 	description: string;
 	aiSummary: string;
+	aiPolished: boolean;
 	image: string;
 	tags: string[];
 	category: string | null;
@@ -41,6 +42,7 @@ const postsCollection: PostsCollection = defineCollection({
 		draft: z.boolean().optional().default(false),
 		description: z.string().optional().default(""),
 		aiSummary: z.string().optional().default(""),
+		aiPolished: z.boolean().optional().default(true),
 		image: z.string().optional().default(""),
 		tags: z.array(z.string()).optional().default([]),
 		category: z.string().optional().nullable().default(""),

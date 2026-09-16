@@ -7,6 +7,7 @@ import { i18n } from "@/i18n/translation";
 import type { WidgetComponentConfig } from "@/types/config";
 
 const config = announcementConfig;
+const links = config.links ?? (config.link ? [config.link] : []);
 
 interface Props {
 	class?: string;
@@ -28,23 +29,26 @@ const showTitle = widgetConfig?.showTitle !== false;
 >
   <div>
     <!-- 公告栏内容 -->
-    <div class="text-neutral-600 dark:text-neutral-300 leading-relaxed mb-3">
+    <div class="text-neutral-600 dark:text-neutral-300 leading-relaxed mb-3 whitespace-pre-line">
       {config.content}
     </div>
 
     <!-- 可选链接和关闭按钮 -->
     <div class="flex items-center justify-between gap-3">
-      <div>
+      <div class="flex flex-wrap items-center gap-2">
         {
-          config.link && config.link.enable !== false && (
-            <a
-              href={config.link.url}
-              target={config.link.external ? "_blank" : "_self"}
-              rel={config.link.external ? "noopener noreferrer" : undefined}
-              class="btn-regular rounded-lg px-3 py-1.5 text-sm font-medium active:scale-95 transition-transform"
-            >
-              {config.link.text}
-            </a>
+          links.map(
+            (link) =>
+              link.enable !== false && (
+                <a
+                  href={link.url}
+                  target={link.external ? "_blank" : "_self"}
+                  rel={link.external ? "noopener noreferrer" : undefined}
+                  class="btn-regular rounded-lg px-3 py-1.5 text-sm font-medium active:scale-95 transition-transform"
+                >
+                  {link.text}
+                </a>
+              ),
           )
         }
       </div>

@@ -31,14 +31,33 @@ export class TOCManager {
 	}
 
 	/**
+	 * 判断元素及其祖先是否处于可见状态
+	 */
+	private isVisibleElement(element: Element): boolean {
+		let current: Element | null = element;
+		while (current) {
+			if (
+				(current as HTMLElement).hidden ||
+				window.getComputedStyle(current).display === "none"
+			) {
+				return false;
+			}
+			current = current.parentElement;
+		}
+		return true;
+	}
+
+	/**
 	 * 查找文章内容容器
 	 */
 	private getContentContainer(): Element | null {
-		return (
-			document.querySelector(".custom-md") ||
-			document.querySelector(".prose") ||
-			document.querySelector(".markdown-content")
-		);
+		for (const selector of [".custom-md", ".prose", ".markdown-content"]) {
+			const visibleContainer = Array.from(document.querySelectorAll(selector)).find(
+				(element) => this.isVisibleElement(element),
+			);
+			if (visibleContainer) return visibleContainer;
+		}
+		return null;
 	}
 
 	/**
@@ -50,8 +69,15 @@ export class TOCManager {
 			return [];
 		}
 		return Array.from(
-			contentContainer.querySelectorAll("h1, h2, h3, h4, h5, h6"),
-		);
+			contentContainer.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6"),
+		).filter((heading) => this.isVisibleElement(heading));
+	}
+
+	/**
+	 * 查找当前可见版本中的标题，避免动态版与 Markdown 版 ID 重复时命中隐藏标题
+	 */
+	private getVisibleHeadingById(id: string): HTMLElement | null {
+		return this.getAllHeadings().find((heading) => heading.id === id) ?? null;
 	}
 
 	/**
@@ -371,7 +397,7 @@ export class TOCManager {
 		const id = decodeURIComponent(
 			target.getAttribute("href")?.substring(1) || "",
 		);
-		const targetElement = document.getElementById(id);
+		const targetElement = this.getVisibleHeadingById(id);
 
 		if (targetElement) {
 			const targetTop =

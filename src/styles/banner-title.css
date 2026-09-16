@@ -108,6 +108,15 @@
     display: inline;
 }
 
+.banner-post-ai-summary__disclaimer {
+    margin-top: 0.5rem;
+    color: rgba(228, 242, 255, 0.72);
+    font-size: 0.68rem;
+    font-weight: 500;
+    line-height: 1.45;
+    letter-spacing: 0.01em;
+}
+
 .mobile-post-ai-summary-shell {
     display: none;
 }
@@ -160,6 +169,10 @@
         overflow-wrap: anywhere;
         word-break: break-word;
         color: rgba(36, 52, 71, 0.88);
+    }
+
+    .mobile-post-ai-summary .banner-post-ai-summary__disclaimer {
+        color: rgba(44, 68, 94, 0.68);
     }
 
     .banner-post-ai-summary.friends-ai-recommendation--inline {
@@ -221,6 +234,10 @@
     :root.dark .mobile-post-ai-summary p,
     :root.dark .banner-post-ai-summary.friends-ai-recommendation--inline p {
         color: rgba(235, 243, 251, 0.9) !important;
+    }
+
+    :root.dark .mobile-post-ai-summary .banner-post-ai-summary__disclaimer {
+        color: rgba(216, 229, 243, 0.72);
     }
 
     /* 移动端沿用打字机摘要，确保桌面端与手机端的阅读节奏一致。 */

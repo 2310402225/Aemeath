@@ -150,8 +150,9 @@ const aiWalineUserIds: number[] = [];
 		color: color-mix(in oklab, var(--btn-content) 84%, white);
 	}
 
-	/* Keep long reply threads quiet by default: the first reply stays visible and the
-	 * remaining replies are available through one explicit, keyboard-friendly control. */
+	/* Keep long reply threads quiet by default: the first ordinary reply stays visible,
+	 * while the first AI reply and remaining replies are available through one explicit,
+	 * keyboard-friendly control. */
 	#waline .wl-card-item.waline-reply-hidden {
 		display: none;
 	}
@@ -161,21 +162,36 @@ const aiWalineUserIds: number[] = [];
 	}
 
 	#waline .waline-reply-toggle {
+		position: relative;
 		display: flex;
 		width: fit-content;
+		max-width: min(100%, 30rem);
 		align-items: center;
+		justify-content: center;
 		gap: 0.42rem;
-		margin: 0.06rem auto 0.34rem;
-		padding: 0.18rem 0.08rem;
-		border: 0;
-		border-radius: 0.35rem;
-		background: transparent;
-		color: color-mix(in oklab, var(--primary) 72%, var(--content-meta));
-		font: 700 0.69rem/1.25 var(--font-body, inherit);
+		margin: 0.42rem auto 0.54rem;
+		min-height: 1.72rem;
+		padding: 0 0.58rem;
+		border: 1px dashed rgba(255, 246, 219, 0.42);
+		border-radius: 10px 7px 12px 8px;
+		background-color: transparent;
+		box-shadow:
+			0 0.42rem 0.85rem rgba(17, 17, 25, 0.16),
+			0 0.13rem 0.34rem rgba(17, 17, 25, 0.1),
+			inset 0 1px 0 rgba(255, 255, 255, 0.22);
+		color: color-mix(in oklab, var(--content-meta) 88%, var(--text-color));
+		font: 800 0.7rem/1 var(--font-body, inherit);
+		font-variant-numeric: tabular-nums;
+		letter-spacing: 0.045em;
 		cursor: pointer;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 		transition:
+			border-color 0.2s ease,
 			color 0.2s ease,
 			background-color 0.2s ease,
+			box-shadow 0.2s ease,
 			transform 0.2s ease;
 	}
 
@@ -184,9 +200,42 @@ const aiWalineUserIds: number[] = [];
 		height: 0.38rem;
 		border-inline-end: 1.5px solid currentColor;
 		border-block-end: 1.5px solid currentColor;
+		flex: 0 0 auto;
 		content: "";
 		transform: translateY(-0.1rem) rotate(45deg);
 		transition: transform 0.2s ease;
+	}
+
+	#waline .waline-reply-toggle::before {
+		width: 0.4rem;
+		height: 0.4rem;
+		flex: 0 0 auto;
+		border-radius: 999px;
+		background: currentColor;
+		box-shadow: 0 0 0.35rem color-mix(in oklab, currentColor 42%, transparent);
+		content: "";
+		opacity: 0.82;
+	}
+
+	#waline .waline-reply-toggle[data-waline-reply-kind="ai"]::before {
+		display: inline-flex;
+		width: auto;
+		min-width: 1.22rem;
+		height: 1.02rem;
+		align-items: center;
+		justify-content: center;
+		padding: 0 0.26rem;
+		border: 1px dashed color-mix(in oklab, var(--primary) 32%, currentColor);
+		border-radius: 5px 4px 6px 4px;
+		background: color-mix(in oklab, var(--primary) 8%, transparent);
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+		color: var(--primary);
+		content: "AI";
+		font-size: 0.55rem;
+		font-weight: 900;
+		letter-spacing: 0.08em;
+		line-height: 1;
+		opacity: 1;
 	}
 
 	#waline .waline-reply-toggle[data-waline-reply-expanded="true"]::after {
@@ -194,9 +243,19 @@ const aiWalineUserIds: number[] = [];
 	}
 
 	#waline .waline-reply-toggle:hover {
-		background: color-mix(in oklab, var(--primary) 8%, transparent);
+		border-color: rgba(255, 246, 219, 0.62);
 		color: var(--primary);
-		transform: translateY(-1px);
+		box-shadow:
+			0 0.5rem 1rem rgba(17, 17, 25, 0.2),
+			0 0.14rem 0.38rem rgba(17, 17, 25, 0.12),
+			inset 0 1px 0 rgba(255, 255, 255, 0.3);
+		transform: translateY(-0.04rem);
+	}
+
+	html.dark #waline .waline-reply-toggle {
+		border-color: rgba(255, 246, 219, 0.26);
+		background-color: transparent;
+		color: color-mix(in oklab, var(--content-meta) 92%, white);
 	}
 
 	#waline .waline-reply-toggle:focus-visible {
@@ -535,6 +594,86 @@ const aiWalineUserIds: number[] = [];
 		line-height: 1.35;
 	}
 
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta > .wl-os,
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta > .wl-browser {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.16rem;
+	}
+
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta .waline-meta-icon {
+		display: inline-flex;
+		flex: 0 0 0.9rem;
+		align-items: center;
+		justify-content: center;
+		width: 0.9rem;
+		height: 0.9rem;
+		color: var(--waline-meta-icon-color, var(--content-meta));
+		font-size: 0.9rem;
+		line-height: 1;
+		opacity: 0.94;
+	}
+
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta .waline-meta-icon svg {
+		display: block;
+		width: 100%;
+		height: 100%;
+		fill: currentColor;
+	}
+
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta > .wl-os > .waline-meta-icon {
+		--waline-meta-icon-color: #1677d2;
+	}
+
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta > .wl-os > .waline-meta-icon[data-waline-meta-icon="android"] {
+		--waline-meta-icon-color: #3ddc84;
+	}
+
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta > .wl-os > .waline-meta-icon[data-waline-meta-icon="ios"] {
+		--waline-meta-icon-color: #5f6872;
+	}
+
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta > .wl-os > .waline-meta-icon[data-waline-meta-icon="linux"] {
+		--waline-meta-icon-color: #d28b00;
+	}
+
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta > .wl-os > .waline-meta-icon[data-waline-meta-icon="macos"] {
+		--waline-meta-icon-color: #606a75;
+	}
+
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta > .wl-os > .waline-meta-icon[data-waline-meta-icon="mobile"] {
+		--waline-meta-icon-color: #4c8ed9;
+	}
+
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta .waline-meta-icon[data-waline-meta-icon="chrome"] {
+		--waline-meta-icon-color: #4285f4;
+	}
+
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta .waline-meta-icon[data-waline-meta-icon="firefox"] {
+		--waline-meta-icon-color: #e65d2f;
+	}
+
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta .waline-meta-icon[data-waline-meta-icon="microsoftedge"] {
+		--waline-meta-icon-color: #0b9ed0;
+	}
+
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta .waline-meta-icon[data-waline-meta-icon="safari"] {
+		--waline-meta-icon-color: #0d9fd3;
+	}
+
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta .waline-meta-icon[data-waline-meta-icon="opera"] {
+		--waline-meta-icon-color: #e51b23;
+	}
+
+	#waline .wl-card-item > .wl-card > .wl-head > .wl-meta .waline-meta-icon[data-waline-meta-icon="brave"] {
+		--waline-meta-icon-color: #fb542b;
+	}
+
+	html.dark #waline .wl-card-item > .wl-card > .wl-head > .wl-meta > .wl-os > .waline-meta-icon[data-waline-meta-icon="ios"],
+	html.dark #waline .wl-card-item > .wl-card > .wl-head > .wl-meta > .wl-os > .waline-meta-icon[data-waline-meta-icon="macos"] {
+		--waline-meta-icon-color: #dbe7f1;
+	}
+
 	#waline .wl-card-item[data-waline-side="right"] > .wl-card > .wl-head > .wl-meta {
 		text-align: right;
 	}
@@ -559,6 +698,53 @@ const aiWalineUserIds: number[] = [];
 	#waline .wl-card-item[data-waline-side="right"] > .wl-card > .wl-content {
 		margin-inline-start: auto;
 		border-radius: 0.38rem 0.38rem 0.12rem 0.38rem;
+	}
+
+	/* Keep the thread stamp in the metadata line so it reads as a status, not another message. */
+    #waline .wl-thread-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.1rem;
+        align-self: center;
+        order: 5;
+        max-width: min(100%, 6.5rem);
+        min-height: 0;
+        margin: 0;
+        padding: 0.02rem 0.12rem;
+        border: 0;
+        border-bottom: 1px dotted color-mix(in oklab, var(--waline-thread-status-accent) 58%, transparent);
+        border-radius: 0;
+        background: transparent;
+        color: color-mix(in oklab, var(--waline-thread-status-accent) 84%, var(--content-meta));
+        font-family: inherit;
+        font-size: 0.68rem;
+        font-weight: 400;
+        line-height: 1.35;
+        letter-spacing: 0;
+        text-align: left;
+        white-space: nowrap;
+        opacity: 0.72;
+    }
+
+    #waline .wl-thread-status::before {
+        display: none;
+    }
+
+	#waline .wl-thread-status[data-waline-thread-status="ai"] {
+		--waline-thread-status-accent: #8d7cff;
+	}
+
+	#waline .wl-thread-status[data-waline-thread-status="owner"] {
+		--waline-thread-status-accent: #1dbde8;
+	}
+
+	#waline .wl-thread-status[data-waline-thread-status="both"] {
+		--waline-thread-status-accent: #9f86e8;
+	}
+
+	html.dark #waline .wl-thread-status {
+		background: color-mix(in oklab, var(--waline-thread-status-accent) 12%, transparent);
+		color: color-mix(in oklab, var(--waline-thread-status-accent) 82%, white);
 	}
 
 	#waline .wl-card-item > .wl-card > .wl-content > .wl-bubble-tail {

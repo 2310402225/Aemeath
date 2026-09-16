@@ -110,6 +110,8 @@ const activePaths = [
 						loading="eager"
 						decoding="async"
 					/>
+				) : processedLink.icon ? (
+					<Icon is:inline name={processedLink.icon} class="nav-icon navbar-icon" />
 				) : getNavSymbol(processedLink) && (
 					<span class="nav-icon navbar-icon">{getNavSymbol(processedLink)}</span>
 				)}
@@ -127,7 +129,18 @@ const activePaths = [
 						isLast={index === (processedLink.children?.length || 0) - 1}
 						class:list={["dropdown-item h-10", isLinkActive(child) && "dropdown-item-active"]}
 					>
-						{child.icon && <Icon is:inline name={child.icon} class="text-[1.25rem] mr-3 navbar-icon" />}
+						{child.external && child.iconImage ? (
+							<img
+								src={child.iconImage}
+								alt=""
+								aria-hidden="true"
+								class="text-[1.25rem] mr-3 navbar-icon external-link-icon"
+								loading="eager"
+								decoding="async"
+							/>
+						) : child.icon ? (
+							<Icon is:inline name={child.icon} class="text-[1.25rem] mr-3 navbar-icon" />
+						) : null}
 						<span>{child.name}</span>
 						{child.external && (
 							<Icon is:inline name="fa7-solid:arrow-up-right-from-square" class="text-[0.75rem] text-black/25 dark:text-white/25 ml-auto" />
@@ -158,6 +171,8 @@ const activePaths = [
 						loading="eager"
 						decoding="async"
 					/>
+				) : processedLink.icon ? (
+					<Icon is:inline name={processedLink.icon} class="nav-icon navbar-icon" />
 				) : getNavSymbol(processedLink) && (
 					<span class="nav-icon navbar-icon">{getNavSymbol(processedLink)}</span>
 				)}
@@ -244,7 +259,8 @@ const activePaths = [
 	.navbar-icon {
 		transition:
 			transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-			color 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+			color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+			filter 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
 	.external-link-icon {
@@ -252,6 +268,10 @@ const activePaths = [
 		height: 1.15rem;
 		object-fit: contain;
 		flex: 0 0 auto;
+	}
+
+	:global(html.dark) .external-link-icon {
+		filter: brightness(0) invert(1) opacity(0.78);
 	}
 
 	.dropdown-item-active {

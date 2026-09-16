@@ -116,4 +116,9 @@ const showTitle = widgetConfig?.showTitle !== false;
   document.addEventListener("password:decrypted", () => {
     setTimeout(initSidebarTOC, 200);
   });
+
+  // 动态文章在切换阅读版本后，重新读取当前可见版本的标题
+  window.addEventListener("article-toc-refresh", () => {
+    setTimeout(initSidebarTOC, 0);
+  });
 </script>

@@ -27,6 +27,26 @@ const ICON_SETS = {
 	"svg-spinners": "@iconify-json/svg-spinners",
 };
 
+// These icons are inserted into the DOM after Waline renders its comments, so
+// they cannot be discovered from a Svelte template scan. Keep them in the same
+// generated inline-SVG bundle instead of fetching brand assets at runtime.
+const EXTRA_ICONS = [
+	"material-symbols:smartphone",
+	"material-symbols:phone-iphone",
+	"simple-icons:android",
+	"simple-icons:apple",
+	"simple-icons:brave",
+	"simple-icons:firefox",
+	"simple-icons:googlechrome",
+	"simple-icons:ios",
+	"simple-icons:linux",
+	"simple-icons:macos",
+	"simple-icons:microsoftedge",
+	"simple-icons:opera",
+	"simple-icons:safari",
+	"simple-icons:windows",
+];
+
 // 图标集数据缓存
 const iconSetCache = new Map();
 
@@ -227,6 +247,10 @@ async function main() {
 		for (const icon of icons) {
 			allIcons.add(icon);
 		}
+	}
+
+	for (const icon of EXTRA_ICONS) {
+		allIcons.add(icon);
 	}
 
 	console.log(`🎨 发现 ${allIcons.size} 个不同的图标:\n`);

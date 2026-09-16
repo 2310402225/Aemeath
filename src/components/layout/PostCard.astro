@@ -203,6 +203,7 @@ const preserveCoverRatio = new Set([
 	"why-i-still-write-in-the-age-of-ai",
 	"chao-chao-listening-rain-years-wind",
 	"others/youth-most-expensive/youth-most-expensive",
+	"in-grandmas-white-hair-i-saw-time",
 	"from-matriarchal-society-to-patriarchy",
 	"monthly-2026-08",
 ]).has(entry.id);
@@ -215,6 +216,7 @@ const fullPreviewCover = new Set([
 	"why-i-still-write-in-the-age-of-ai",
 	"chao-chao-listening-rain-years-wind",
 	"others/youth-most-expensive/youth-most-expensive",
+	"in-grandmas-white-hair-i-saw-time",
 	"from-matriarchal-society-to-patriarchy",
 	"monthly-2026-08",
 ]).has(entry.id);
@@ -230,6 +232,7 @@ const updateBadgeDate =
 const updateBadgeLabel = updateBadgeDate
 	? `已于${updateBadgeDate}更新`
 	: undefined;
+const isNewSystemPost = entry.id === "in-grandmas-white-hair-i-saw-time";
 
 const showTags = siteConfig.postListLayout.showTags;
 const tagCount = Math.max(
@@ -255,12 +258,21 @@ const minutes = remarkPluginFrontmatter.minutes;
     hasCover ? "has-cover" : "no-cover",
     fullPreviewCover ? "post-card-full-preview" : "",
     pinned ? "pinned" : "",
+    isNewSystemPost ? "has-new-system-badge" : "",
     "card-base flex flex-col-reverse w-full rounded-(--radius-large) overflow-hidden relative",
     className,
   ]}
   data-card-decor={cardDecor}
   style={style}
 >
+  {
+    isNewSystemPost && (
+      <span class="post-card-system-badge" role="note">
+        <Icon is:inline name="material-symbols:auto-awesome-rounded" aria-hidden="true" />
+        <span>全新体系文章</span>
+      </span>
+    )
+  }
   <!-- pinned icon -->
   <div
     class:list={[
@@ -304,7 +316,7 @@ const minutes = remarkPluginFrontmatter.minutes;
       category={category || undefined}
       pinned={pinned}
       password={password}
-      className="mb-4 post-meta card-header-meta"
+      className={`mb-4 post-meta card-header-meta ${isNewSystemPost ? "post-meta-new-system" : ""}`}
     />
 
     <!-- description -->
@@ -405,6 +417,93 @@ const minutes = remarkPluginFrontmatter.minutes;
 </div>
 
 <style define:vars={{ coverWidth, descriptionClampLines }}>
+  .post-card-wrapper.has-new-system-badge {
+    overflow: visible;
+  }
+
+  .post-card-system-badge {
+    position: absolute !important;
+    top: -0.74rem;
+    left: 0.72rem;
+    z-index: 40 !important;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.24rem;
+    min-height: 1.62rem;
+    padding: 0.23rem 0.62rem 0.25rem 0.5rem;
+    color: #9b650b;
+    font-size: 0.64rem;
+    font-weight: 750;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    white-space: nowrap;
+    pointer-events: none;
+    isolation: isolate;
+    transform: rotate(-2deg);
+    transform-origin: 50% 100%;
+  }
+
+  .post-card-system-badge::before {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    content: "";
+    border: 1px dashed color-mix(in srgb, #e0a322 52%, rgba(255, 246, 219, 0.42));
+    border-radius: 10px 7px 12px 8px;
+    background: color-mix(in srgb, #fff0b3 36%, var(--card-bg));
+    box-shadow:
+      0 0.3rem 0.5rem rgba(17, 17, 25, 0.13),
+      0 0.08rem 0.24rem rgba(17, 17, 25, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.38);
+    -webkit-backdrop-filter: blur(2px) saturate(1.04);
+    backdrop-filter: blur(2px) saturate(1.04);
+  }
+
+  .post-card-system-badge > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .post-card-system-badge :global(svg) {
+    width: 0.82rem;
+    height: 0.82rem;
+    flex: 0 0 auto;
+    color: #e09d13;
+    filter: drop-shadow(0 0 0.12rem rgba(224, 157, 19, 0.25));
+  }
+
+  .post-card-wrapper.has-new-system-badge :global(.post-meta-new-system .meta-icon) {
+    background: color-mix(in srgb, #f4c84e 44%, var(--card-bg));
+    color: #9b650b;
+  }
+
+  .post-card-wrapper.has-new-system-badge > .post-card-content {
+    background-color: color-mix(in srgb, #fff0b3 36%, var(--card-bg));
+    border-radius: 0 0 var(--radius-large) var(--radius-large);
+  }
+
+  :global(html.dark) .post-card-wrapper.has-new-system-badge :global(.post-meta-new-system .meta-icon) {
+    background: color-mix(in srgb, #8b641b 56%, var(--card-bg));
+    color: #ffe39a;
+  }
+
+  :global(html.dark) .post-card-wrapper.has-new-system-badge > .post-card-content {
+    background-color: color-mix(in srgb, #8b641b 34%, var(--card-bg));
+  }
+
+  :global(html.dark) .post-card-system-badge {
+    color: #ffe39a;
+  }
+
+  :global(html.dark) .post-card-system-badge::before {
+    border-color: color-mix(in srgb, #e9bd51 52%, rgba(255, 246, 219, 0.26));
+    background: color-mix(in srgb, #8b641b 36%, var(--card-bg));
+    box-shadow:
+      0 0.3rem 0.5rem rgba(0, 0, 0, 0.16),
+      0 0.08rem 0.24rem rgba(0, 0, 0, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+
   .post-card-update-badge {
     position: absolute;
     top: 0.6rem;
@@ -463,6 +562,19 @@ const minutes = remarkPluginFrontmatter.minutes;
   }
 
   @media (max-width: 767px) {
+    .post-card-system-badge {
+      top: -0.66rem;
+      left: 0.58rem;
+      min-height: 1.5rem;
+      padding: 0.21rem 0.52rem 0.23rem 0.44rem;
+      font-size: 0.6rem;
+    }
+
+    .post-card-system-badge :global(svg) {
+      width: 0.76rem;
+      height: 0.76rem;
+    }
+
     .post-card-update-badge {
       top: 0.45rem;
       right: 0.45rem;

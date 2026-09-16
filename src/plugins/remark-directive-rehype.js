@@ -83,6 +83,42 @@ export function parseDirectiveNode() {
 					node.data = data;
 					node.attributes = node.attributes || {};
 
+					// Lottie 是内联文本指令：`:lottie[kaixin]{}`。
+					// 将标签内容转成 data 属性，避免动画初始化前把文件名直接渲染到正文里。
+					if (name === "lottie") {
+						const label = node.children
+							.map((child) => (child.type === "text" ? child.value : ""))
+							.join("")
+							.trim();
+						const configuredName =
+							node.attributes.name || node.attributes.src || label;
+
+						if (configuredName) {
+							node.attributes["data-lottie-name"] =
+								String(configuredName).trim();
+							node.attributes["aria-label"] =
+								node.attributes["aria-label"] ||
+								label ||
+								String(configuredName).trim();
+							node.attributes.role = "img";
+							node.attributes.class = [node.attributes.class, "lottie-emoji"]
+								.filter(Boolean)
+								.join(" ");
+						}
+
+						if (node.attributes.speed) {
+							node.attributes["data-lottie-speed"] = node.attributes.speed;
+							delete node.attributes.speed;
+						}
+						if (node.attributes.size) {
+							node.attributes["data-lottie-size"] = node.attributes.size;
+							delete node.attributes.size;
+						}
+						delete node.attributes.name;
+						delete node.attributes.src;
+						node.children = [];
+					}
+
 					// Add specific attributes for directive labels
 					if (
 						node.children.length > 0 &&

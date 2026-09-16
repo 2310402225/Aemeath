@@ -16,6 +16,7 @@ export interface Props {
 	isHome?: boolean;
 	className?: string;
 	id?: string;
+	aiPolished?: boolean;
 	showPublished?: boolean;
 	showCategory?: boolean;
 	showTags?: boolean;
@@ -43,6 +44,7 @@ const {
 	showNoTags = true,
 	customPath,
 	pinned,
+	aiPolished = true,
 } = Astro.props;
 
 const path = customPath || (id ? `/posts/${id}` : "");
@@ -283,4 +285,39 @@ const useUmamiPageViews = Boolean(
         </div>
       )
   }
+
+  {
+    aiPolished && id && (
+      <div class="post-ai-polish-mark" aria-label="本文已使用Ai辅助创作">
+        <Icon is:inline name="material-symbols:auto-awesome-rounded" class="text-base" />
+        <span>本文已使用Ai辅助创作</span>
+      </div>
+    )
+  }
 </div>
+
+<style>
+	.post-ai-polish-mark {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		margin-inline-start: auto;
+		padding: 0.28rem 0.55rem;
+		border: 1px dashed color-mix(in srgb, var(--primary) 40%, transparent);
+		border-radius: 0.45rem;
+		background: color-mix(in srgb, var(--primary) 7%, transparent);
+		color: color-mix(in srgb, var(--primary) 72%, var(--text-color));
+		font-size: 0.72rem;
+		font-weight: 600;
+		letter-spacing: 0.03em;
+		opacity: 0.78;
+		transform: rotate(-1.5deg);
+		white-space: nowrap;
+	}
+
+	@media (max-width: 640px) {
+		.post-ai-polish-mark {
+			margin-inline: auto;
+		}
+	}
+</style>

@@ -33,8 +33,8 @@ const getDynamicNavBarConfig = (): NavBarConfig => {
 		],
 	});
 
-	// 更新日志
-	links.push(LinkPresets.Changelog);
+	// 站点统计
+	links.push(LinkPresets.Analytics);
 
 	// 友链
 	links.push(LinkPresets.Friends);
@@ -77,8 +77,17 @@ const getDynamicNavBarConfig = (): NavBarConfig => {
 			// 关于页面
 			LinkPresets.About,
 
+			// 动态表情
+			LinkPresets.Lottie,
+
+			// 项目更新日志
+			LinkPresets.Changelog,
+
 			// 博客更新日志
 			LinkPresets.BlogChangelog,
+
+			// 开往：独立博客友链接力
+			LinkPresets.Travellings,
 		],
 	});
 
@@ -108,6 +117,12 @@ export const LinkPresets: Record<string, NavBarLink> = {
 		url: "/",
 		icon: "material-symbols:home",
 	},
+	Travellings: {
+		name: "开往",
+		url: "https://www.travellings.cn/go.html",
+		external: true,
+		iconImage: "https://www.travellings.cn/assets/travelling.png",
+	},
 	Archive: {
 		name: "归档",
 		url: "/archive/",
@@ -129,7 +144,7 @@ export const LinkPresets: Record<string, NavBarLink> = {
 		icon: "material-symbols:construction-rounded",
 	},
 	Changelog: {
-		name: "更新日志",
+		name: "项目更新日志",
 		url: "/changelog/",
 		icon: "material-symbols:history-edu-rounded",
 	},
@@ -161,10 +176,20 @@ export const LinkPresets: Record<string, NavBarLink> = {
 		url: "/about/",
 		icon: "material-symbols:person",
 	},
+	Lottie: {
+		name: "动态表情",
+		url: "/lottie/",
+		icon: "material-symbols:auto-awesome-rounded",
+	},
+	Analytics: {
+		name: "站点统计",
+		url: "/analytics/",
+		icon: "material-symbols:monitoring-rounded",
+	},
 	BlogChangelog: {
 		name: "博客日志",
 		url: "/blog-changelog/",
-		icon: "material-symbols:history-edu-rounded",
+		icon: "material-symbols:auto-stories-rounded",
 	},
 	Bangumi: {
 		name: "番组计划",

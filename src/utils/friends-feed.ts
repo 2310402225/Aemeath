@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import sanitizeHtml from "sanitize-html";
 import type { FriendLink } from "@/types/friendsConfig";
+import { formatDateToYYYYMMDD } from "@/utils/date-utils";
 
 const FETCH_TIMEOUT_MS = 8000;
 const FETCH_RETRY_ATTEMPTS = 3;
@@ -428,6 +429,9 @@ export async function loadFriendsFeed(
 	friends: FriendLink[],
 ): Promise<FriendsFeedSnapshot> {
 	const previousSnapshot = await readFriendsFeedSnapshot();
+	// 朋友圈按“日历日期”过滤未来文章：构建当天的文章全部保留，
+	// 只有日期晚于构建当天的文章才隐藏。这样不会误伤当天稍晚发布的文章。
+	const todayKey = formatDateToYYYYMMDD(new Date());
 	const records = await mapWithConcurrency<FriendLink, FeedRecord>(friends, 5, async (friend) => {
 		const result = await discoverFriendFeed(friend);
 		if (result) {
@@ -462,6 +466,12 @@ export async function loadFriendsFeed(
 	for (const record of records) {
 		if (record.feedUrls.length === 0) continue;
 		for (const item of record.items) {
+			if (
+				item.publishedAt &&
+				formatDateToYYYYMMDD(item.publishedAt) > todayKey
+			) {
+				continue;
+			}
 			if (seenLinks.has(item.link)) continue;
 			seenLinks.add(item.link);
 			items.push({
