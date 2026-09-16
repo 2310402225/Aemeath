@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Firefly is a feature-rich static blog theme built on **Astro 6** with **Svelte 5** for interactive components. It's a fork of [Fuwari](https://github.com/saicaca/fuwari) extended with extensive features. Primary language is Chinese (Simplified) with i18n for en, zh_TW, ja, ru.
+Aemeath is a personal blog site built on **Astro 7** with **Svelte 5** for interactive components. It is maintained as a Chinese-first public site with i18n for en, zh_TW, ja, and ru. The repository contains the site's writing, project records, friend-feed snapshots, tools, galleries, and reusable UI.
 
 ## Commands
 
