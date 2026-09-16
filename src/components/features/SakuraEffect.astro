@@ -421,13 +421,4 @@ const config = sakuraConfig;
 			}
 		});
 
-		// 全屏友链漫游打开时暂停樱花 Canvas，避免与 WebGL 隧道争抢帧；关闭后恢复。
-		window.addEventListener('friends-portal-open', function() {
-			window.__friendsPortalActive = true;
-			window.sakuraManager?.pause?.();
-		});
-		window.addEventListener('friends-portal-close', function() {
-			window.__friendsPortalActive = false;
-			window.sakuraManager?.resume?.();
-		});
 	</script>

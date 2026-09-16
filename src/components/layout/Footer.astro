@@ -19,39 +19,42 @@ const initialSeconds = elapsedSeconds % 60;
 
 const socials = [
 	{
-		name: "博客",
+		name: "首页",
 		icon: "material-symbols:home-outline",
 		url: "/",
 		external: false,
 	},
 	{
-		name: "GitHub",
-		icon: "simple-icons:github",
-		url:
-			profileConfig.links.find((item) => item.name === "GitHub")?.url ??
-			"https://github.com/Jarvis0227",
-		external: true,
+		name: "学习",
+		icon: "material-symbols:school",
+		url: "/learning/",
+		external: false,
 	},
 	{
-		name: "Bilibili",
-		icon: "fa7-brands:bilibili",
-		url:
-			profileConfig.links.find((item) => item.name === "Bilibili")?.url ??
-			"https://space.bilibili.com/473321504",
-		external: true,
+		name: "项目",
+		icon: "material-symbols:deployed-code",
+		url: "/projects/",
+		external: false,
+	},
+	{
+		name: "资源",
+		icon: "material-symbols:bookmark-manager",
+		url: "/resources/",
+		external: false,
+	},
+	{
+		name: "关于",
+		icon: "material-symbols:info",
+		url: "/about/",
+		external: false,
 	},
 ];
 
 const techStack = [
 	{ label: "Astro", tone: "violet", icon: "simple-icons:astro" },
 	{ label: "Tailwind CSS", tone: "cyan", icon: "simple-icons:tailwindcss" },
-	{
-		label: "Waline",
-		tone: "orange",
-		icon: "material-symbols:forum-outline-rounded",
-	},
-	{ label: "QEdge", tone: "blue", icon: "material-symbols:cloud-outline" },
-	{ label: "Umami", tone: "green", icon: "simple-icons:umami" },
+	{ label: "Svelte", tone: "orange", icon: "simple-icons:svelte" },
+	{ label: "Pagefind", tone: "blue", icon: "material-symbols:search" },
 ];
 ---
 
@@ -162,38 +165,6 @@ const techStack = [
 				<span class="site-footer__runtime-sparkle" aria-hidden="true">✦</span>
 			</div>
 
-			<div class="site-footer__records" aria-label="网站备案信息">
-				<a href="https://icp.gov.moe/?keyword=20260788" target="_blank" rel="noreferrer">
-					<svg class="site-footer__shield" viewBox="0 0 36 40" aria-hidden="true">
-						<path d="M18 1.5 33 7v12.1c0 9.4-6.3 15.8-15 19.4C9.3 34.9 3 28.5 3 19.1V7z"></path>
-						<path class="site-footer__shield-mark" d="m10.2 19.7 5.1 5.1 10.8-12"></path>
-					</svg>
-					<span>萌ICP备20260788号</span>
-				</a>
-			</div>
-
-			<div class="site-footer__traffic" aria-label="网站访问统计">
-				<span class="site-footer__traffic-item">
-					<span>今日访客：</span>
-					<strong data-umami-stat="todayVisitors" aria-live="polite">加载中</strong>
-				</span>
-				<i aria-hidden="true">|</i>
-				<span class="site-footer__traffic-item">
-					<span>今日访问：</span>
-					<strong data-umami-stat="todayPageviews" aria-live="polite">加载中</strong>
-				</span>
-				<i aria-hidden="true">|</i>
-				<span class="site-footer__traffic-item">
-					<span>本站访客：</span>
-					<strong data-umami-stat="visitors" aria-live="polite">加载中</strong>
-				</span>
-				<i aria-hidden="true">|</i>
-				<span class="site-footer__traffic-item">
-					<span>本站访问：</span>
-					<strong data-umami-stat="pageviews" aria-live="polite">加载中</strong>
-				</span>
-			</div>
-
 			<div class="site-footer__divider" aria-hidden="true">
 				<span></span>
 				<i>✦</i>
@@ -201,7 +172,7 @@ const techStack = [
 			</div>
 
 			<div class="site-footer__meta">
-				<span>© {currentYear} {profileConfig.name}. All Rights Reserved.</span>
+				<span>© {currentYear} {profileConfig.name} · 保留所有权利</span>
 				<span class="site-footer__meta-separator" aria-hidden="true"></span>
 				<a href={url("rss.xml")}>
 					<Icon name="material-symbols:rss-feed-rounded" aria-hidden="true" />
@@ -225,8 +196,7 @@ const techStack = [
 				<span class="site-footer__powered-star" aria-hidden="true">✦</span>
 				<span>Powered by</span>
 				<a href="https://astro.build" target="_blank" rel="noreferrer">Astro</a>
-				<span>&amp;</span>
-				<span class="site-footer__powered-name">Aemeath {siteConfig.themeVersion || "V1.1.1"}</span>
+				<span class="site-footer__powered-name">载尘望星</span>
 				<span class="site-footer__powered-star" aria-hidden="true">✦</span>
 				<span class="site-footer__powered-dots" aria-hidden="true">• • •</span>
 			</div>

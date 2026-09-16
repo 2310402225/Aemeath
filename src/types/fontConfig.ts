@@ -77,7 +77,7 @@ export type FontSelectionConfig = {
 	subsetFonts?: Record<
 		string,
 		{
-			/** 额外包含的字符（覆盖评论、Bangumi 等动态内容） */
+			/** 额外包含的字符（覆盖动态内容） */
 			extraChars?: string;
 		}
 	>;

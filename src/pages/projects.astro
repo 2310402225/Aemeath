@@ -1,0 +1,61 @@
+---
+import { Icon } from "astro-icon/components";
+import PostCard from "@/components/layout/PostCard.astro";
+import MainGridLayout from "@/layouts/MainGridLayout.astro";
+import { getSortedPosts } from "@/utils/content-utils";
+import { getPostUrlBySlug } from "@/utils/url-utils";
+
+const projectPosts = (await getSortedPosts()).filter(
+	(post) => post.data.topic === "项目记录",
+);
+---
+
+<MainGridLayout title="个人项目" description="载尘望星的项目背景、方案、踩坑与结果">
+	<div class="space-y-4">
+		<section class="card-base p-6 md:p-8">
+			<div class="flex items-start gap-4">
+				<span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-(--primary) text-white">
+					<Icon is:inline name="material-symbols:deployed-code" class="text-2xl" />
+				</span>
+				<div>
+					<h1 class="text-2xl font-bold text-black/80 dark:text-white/80">个人项目</h1>
+					<p class="mt-1 max-w-3xl leading-relaxed text-black/55 dark:text-white/55">
+						项目记录不写成流水账。每个项目会交代背景、目标、方案、踩坑、结果，以及以后可以复用的代码、配置或思路。
+					</p>
+				</div>
+			</div>
+		</section>
+
+		{projectPosts.length > 0 ? (
+			<section class="grid gap-4 md:grid-cols-2" aria-label="个人项目列表">
+				{projectPosts.map((post, index) => (
+					<PostCard
+						entry={post}
+						title={post.data.title}
+						tags={post.data.tags}
+						category={post.data.category}
+						published={post.data.published}
+						updated={post.data.updated}
+						url={getPostUrlBySlug(post.id)}
+						image={post.data.image}
+						description={post.data.description}
+						draft={post.data.draft}
+						pinned={post.data.pinned}
+						password={!!post.data.password}
+						loading={index < 2 ? "eager" : "lazy"}
+						class="onload-animation"
+						style={`animation-delay: ${index * 50}ms;`}
+					/>
+				))}
+			</section>
+		) : (
+			<section class="card-base p-10 text-center">
+				<Icon is:inline name="material-symbols:rocket-launch-rounded" class="mb-4 text-5xl text-(--primary) opacity-60" />
+				<h2 class="text-lg font-bold text-black/75 dark:text-white/75">还没有公开项目记录</h2>
+				<p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-black/50 dark:text-white/50">
+					等一个项目真正跑起来、留下结果和复盘后，再把它放到这里。
+				</p>
+			</section>
+		)}
+	</div>
+</MainGridLayout>

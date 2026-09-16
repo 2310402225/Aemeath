@@ -69,16 +69,6 @@ export const sidebarLayoutConfig: SidebarLayoutConfig = {
 			showOnPostPage: false,
 		},
 		{
-			// 组件类型：音乐播放器
-			type: "music",
-			// 是否启用该组件
-			enable: true,
-			// 组件位置
-			position: "sticky",
-			// 是否在文章详情页显示
-			showOnPostPage: true,
-		},
-		{
 			// 组件类型：分类组件
 			type: "categories",
 			// 是否启用该组件
@@ -121,16 +111,6 @@ export const sidebarLayoutConfig: SidebarLayoutConfig = {
 			position: "top",
 			// 仅在非文章页显示，避免干扰正文阅读
 			showOnPostPage: false,
-		},
-		{
-			// 组件类型：站点统计组件
-			type: "stats",
-			// 是否启用该组件
-			enable: true,
-			// 组件位置
-			position: "top",
-			// 是否在文章详情页显示
-			showOnPostPage: true,
 		},
 		{
 			// 组件类型：站点信息组件
@@ -182,62 +162,6 @@ export const sidebarLayoutConfig: SidebarLayoutConfig = {
 			hideOnNonPostPage: true,
 		},
 		{
-			// 组件类型：广告栏组件 1
-			type: "advertisement",
-			// 是否启用该组件
-			enable: false,
-			// 是否显示组件标题
-			showTitle: false,
-			// 组件位置
-			position: "sticky",
-			// 是否在文章详情页显示
-			showOnPostPage: true,
-			// 组件专属配置（广告内容直接在此配置）
-			specificConfig: {
-				ad: {
-					image: {
-						src: "/assets/images/ad/ad1.webp",
-						alt: "广告横幅",
-						link: "https://haoka.lot-ml.com/plugreg.html?agentid=1423316",
-						external: true,
-					},
-					// 是否允许关闭广告
-					closable: false,
-					// 显示次数限制，-1为无限制
-					displayCount: -1,
-					// 组件内边距配置
-					padding: {
-						all: "1rem",
-					},
-				},
-			},
-		},
-		{
-			// 组件类型：广告栏组件 2
-			type: "advertisement",
-			// 是否启用该组件
-			enable: false,
-			// 组件位置
-			position: "sticky",
-			// 是否在文章详情页显示
-			showOnPostPage: true,
-			// 组件专属配置（广告内容直接在此配置）
-			specificConfig: {
-				ad: {
-					title: "支持博主",
-					content:
-						"如果您觉得本站内容对您有帮助，欢迎支持我们的创作！您的支持是我们持续更新的动力。",
-					link: {
-						text: "支持一下",
-						url: "about/",
-						external: false,
-					},
-					closable: false,
-					displayCount: -1,
-				},
-			},
-		},
-		{
 			// 组件类型：年 / 月 / 周进度与日期倒计时
 			type: "scheduleProgress",
 			// 是否启用该组件
@@ -269,14 +193,6 @@ export const sidebarLayoutConfig: SidebarLayoutConfig = {
 			showOnPostPage: false,
 		},
 		{
-			// 组件类型：音乐播放器
-			type: "music",
-			// 是否启用该组件
-			enable: true,
-			// 文章页正文后不再堆叠侧栏卡片，保留正文与页脚的阅读空间
-			showOnPostPage: false,
-		},
-		{
 			// 组件类型：分类组件
 			type: "categories",
 			// 是否启用该组件
@@ -301,14 +217,6 @@ export const sidebarLayoutConfig: SidebarLayoutConfig = {
 				// 折叠阈值：当标签数量超过20个时自动折叠
 				collapseThreshold: 10,
 			},
-		},
-		{
-			// 组件类型：站点统计组件
-			type: "stats",
-			// 是否启用该组件
-			enable: true,
-			// 文章页正文后不再堆叠侧栏卡片，保留正文与页脚的阅读空间
-			showOnPostPage: false,
 		},
 		{
 			// 组件类型：站点信息组件

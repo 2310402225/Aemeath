@@ -1054,7 +1054,6 @@ body:has(#wallpaper-wrapper) #navbar.firefly-navbar.navbar-sticky-shadow > .fire
         gap: 0.18rem;
     }
 
-    #navbar.firefly-navbar #music-player-switch,
     #navbar.firefly-navbar #bg-player-toggle {
         display: none !important;
     }

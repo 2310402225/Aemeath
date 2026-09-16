@@ -8,7 +8,6 @@ export type WidgetComponentType =
 	| "advertisement"
 	| "stats"
 	| "calendar"
-	| "music"
 	| "siteInfo"
 	| "timeGreeting"
 	| "quoteOfTheDay"

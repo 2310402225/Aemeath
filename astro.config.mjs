@@ -14,7 +14,6 @@ import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import rehypeComponents from "rehype-components"; /* Render the custom directive content */
 import rehypeKatex from "rehype-katex";
 import "katex/dist/contrib/mhchem.mjs"; // 加载 mhchem 扩展
-import cloudflare from "@astrojs/cloudflare";
 import mdx from "@astrojs/mdx";
 import { pluginCollapsible } from "expressive-code-collapsible"; /* Collapsible */
 import { pluginLanguageBadge } from "expressive-code-language-badge"; /* Language Badge */
@@ -48,12 +47,6 @@ if (process.env.NODE_ENV === "development") {
 	setMaxListeners(20);
 }
 
-const adapter = process.env.CF_WORKERS
-	? cloudflare({
-			prerenderEnvironment: "node",
-		})
-	: undefined;
-
 // https://astro.build/config
 export default defineConfig({
 	site: siteConfig.site_url,
@@ -83,8 +76,6 @@ export default defineConfig({
 				return { ...f, provider };
 			});
 	})(),
-
-	adapter,
 
 	// 图像优化配置
 	image: {
@@ -205,34 +196,7 @@ export default defineConfig({
 			},
 		}),
 		svelte(),
-		sitemap({
-			filter: (page) => {
-				// 根据页面开关配置过滤sitemap
-				const url = new URL(page);
-				const pathname = url.pathname;
-
-				if (pathname === "/friends/" && !siteConfig.pages.friends) {
-					return false;
-				}
-				if (pathname === "/sponsor/" && !siteConfig.pages.sponsor) {
-					return false;
-				}
-				if (pathname === "/guestbook/" && !siteConfig.pages.guestbook) {
-					return false;
-				}
-				if (pathname === "/bangumi/" && !siteConfig.pages.bangumi) {
-					return false;
-				}
-				if (pathname === "/gallery/" && !siteConfig.pages.gallery) {
-					return false;
-				}
-				if (pathname === "/anime/" && !siteConfig.pages.anime) {
-					return false;
-				}
-
-				return true;
-			},
-		}),
+		sitemap(),
 		mdx(),
 	],
 	markdown: {

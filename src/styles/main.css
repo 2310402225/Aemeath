@@ -7,7 +7,6 @@
 @import './custom-scrollbar.css';
 @import './tags.css';
 @import './gallery.css';
-@import './anime-bangumi.css';
 
 @plugin '@tailwindcss/typography';
 
@@ -151,8 +150,6 @@ html {
     /* 禁用复杂选择器元素的过渡 - 仅在非 View Transitions 模式下 */
     .is-theme-transitioning.legacy-disable-all .float-panel,
     .is-theme-transitioning.legacy-disable-all .float-panel *,
-    .is-theme-transitioning.legacy-disable-all .music-player,
-    .is-theme-transitioning.legacy-disable-all .music-player *,
     .is-theme-transitioning.legacy-disable-all .widget,
     .is-theme-transitioning.legacy-disable-all .widget *,
     .is-theme-transitioning.legacy-disable-all .dropdown-content,

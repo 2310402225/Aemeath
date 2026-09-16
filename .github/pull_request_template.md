@@ -1,37 +1,33 @@
-## Type of change
+## 修改类型
 
-- [ ] Bug fix (a non-breaking change that fixes an issue)
-- [ ] New feature (a non-breaking change that adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] Other (please describe):
+- [ ] 修复问题
+- [ ] 新增功能
+- [ ] 破坏性变更
+- [ ] 其他：
 
-## Checklist
+## 检查项
 
-- [ ] I have read the [**CONTRIBUTING**](https://github.com/Jarvis0227/Aemeath/blob/main/CONTRIBUTING.md) document.
-- [ ] I have checked to ensure that this Pull Request is not for personal changes.
-- [ ] I have performed a self-review of my own code.
-- [ ] My changes generate no new warnings.
+- [ ] 已确认修改符合“载尘望星”的中文定位
+- [ ] 未恢复旧站身份、旧内容或已删除的第三方功能
+- [ ] 已完成代码自查
+- [ ] 没有新增警告
 
-## Related Issue
+## 关联问题
 
-<!-- Please link to the issue that this pull request addresses. e.g. #123 -->
+<!-- 如有关联问题，请填写编号。 -->
 
+## 修改内容
 
-## Changes
+<!-- 简要说明改了什么以及为什么。 -->
 
-<!-- Please describe the changes you made in this pull request. -->
+## 验证方式
 
+<!-- 说明运行了哪些检查，以及如何验证页面行为。 -->
 
-## How To Test
+## 截图
 
-<!-- Please describe how you tested your changes. -->
+<!-- 涉及界面修改时请提供截图。 -->
 
+## 补充说明
 
-## Screenshots (if applicable)
-
-<!-- If you made any UI changes, please include screenshots. -->
-
-
-## Additional Notes
-
-<!-- Any additional information that you want to share with the reviewer. -->
+<!-- 其他需要说明的内容。 -->

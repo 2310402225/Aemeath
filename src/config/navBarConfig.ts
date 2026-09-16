@@ -16,88 +16,40 @@ const getDynamicNavBarConfig = (): NavBarConfig => {
 		LinkPresets.Home,
 	];
 
-	// 文章及其子菜单
+	// 内容优先级的三个主入口：学习、项目、资源
+	links.push(LinkPresets.Learning);
+	links.push(LinkPresets.Projects);
+	links.push(LinkPresets.Resources);
+
+	// 归档与检索
 	links.push({
-		name: "文章",
+		name: "归档",
 		url: "#",
-		icon: "material-symbols:article",
+		icon: "material-symbols:archive",
 		children: [
-			// 归档
 			LinkPresets.Archive,
-
-			// 分类
 			LinkPresets.Categories,
-
-			// 标签
 			LinkPresets.Tags,
 		],
 	});
 
-	// 站点统计
-	links.push(LinkPresets.Analytics);
-
-	// 友链
-	links.push(LinkPresets.Friends);
-
-	// 朋友圈
-	links.push(LinkPresets.Moments);
-
-	// 留言板
-	links.push(LinkPresets.Guestbook);
-
-	// 我的及其子菜单
+	// 更多及其子菜单
 	links.push({
-		name: "我的",
+		name: "更多",
 		url: "#",
-		icon: "material-symbols:person",
+		icon: "material-symbols:more-horiz",
 		children: [
-			// 相册
 			LinkPresets.Gallery,
-
-			// 追番
-			LinkPresets.Anime,
-
-			// 番组计划
-			LinkPresets.Bangumi,
-
-			// 工具
 			LinkPresets.Tools,
-		],
-	});
-
-	// 关于及其子菜单
-	links.push({
-		name: "关于",
-		url: "#",
-		icon: "material-symbols:info",
-		children: [
-			// 打赏
-			LinkPresets.Sponsor,
-
-			// 关于页面
-			LinkPresets.About,
-
-			// 动态表情
 			LinkPresets.Lottie,
-
-			// 项目更新日志
 			LinkPresets.Changelog,
-
-			// 博客更新日志
 			LinkPresets.BlogChangelog,
-
-			// 开往：独立博客友链接力
 			LinkPresets.Travellings,
 		],
 	});
 
-	// 文档链接
-	// links.push({
-	// 	name: "文档",
-	// 	url: "https://docs-rainzt.cn",
-	// 	external: true,
-	// 	icon: "material-symbols:docs",
-	// });
+	// 关于
+	links.push(LinkPresets.About);
 
 	return { links } as NavBarConfig;
 };
@@ -128,6 +80,21 @@ export const LinkPresets: Record<string, NavBarLink> = {
 		url: "/archive/",
 		icon: "material-symbols:archive",
 	},
+	Learning: {
+		name: "学习",
+		url: "/learning/",
+		icon: "material-symbols:school",
+	},
+	Projects: {
+		name: "项目",
+		url: "/projects/",
+		icon: "material-symbols:deployed-code",
+	},
+	Resources: {
+		name: "资源",
+		url: "/resources/",
+		icon: "material-symbols:bookmark-manager",
+	},
 	Categories: {
 		name: "分类",
 		url: "/categories/",
@@ -148,66 +115,26 @@ export const LinkPresets: Record<string, NavBarLink> = {
 		url: "/changelog/",
 		icon: "material-symbols:history-edu-rounded",
 	},
-	Friends: {
-		name: "友链",
-		url: "/friends/",
-		icon: "material-symbols:group",
-		pageKey: "friends",
-	},
-	Moments: {
-		name: "朋友圈",
-		url: "/moments/",
-		icon: "material-symbols:rss-feed-rounded",
-	},
-	Sponsor: {
-		name: "打赏",
-		url: "/sponsor/",
-		icon: "material-symbols:favorite",
-		pageKey: "sponsor",
-	},
-	Guestbook: {
-		name: "留言",
-		url: "/guestbook/",
-		icon: "material-symbols:chat",
-		pageKey: "guestbook",
-	},
 	About: {
-		name: "关于我",
+		name: "关于",
 		url: "/about/",
-		icon: "material-symbols:person",
+		icon: "material-symbols:info",
 	},
 	Lottie: {
 		name: "动态表情",
 		url: "/lottie/",
 		icon: "material-symbols:auto-awesome-rounded",
 	},
-	Analytics: {
-		name: "站点统计",
-		url: "/analytics/",
-		icon: "material-symbols:monitoring-rounded",
-	},
 	BlogChangelog: {
 		name: "博客日志",
 		url: "/blog-changelog/",
 		icon: "material-symbols:auto-stories-rounded",
-	},
-	Bangumi: {
-		name: "番组计划",
-		url: "/bangumi/",
-		icon: "material-symbols:movie",
-		pageKey: "bangumi",
 	},
 	Gallery: {
 		name: "相册",
 		url: "/gallery/",
 		icon: "material-symbols:photo-library",
 		pageKey: "gallery",
-	},
-	Anime: {
-		name: "追番",
-		url: "/anime/",
-		icon: "material-symbols:live-tv",
-		pageKey: "anime",
 	},
 };
 

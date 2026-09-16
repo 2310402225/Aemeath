@@ -6,23 +6,24 @@ const SITE_LANG = "zh_CN";
 
 export const siteConfig: SiteConfig = {
 	// 站点标题
-	title: "朝朝听雨",
+	title: "载尘望星",
 
 	// 站点副标题
-	subtitle: "物物而不物于物，念念而不念于念",
+	subtitle: "城之内，是尘埃与眼泪；城之外，是星宇与长河",
 
-	// Aemeath 主题版本
+	// 主题版本
 	themeVersion: "V3.4.0",
 
 	// 站点 URL
-	site_url: "https://rainzt.cn",
+	// 部署到 Vercel 后把这里换成实际域名；构建时可用环境变量 SITE_URL 覆盖
+	site_url: process.env.SITE_URL || "https://zaichen-wangxing.vercel.app",
 
 	// 站点描述
 	description:
-		"Aemeath 是一款基于 Astro 深度定制的个人博客主题，融合了鸣潮视觉、技术记录、工具展示与私人写作，承载我的开发历程和日常思考。",
+		"载尘望星是尘之泪的个人站点，记录 AI 学习笔记、项目复盘与资源推荐，在技术之外保留一点人文视角。",
 
 	// 站点关键词
-	keywords: ["Rain", "Fuwari", "Astro", "ACGN", "博客", "技术博客", "静态博客"],
+	keywords: ["载尘望星", "尘之泪", "AI", "机器学习", "深度学习", "学习笔记", "个人博客"],
 
 	// 主题色
 	themeColor: {
@@ -50,19 +51,19 @@ export const siteConfig: SiteConfig = {
 	// Favicon 配置
 	favicon: [
 		{
-			src: "/favicon/chaoc-tingyu-avatar-512.png?v=20260823",
+			src: "/favicon/zaichen-avatar-512.png?v=20260916",
 			sizes: "512x512",
 		},
 		{
-			src: "/favicon/chaoc-tingyu-avatar-192.png?v=20260823",
+			src: "/favicon/zaichen-avatar-192.png?v=20260916",
 			sizes: "192x192",
 		},
 		{
-			src: "/favicon/chaoc-tingyu-avatar-180.png?v=20260823",
+			src: "/favicon/zaichen-avatar-180.png?v=20260916",
 			sizes: "180x180",
 		},
 		{
-			src: "/favicon/chaoc-tingyu-avatar-32.png?v=20260823",
+			src: "/favicon/zaichen-avatar-32.png?v=20260916",
 			sizes: "32x32",
 		},
 	],
@@ -77,11 +78,11 @@ export const siteConfig: SiteConfig = {
 		// 4. 网络图片: { type: "url", value: "https://example.com/logo.png", alt: "Logo" }
 		logo: {
 			type: "image",
-			value: "assets/images/chaoc-tingyu-avatar.webp",
-			alt: "朝朝听雨",
+			value: "assets/images/zaichen-avatar.webp",
+			alt: "载尘望星",
 		},
 		// 导航栏标题
-		title: "朝朝听雨",
+		title: "载尘望星",
 		// 全宽导航栏，导航栏是否占满屏幕宽度
 		widthFull: false,
 		// 导航菜单对齐方式，left：左对齐，center：居中
@@ -93,26 +94,16 @@ export const siteConfig: SiteConfig = {
 	},
 
 	// 站点开始日期，用于统计运行天数
-	siteStartDate: "2026-07-08",
+	siteStartDate: "2026-09-16",
 
-	// 站点时区（IANA 时区字符串），用于格式化bangumi、rss里的构建日期时间等等..
+	// 站点时区（IANA 时区字符串），用于格式化 RSS 等构建日期时间
 	// 示例："Asia/Shanghai", "UTC", 如果为空，则按照构建服务器的时区进行时区转换
 	timezone: "Asia/Shanghai",
 
 	// 页面开关配置 - 控制特定页面的访问权限，设为false会返回404并自动隐藏对应的导航栏菜单项
 	pages: {
-		// 友链页面开关
-		friends: true,
-		// 打赏页面开关
-		sponsor: true,
-		// 留言板页面开关，需要配置评论系统
-		guestbook: true,
-		// 番组计划页面开关，含追番、游戏、书籍和音乐
-		bangumi: true,
 		// 相册页面开关
 		gallery: true,
-		// 追番页面开关
-		anime: true,
 	},
 
 	// 分类导航栏开关，在首页和归档页顶部显示分类快捷导航
@@ -166,40 +157,6 @@ export const siteConfig: SiteConfig = {
 		generateOgImages: false,
 	},
 
-	// bangumi配置
-	bangumi: {
-		// Bangumi用户ID
-		userId: "1143164",
-		// 数据模式：static=构建时获取，dynamic=客户端实时获取
-		// static 模式在构建时获取数据并静态渲染，部署后数据不更新
-		// dynamic 模式在浏览器中实时请求 API，始终显示最新数据
-		mode: "dynamic",
-		// Bangumi API 地址
-		apiUrl: "https://bgmapi.anibt.net",
-		// 详情页地址
-		subjectBaseUrl: "https://bgmmi.anibt.net/subject/",
-		// 条目类型排序，数组中的类型将按顺序优先展示
-		// 可选值: "anime" | "book" | "music" | "game" | "real" (暂不支持"real"类型)
-		// 未列出的类型将按默认顺序排在后面
-		categoryOrder: ["anime", "book", "music", "game"],
-	},
-
-	// 追番配置（Bilibili + TMDB）
-	anime: {
-		// Bilibili 配置
-		bilibili: {
-			// 你的 Bilibili 用户 UID
-			uid: "38932988",
-		},
-		// TMDB 配置（可选，需要翻墙）
-		// tmdb: {
-		//   // TMDB API 密钥
-		//   apiKey: "your_tmdb_api_key",
-		//   // TMDB 列表 ID
-		//   listId: "your_list_id",
-		// },
-	},
-
 	// 分页配置
 	pagination: {
 		// 每页显示的文章数量
@@ -222,8 +179,8 @@ export const siteConfig: SiteConfig = {
 		quality: 85,
 		// 为特定域名的图片添加 referrerpolicy="no-referrer" 属性
 		// 支持通配符 *，例如：["i0.hdslb.com", "*.bilibili.com"]
-		// 可解决指定域名图片加载时的 403 问题（如防盗链图片）
-		noReferrerDomains: ["*.hdslb.com", "*.bilibili.com"],
+		// 可解决指定域名图片加载时的 403 问题
+		noReferrerDomains: [],
 	},
 
 	// 站点语言，在本配置文件顶部SITE_LANG定义

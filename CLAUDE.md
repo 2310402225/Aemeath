@@ -1,81 +1,53 @@
-# CLAUDE.md
+# 项目说明
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## 项目概览
 
-## Project Overview
+“载尘望星”是尘之泪的个人中文站点，使用 Astro 7 和 Svelte 5 构建。内容以学习记录为第一优先级，其次为项目复盘和资源推荐。站点目标是长期维护、可检索、可迁移，并保留“城之内，是尘埃与眼泪；城之外，是星宇与长河”的人文视角。
 
-Aemeath is a personal blog site built on **Astro 7** with **Svelte 5** for interactive components. It is maintained as a Chinese-first public site with i18n for en, zh_TW, ja, and ru. The repository contains the site's writing, project records, friend-feed snapshots, tools, galleries, and reusable UI.
+## 常用命令
 
-## Commands
-
-| Command | Purpose |
+| 命令 | 作用 |
 |---|---|
-| `pnpm dev` | Dev server at `localhost:4321` |
-| `pnpm build` | Production build (icons → LQIPs → Astro build → Pagefind indexing) |
-| `pnpm preview` | Preview production build |
-| `pnpm check` | `astro check` for type/error checking |
-| `pnpm type-check` | `tsc --noEmit --isolatedDeclarations` |
-| `pnpm lint` | Biome lint + auto-fix |
-| `pnpm format` | Biome format |
-| `pnpm new-post <filename>` | Scaffold a new blog post |
+| `pnpm dev` | 启动本地开发服务器 |
+| `pnpm check` | 运行 Astro 类型与模板检查 |
+| `pnpm lqips` | 清理旧键并生成图片占位数据 |
+| `pnpm build` | 生成图标、图片占位、静态站点和搜索索引 |
+| `pnpm preview` | 预览生产构建 |
+| `pnpm type-check` | 运行 TypeScript 检查 |
+| `pnpm lint` | 使用 Biome 检查和修复 |
+| `pnpm format` | 使用 Biome 格式化 |
+| `pnpm new-post <filename>` | 创建默认草稿 |
 
-Package manager is **pnpm** (enforced). Node.js >= 22 required.
+包管理器为 pnpm，Node.js 需要 22 或更高版本。
 
-## Architecture
+## 架构
 
-### Astro + Svelte Hybrid
+- Astro 负责静态页面、布局、路由和内容集合。
+- Svelte 负责搜索、分页、设置等交互组件。
+- Swup 提供页面切换；相关监听和动画必须在路由切换后重新初始化并清理。
+- 配置统一放在 `src/config/`，通过 `src/config/index.ts` 导出。
+- 文章内容位于 `src/content/posts/`，学习、项目和资源数据位于 `src/data/`。
+- 页面位于 `src/pages/`，公共组件位于 `src/components/`，构建脚本位于 `scripts/`。
+- Markdown 插件位于 `src/plugins/`，支持代码、数学公式、Mermaid、PlantUML 等内容。
 
-- `.astro` components for static content and layouts
-- `.svelte` components for interactive UI (search, settings, pagination, archive) — mounted with `client:load` or `client:visible`
-- Swup.js handles SPA-like page transitions with multiple container targets
+## 内容约定
 
-### Configuration-Driven
+- 站点界面和内容只使用中文。
+- 文章 frontmatter 必须包含日期和主题；主题优先使用“学习记录”“项目复盘”“资源推荐”。
+- 不写纯搬运、洗稿、没有自己理解的教程。
+- 学习笔记应尽量包含代码、公式、复现步骤和参考资料。
+- 项目记录应包含背景、方案、踩坑、结果和可复用资源。
 
-All features are toggled/configured via TypeScript files in `src/config/`, exported through the barrel at `src/config/index.ts`. Key configs:
+## 功能边界
 
-- `siteConfig.ts` — core site settings, theme, pagination
-- `sidebarConfig.ts` — sidebar layout (left/right/both, widget ordering)
-- `commentConfig.ts`, `analyticsConfig.ts`, `fontConfig.ts`, etc.
+- 不启用评论、访问统计、自动音乐、Live2D、Spine、友链、朋友圈、留言板、打赏、追番、番组计划和站点统计。
+- 保留相册、工具、项目日志、博客日志、更新记录、动态表情和开往等结构。
+- 不依赖复杂图床、强制登录评论或单一托管平台的数据服务。
 
-### Layout System
+## 样式与质量
 
-- `Layout.astro` — base HTML shell (head, body, theme init, analytics, Swup hooks)
-- `MainGridLayout.astro` — full page grid with sidebar(s), navbar, wallpaper, footer
+Biome 使用制表符缩进和双引号。组件使用 `PascalCase`，配置和工具使用清楚的描述性名称。提交前至少运行 `pnpm check` 和 `pnpm build`；视觉改动还需要在移动端和桌面端实际查看。
 
-### Content Collections
+## 部署
 
-Defined in `src/content.config.ts`:
-- `posts` — blog posts (`.md`/`.mdx`) with frontmatter: title, published, tags, category, draft, pinned, password, comment, etc.
-- `spec` — special pages (about, guestbook)
-
-### Key Directories
-
-- `src/components/` — organized by domain: `analytics/`, `comment/`, `common/`, `controls/`, `features/`, `layout/`, `misc/`, `pages/`, `widget/`
-- `src/plugins/` — 15 custom remark/rehype plugins (Mermaid, PlantUML, KaTeX, GitHub cards, reading time, etc.)
-- `src/i18n/` — translation keys in `i18nKey.ts`, language files in `languages/*.ts`, lookup via `translation.ts`
-- `src/utils/` — content sorting, crypto (encrypted posts), date formatting, image processing/LQIP, TOC generation
-- `src/pages/` — Astro file-based routing
-- `scripts/` — build-time utilities (`generate-icons.js`, `generate-lqips.ts`, `new-post.js`)
-
-### Path Aliases (tsconfig.json)
-
-`@components/*`, `@assets/*`, `@constants/*`, `@utils/*`, `@i18n/*`, `@layouts/*` → `./src/<dir>/*`; `@/*` → `./src/*`
-
-## Code Style
-
-- **Biome** enforces: tab indentation, double quotes, recommended lint rules
-- Relaxed rules for `.svelte`/`.astro` files (useConst off, noUnusedVariables off)
-- Commit convention: **Conventional Commits** (`feat:`, `fix:`, `chore:`, etc.)
-
-## Build Pipeline
-
-Multi-step: `scripts/generate-icons.js` → `scripts/generate-lqips.ts` → `astro build` → `pagefind --site dist`
-
-Icons/LQIP data are generated into `src/constants/` and committed. Regenerate with `pnpm icons` or `pnpm lqips`.
-
-## Deployment
-
-- Deployment-specific configuration is kept outside this public snapshot. Use
-  the Astro deployment adapter and platform configuration appropriate for the
-  target environment without committing credentials or host-specific files.
-- Static output to `dist/`
+构建产物输出到 `dist/`，部署目标为 Vercel。站点域名通过环境变量 `SITE_URL` 提供，不提交任何密钥或平台凭据。源码应同时保留本地和 GitHub 备份。

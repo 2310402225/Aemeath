@@ -5,10 +5,10 @@ import { profileConfig, siteConfig } from "@/config";
 import { url } from "@/utils/url-utils";
 
 const quickLinks = [
-	{ label: "文章", href: url("/archive/") },
-	{ label: "友链", href: url("/friends/") },
-	{ label: "朋友圈", href: url("/moments/") },
-	{ label: "留言板", href: url("/guestbook/") },
+	{ label: "学习", href: url("/learning/") },
+	{ label: "项目", href: url("/projects/") },
+	{ label: "资源", href: url("/resources/") },
+	{ label: "归档", href: url("/archive/") },
 	{ label: "关于", href: url("/about/") },
 ];
 
@@ -132,7 +132,7 @@ const mobileStickerKeys = [
 		<div class="home-wallpaper-card__content">
 			<div class="home-wallpaper-card__avatar-wrap">
 				<ImageWrapper
-					src={profileConfig.avatar || "assets/images/rain-avatar.webp"}
+					src={profileConfig.avatar || "assets/images/zaichen-avatar.webp"}
 					alt={`${profileConfig.name}头像`}
 					class="home-wallpaper-card__avatar"
 					loading="eager"

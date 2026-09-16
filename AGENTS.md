@@ -1,34 +1,35 @@
-# Repository Guidelines
+# 仓库说明
 
-## Project Structure & Module Organization
+## 项目结构
 
-Aemeath is an Astro 7 site with Svelte islands and TypeScript configuration. Main source code lives in `src/`: routes in `src/pages`, layouts in `src/layouts`, reusable UI in `src/components`, styles in `src/styles`, content in `src/content`, helpers in `src/utils`, and Markdown/HTML plugins in `src/plugins`. Site configuration is split across `src/config` with matching type definitions in `src/types`; prefer imports from `@/config` when available. Static files served directly belong in `public`, supporting documentation in `docs`, and automation in `scripts`.
+站点使用 Astro 7、Svelte 5 和 TypeScript。路由位于 `src/pages/`，布局位于 `src/layouts/`，组件位于 `src/components/`，样式位于 `src/styles/`，内容位于 `src/content/`，工具函数位于 `src/utils/`，Markdown 插件位于 `src/plugins/`。配置集中在 `src/config/`，对应类型位于 `src/types/`。静态资源放在 `public/`，文档放在 `docs/`，脚本放在 `scripts/`。
 
-## Build, Test, and Development Commands
+## 开发命令
 
-Use `pnpm`; the `preinstall` script enforces it.
+必须使用 pnpm。
 
-- `pnpm dev` or `pnpm start`: run the local Astro dev server.
-- `pnpm check`: run Astro diagnostics.
-- `pnpm type-check`: run TypeScript with `--noEmit`.
-- `pnpm format`: format `src` with Biome.
-- `pnpm lint`: run Biome checks and safe fixes on `src`.
-- `pnpm build`: generate icons, LQIPs, the Astro build, font subsets, and Pagefind search output in `dist`.
-- `pnpm preview`: preview the production build locally.
-- `pnpm new-post`: scaffold a new content post.
+- `pnpm dev`：启动本地开发服务器
+- `pnpm check`：运行 Astro 检查
+- `pnpm type-check`：运行 TypeScript 检查
+- `pnpm format`：格式化 `src`
+- `pnpm lint`：运行 Biome 检查
+- `pnpm lqips`：更新图片占位数据
+- `pnpm build`：生成完整生产构建和搜索索引
+- `pnpm preview`：预览生产构建
+- `pnpm new-post`：创建中文文章草稿
 
-## Coding Style & Naming Conventions
+## 编码约定
 
-Biome is the formatter and linter. It uses tabs for indentation and double quotes for JavaScript/TypeScript strings. Keep Astro and Svelte components in `PascalCase` (`PostCard.astro`, `ArchivePanel.svelte`), config modules in `camelCase` ending with `Config.ts`, and utilities in descriptive kebab case such as `date-utils.ts`. Keep `src/types` aligned with `src/config`. Avoid unrelated formatting churn.
+Biome 使用制表符缩进和双引号。Astro 与 Svelte 组件使用 `PascalCase`，配置模块使用 `camelCase`，工具文件使用描述性短横线命名。保持 `src/types` 与 `src/config` 同步，避免无关格式化改动。
 
-## Testing Guidelines
+## 验证要求
 
-There is no dedicated unit-test framework configured. Before submitting changes, run `pnpm check`, `pnpm type-check`, and `pnpm build` for rendering, content, or generated asset work. For visual or interactive changes, verify with `pnpm dev` or `pnpm preview` and include screenshots in the PR. Name future tests near the feature they cover, using the local file name as the stem.
+目前没有独立单元测试框架。内容、渲染或资源改动至少运行 `pnpm check`、`pnpm type-check` 和 `pnpm build`。视觉交互改动需要启动开发服务器，检查桌面端和移动端，并确认文字、按钮、卡片和导航没有重叠或溢出。
 
-## Commit & Pull Request Guidelines
+## 提交约定
 
-Use Conventional Commits, matching the current history: `feat: ...`, `fix: ...`, and `chore: ...`. Keep commits and PRs focused on one concern. PRs should include a concise summary, linked issues when relevant, validation commands run, and screenshots for UI changes. Discuss major features or design changes in an issue or discussion before implementation.
+提交信息使用 Conventional Commits，例如 `feat:`、`fix:` 和 `chore:`。每次提交只处理一个清晰目标。说明中应包含改动摘要、验证命令和必要的页面截图。
 
-## Security & Configuration Tips
+## 安全与配置
 
-Do not commit secrets, tokens, or service keys in config files. Keep deployment-specific settings in the target platform environment, and review generated files such as `dist`, `src/constants/lqips.json`, and `src/constants/icons.ts` before committing them.
+不要提交密钥、令牌、邮箱密码或第三方服务凭据。部署环境变量放在 Vercel 中。提交前检查 `dist/`、`src/constants/lqips.json` 和 `src/constants/icons.ts`，避免带入旧站资源或不必要的生成物。

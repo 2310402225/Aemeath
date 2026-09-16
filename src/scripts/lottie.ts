@@ -22,7 +22,7 @@ type LottieRuntime = {
 declare global {
 	interface Window {
 		lottie?: LottieRuntime;
-		__rainztLottieRuntimePromise?: Promise<LottieRuntime>;
+		__zaichenLottieRuntimePromise?: Promise<LottieRuntime>;
 	}
 }
 
@@ -37,12 +37,12 @@ let scheduledFrame = 0;
 
 function loadRuntime(): Promise<LottieRuntime> {
 	if (window.lottie) return Promise.resolve(window.lottie);
-	if (window.__rainztLottieRuntimePromise)
-		return window.__rainztLottieRuntimePromise;
+	if (window.__zaichenLottieRuntimePromise)
+		return window.__zaichenLottieRuntimePromise;
 
-	window.__rainztLottieRuntimePromise = new Promise((resolve, reject) => {
+	window.__zaichenLottieRuntimePromise = new Promise((resolve, reject) => {
 		const existingScript = document.querySelector<HTMLScriptElement>(
-			"script[data-rainzt-lottie-runtime]",
+			"script[data-zaichen-lottie-runtime]",
 		);
 		const script = existingScript || document.createElement("script");
 
@@ -58,12 +58,12 @@ function loadRuntime(): Promise<LottieRuntime> {
 		if (!existingScript) {
 			script.src = runtimePath;
 			script.async = true;
-			script.dataset.rainztLottieRuntime = "true";
+			script.dataset.zaichenLottieRuntime = "true";
 			document.head.appendChild(script);
 		}
 	});
 
-	return window.__rainztLottieRuntimePromise;
+	return window.__zaichenLottieRuntimePromise;
 }
 
 function getAnimationName(element: HTMLElement) {

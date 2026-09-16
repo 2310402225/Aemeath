@@ -1,20 +1,12 @@
 ---
-import GoogleAnalytics from "@components/analytics/GoogleAnalytics.astro";
-import La51Analytics from "@components/analytics/La51Analytics.astro";
-import MicrosoftClarity from "@components/analytics/MicrosoftClarity.astro";
-import UmamiAnalytics from "@components/analytics/UmamiAnalytics.astro";
-import UmamiMetrics from "@components/analytics/UmamiMetrics.astro";
 import ChangelogManager from "@components/features/ChangelogManager.astro";
 import FancyboxManager from "@components/features/FancyboxManager.astro";
 import FontSetup from "@components/features/FontSetup.astro";
-import MusicManager from "@components/features/MusicManager.astro";
 import SakuraEffect from "@components/features/SakuraEffect.astro";
-import WalineManager from "@components/features/WalineManager.astro";
 import WelcomeToast from "@components/features/WelcomeToast.astro";
 import ConfigCarrier from "@components/layout/ConfigCarrier.astro";
 
 import {
-	analyticsConfig,
 	backgroundWallpaper,
 	expressiveCodeConfig,
 	profileConfig,
@@ -107,45 +99,6 @@ const canonicalUrl = new URL(Astro.url.pathname, siteConfig.site_url).toString()
 <html lang={siteLang} class="bg-(--page-bg) text-[14px] md:text-[16px]" data-wallpaper-mode={backgroundWallpaper.mode}>
   <head>
     <meta charset="UTF-8" />
-    {analyticsConfig?.googleAnalyticsId && (
-            <GoogleAnalytics analyticsId={analyticsConfig.googleAnalyticsId} />
-    )}
-    {analyticsConfig?.microsoftClarityId && (
-            <MicrosoftClarity clarityId={analyticsConfig.microsoftClarityId} />
-    )}
-        {analyticsConfig?.umamiAnalytics?.websiteId && (
-          <UmamiAnalytics
-          websiteId={analyticsConfig.umamiAnalytics.websiteId}
-          scriptUrl={analyticsConfig.umamiAnalytics.scriptUrl}
-          replaysScriptUrl={analyticsConfig.umamiAnalytics.replaysScriptUrl}
-          trackOutboundLinks={analyticsConfig.umamiAnalytics.trackOutboundLinks}
-          collectWebVitals={analyticsConfig.umamiAnalytics.collectWebVitals}
-          replays={analyticsConfig.umamiAnalytics.replays}
-          localPreview={isLocalPreview}
-          />
-        )}
-        {analyticsConfig?.umamiAnalytics?.websiteId &&
-          analyticsConfig.umamiAnalytics.shareId &&
-          analyticsConfig.umamiAnalytics.shareApiBase && (
-            <UmamiMetrics
-              shareId={analyticsConfig.umamiAnalytics.shareId}
-              shareApiBase={analyticsConfig.umamiAnalytics.shareApiBase}
-			  historicalVisitors={analyticsConfig.umamiAnalytics.historicalStats?.visitors}
-			  historicalPageviews={analyticsConfig.umamiAnalytics.historicalStats?.pageviews}
-              localPreview={isLocalPreview}
-            />
-          )}
-        {analyticsConfig?.la51Analytics?.Id && (
-            <La51Analytics
-            analyticsId={analyticsConfig.la51Analytics.Id}
-            sdkUrl={analyticsConfig.la51Analytics?.sdkUrl}
-            ck={analyticsConfig.la51Analytics?.ck}
-            autoTrack={analyticsConfig.la51Analytics?.autoTrack}
-            hashMode={analyticsConfig.la51Analytics?.hashMode}
-            screenRecord={analyticsConfig.la51Analytics?.screenRecord}
-            />
-    )}
-
     <title>{pageTitle}</title>
     <meta
       name="description"
@@ -604,7 +557,6 @@ const canonicalUrl = new URL(Astro.url.pathname, siteConfig.site_url).toString()
     {shouldShowTopHighlight && <div class="top-gradient-highlight" />}
     <div id="page-background-decoration" aria-hidden="true"></div>
     <ConfigCarrier />
-    <MusicManager />
     <slot />
 
 
@@ -618,7 +570,6 @@ const canonicalUrl = new URL(Astro.url.pathname, siteConfig.site_url).toString()
     <!-- Fancybox Manager -->
     <FancyboxManager />
     <ChangelogManager />
-    <WalineManager />
   </body>
 </html>
 
@@ -1027,7 +978,7 @@ function disableAnimation() {
     });
   }
 
-  // 只有主页、文章列表/详情和友链保留在页面 0，
+  // 只有主页和文章列表/详情保留在页面 0，
   // 其余所有站内页面都直接进入主内容页面 1。
   const isPageZeroPath = (pathname: string) => {
     const normalizedPathname = pathname.replace(/\/+$/, "") || "/";
@@ -1043,7 +994,6 @@ function disableAnimation() {
 
     return (
       pathsEqual(pathname, url("/")) ||
-      pathsEqual(pathname, url("/friends/")) ||
       isPostListPath ||
       isPostPath
     );

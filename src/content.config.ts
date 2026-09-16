@@ -7,6 +7,7 @@ type PostData = {
 	title: string;
 	published: Date;
 	updated?: Date;
+	topic: string;
 	draft: boolean;
 	description: string;
 	aiSummary: string;
@@ -39,6 +40,7 @@ const postsCollection: PostsCollection = defineCollection({
 		title: z.string(),
 		published: z.date(),
 		updated: z.date().optional(),
+		topic: z.string().min(1),
 		draft: z.boolean().optional().default(false),
 		description: z.string().optional().default(""),
 		aiSummary: z.string().optional().default(""),

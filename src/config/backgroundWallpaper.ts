@@ -41,7 +41,8 @@ export const backgroundWallpaper: BackgroundWallpaperConfig = {
 	// 推荐只选择自己喜欢的模式并关闭切换功能
 	switchable: true,
 	// 是否启用背景视频播放，配置后将在导航栏显示视频播放按钮
-	playerEnable: true,
+	// 本站不播放背景视频，避免自动播放媒体干扰阅读
+	playerEnable: false,
 	/**
 	 * 背景图片配置
 	 * 图片路径支持三种格式：
@@ -82,10 +83,8 @@ export const backgroundWallpaper: BackgroundWallpaperConfig = {
 		// 背景视频播放地址
 		// 支持单个视频路径（字符串）或多个视频循环（数组）
 		// 支持远程视频URL，本地视频请放在 public/assets/videos/ 目录下
-		// playerUrl: "/assets/videos/firefly.mp4",
-		playerUrl: [
-			"https://www.image2url.com/r2/default/videos/1781765166391-f2ba6648-1597-40e0-9f0a-6768ae39e574.mp4",
-		],
+		// playerUrl: "/assets/videos/background.mp4",
+		playerUrl: [],
 	},
 	// 横幅壁纸和全屏壁纸共享配置
 	common: {
@@ -100,17 +99,15 @@ export const backgroundWallpaper: BackgroundWallpaperConfig = {
 			// 是否允许用户通过控制面板切换横幅标题显示
 			switchable: true,
 			// 主页横幅主标题
-			title: "物物而不物于物，念念而不念于念；",
+			title: "载尘望星",
 			// 主页横幅主标题字体大小
 			titleSize: "3.8rem",
 			// 主页横幅副标题
 			subtitle: [
-				"把重复交给脚本，把思考留给自己。",
-				"工具负责提速，判断与创造仍然属于人。",
-				"在每一次调试里，把复杂留给代码，把从容还给生活。",
-				"记录解决问题的过程，也收藏一路生长的痕迹。",
-				"自动化不是替代双手，而是为真正重要的事腾出时间。",
-				"让 AI 参与工作，把真实的感受留在文字里。",
+				"城之内，是尘埃与眼泪；城之外，是星宇与长河。",
+				"把学到的东西写清楚，让它慢慢长成自己的知识库。",
+				"每一个项目都留下背景、方案、踩坑与结果。",
+				"技术之外，也保留一点属于人的视角。",
 			],
 			// 主页横幅副标题字体大小
 			subtitleSize: "1.5rem",

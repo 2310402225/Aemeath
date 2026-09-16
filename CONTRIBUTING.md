@@ -1,20 +1,20 @@
-# Contributing
+# 参与修改
 
-Thank you for your interest in contributing!
+这是一个个人站点仓库。修改前先确认需求文档和页面定位，避免把旧站内容、旧身份或第三方服务重新引入。
 
-## Before You Start
+## 提交前
 
-If you plan to make major changes (especially new features or design changes), please open an issue or discussion before starting work. This helps ensure your effort aligns with the project's direction.
+- 保持每次修改只处理一个明确问题。
+- 中文界面和中文内容优先，不提交测试用的旧品牌文案。
+- 不提交密钥、账号、私有接口或部署凭据。
+- 不恢复已经确认删除的评论、统计、音乐、看板娘、友链和文章内容。
 
-## Submitting Code
-
-Please keep each pull request focused on a single purpose. Avoid mixing unrelated changes in one PR, as this can make reviewing and merging code more difficult.
-
-Please use the [Conventional Commits](https://www.conventionalcommits.org/) format for your commit messages whenever possible. This keeps our history clear and consistent.
-
-Before submitting code, please run the appropriate commands to check for errors and format your code.
+## 验证
 
 ```bash
 pnpm check
-pnpm format
+pnpm type-check
+pnpm build
 ```
+
+提交信息使用 Conventional Commits，例如 `feat:`、`fix:` 和 `chore:`。
