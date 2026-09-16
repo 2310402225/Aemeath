@@ -16,7 +16,9 @@ export const siteConfig: SiteConfig = {
 
 	// 站点 URL
 	// 部署到 Vercel 后把这里换成实际域名；构建时可用环境变量 SITE_URL 覆盖
-	site_url: process.env.SITE_URL || "https://zaichen-wangxing.vercel.app",
+	site_url:
+		(typeof process !== "undefined" ? process.env.SITE_URL : undefined) ||
+		"https://zaichen-wangxing.vercel.app",
 
 	// 站点描述
 	description:
