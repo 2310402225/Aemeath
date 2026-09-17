@@ -1,0 +1,20 @@
+# Cloudflare Pages 缓存策略（构建时 public/ 会被原样复制到 dist/）
+# 构建产物带内容哈希，可长期强缓存
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/pagefind/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# HTML 与站点元数据始终回源校验，避免更新后看到旧页面
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate

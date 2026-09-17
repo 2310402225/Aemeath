@@ -63,4 +63,3 @@ Firefly-master/
 /public/api/deploy-status.json
 /public/api/server-status.*
 /waline/
-/wrangler.jsonc

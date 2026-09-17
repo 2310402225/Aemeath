@@ -15,10 +15,11 @@ export const siteConfig: SiteConfig = {
 	themeVersion: "V3.4.0",
 
 	// 站点 URL
-	// 部署到 Vercel 后把这里换成实际域名；构建时可用环境变量 SITE_URL 覆盖
+	// 构建时可用环境变量 SITE_URL 覆盖（Cloudflare Pages / Vercel 均可设置）；
+	// 未设置时回退到下面的默认域名。
 	site_url:
 		(typeof process !== "undefined" ? process.env.SITE_URL : undefined) ||
-		"https://zaichen-wangxing.vercel.app",
+		"https://zaichen-wangxing.pages.dev",
 
 	// 站点描述
 	description:
