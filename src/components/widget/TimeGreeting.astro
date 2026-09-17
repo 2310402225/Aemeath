@@ -236,6 +236,8 @@ const { class: className, style } = Astro.props;
 </style>
 
 <script>
+	import { WUTHERING_WAVES_WALLPAPER_IDS } from "../../config/backgroundWallpaper";
+
 	type GreetingPeriod = {
 		id: string;
 		message: string;
@@ -261,14 +263,12 @@ const { class: className, style } = Astro.props;
 	];
 
 	const wutheringWavesImages = [
-		"01",
-		...Array.from({ length: 23 }, (_, index) =>
-			String(index + 25).padStart(2, "0"),
+		"/assets/images/wallpaper/wallpaper-01.webp",
+		...WUTHERING_WAVES_WALLPAPER_IDS.map(
+			(id) =>
+				`/assets/images/wallpaper/wallpaper-${String(id).padStart(2, "0")}.webp`,
 		),
-	].map(
-		(index) =>
-			`/assets/images/wallpaper/wallpaper-${index}.webp`,
-	);
+	];
 
 	function getRandomWutheringWavesImage(): string {
 		return wutheringWavesImages[

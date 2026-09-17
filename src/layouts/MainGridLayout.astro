@@ -534,6 +534,9 @@ const hasMultipleImages =
                 if (!img) return null;
                 var deferredSrc = img.getAttribute('data-src');
                 if (deferredSrc && !img.getAttribute('src')) {
+                    // 预取时立刻切到 eager：这些 slide 是 opacity:0 的绝对定位层，
+                    // 保持 lazy 会让浏览器把请求一直往后推，轮播只能干等。
+                    img.setAttribute('loading', 'eager');
                     img.setAttribute('src', deferredSrc);
                     img.removeAttribute('data-src');
                 }
@@ -547,6 +550,11 @@ const hasMultipleImages =
                 if (nextIndex >= slides.length) nextIndex = 0;
                 loadSlideImage(slides[nextIndex]);
             }
+
+            // 新图最长等待时间：超时就先切过去，由 LQIP 占位渐变过渡，图片加载完再淡入。
+            // 原来这里是无上限等待 —— 单张壁纸 0.6~1.9MB，网速一慢就长时间不切换，
+            // 表现就是「轮播卡在同一张上不动」。
+            var SLIDE_LOAD_TIMEOUT = 1500;
 
             function whenSlideImageReady(slide, callback) {
                 var img = loadSlideImage(slide);
@@ -563,6 +571,7 @@ const hasMultipleImages =
                 };
                 img.addEventListener('load', finish, { once: true });
                 img.addEventListener('error', finish, { once: true });
+                setTimeout(finish, SLIDE_LOAD_TIMEOUT);
             }
 
             function applySlideChange(slides, nextIndex) {

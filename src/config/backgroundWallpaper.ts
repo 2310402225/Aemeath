@@ -1,15 +1,25 @@
 import type { BackgroundWallpaperConfig } from "@/types/backgroundWallpaper";
 
+// 鸣潮系列壁纸编号清单（文件位于 public/assets/images/wallpaper/）
+// ⚠️ 原始采集流程把同一张壁纸的 10k 与 20k 版本当成了两张：
+//   wallpaper-30 / 31 同为「爱弥斯 88VIP联动壁纸」
+//   wallpaper-32 / 33 同为「爱弥斯 环宇穹音」
+// 两者都缩放到 3840×2160 后像素级相同（32×32 平均绝对差 ≤ 0.51、最大差 3，
+// 纯属 WebP 重压缩噪声），轮播会连着出现两张「一模一样」的图，故移除 31 与 33。
+export const WUTHERING_WAVES_WALLPAPER_IDS = [
+	25, 26, 27, 28, 29, 30, 32, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+	46, 47,
+];
+
 const originalWallpaperImages = Array.from(
 	{ length: 24 },
 	(_, index) =>
 		`/assets/images/wallpaper/wallpaper-${String(index + 1).padStart(2, "0")}.webp`,
 );
 
-const importedWutheringWavesImages = Array.from(
-	{ length: 23 },
-	(_, index) =>
-		`/assets/images/wallpaper/wallpaper-${String(index + 25).padStart(2, "0")}.webp`,
+const importedWutheringWavesImages = WUTHERING_WAVES_WALLPAPER_IDS.map(
+	(id) =>
+		`/assets/images/wallpaper/wallpaper-${String(id).padStart(2, "0")}.webp`,
 );
 
 const wutheringWavesWallpaperImages = [
