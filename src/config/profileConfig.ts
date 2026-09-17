@@ -33,5 +33,11 @@ export const profileConfig: ProfileConfig = {
 			url: "https://github.com/2310402225",
 			showName: false,
 		},
+		{
+			name: "哔哩哔哩",
+			icon: "simple-icons:bilibili",
+			url: "https://space.bilibili.com/1320864601",
+			showName: false,
+		},
 	],
 };
