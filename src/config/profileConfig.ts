@@ -27,5 +27,11 @@ export const profileConfig: ProfileConfig = {
 			url: "copy:1242354176@qq.com",
 			showName: false,
 		},
+		{
+			name: "GitHub",
+			icon: "fa7-brands:github",
+			url: "https://github.com/2310402225",
+			showName: false,
+		},
 	],
 };

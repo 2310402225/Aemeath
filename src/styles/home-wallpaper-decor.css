@@ -535,7 +535,6 @@ html.is-page-transitioning #wallpaper-wrapper.homepage-fullscreen-decor {
 }
 
 .home-wallpaper-card__social-link {
-	--social-tag-color: rgba(255, 150, 165, 0.95);
 	position: relative;
 	display: flex;
 	align-items: flex-end;
@@ -595,26 +594,33 @@ html.is-page-transitioning #wallpaper-wrapper.homepage-fullscreen-decor {
 	height: 1em;
 }
 
+.home-wallpaper-card__social-link:nth-child(1) {
+	--social-tag-color: rgba(255, 150, 165, 0.95);
+	--home-wallpaper-tag-rotation: 2deg;
+	color: #5a1020;
+}
+
+/* GitHub 标签：绿色 */
 .home-wallpaper-card__social-link:nth-child(2) {
-	--social-tag-color: rgba(255, 210, 80, 0.95);
+	--social-tag-color: rgba(82, 196, 128, 0.95);
 	--home-wallpaper-tag-rotation: -2deg;
-	color: #553500;
+	color: #0d3d24;
 	transform: rotate(-2deg);
 }
 
 .home-wallpaper-card__social-link:nth-child(3) {
+	--social-tag-color: rgba(255, 210, 80, 0.95);
+	color: #553500;
+}
+
+.home-wallpaper-card__social-link:nth-child(4) {
 	--social-tag-color: rgba(144, 211, 173, 0.95);
 	color: #174b38;
 }
 
-.home-wallpaper-card__social-link:nth-child(4) {
+.home-wallpaper-card__social-link:nth-child(5) {
 	--social-tag-color: rgba(135, 190, 236, 0.95);
 	color: #173b61;
-}
-
-.home-wallpaper-card__social-link:nth-child(5) {
-	--social-tag-color: rgba(246, 184, 98, 0.95);
-	color: #5b3510;
 }
 
 .home-wallpaper-card__social-link:hover,
