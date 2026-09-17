@@ -26,11 +26,7 @@ const getDynamicNavBarConfig = (): NavBarConfig => {
 		name: "归档",
 		url: "#",
 		icon: "material-symbols:archive",
-		children: [
-			LinkPresets.Archive,
-			LinkPresets.Categories,
-			LinkPresets.Tags,
-		],
+		children: [LinkPresets.Archive, LinkPresets.Categories, LinkPresets.Tags],
 	});
 
 	// 更多及其子菜单

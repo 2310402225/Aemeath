@@ -8,23 +8,31 @@ interface Props {
 }
 
 const { initialHome = false } = Astro.props;
-const defaultCharacter = homePortfolioIntroSettings.characters.find(
-	(character) => character.id === homePortfolioIntroSettings.defaultCharacterId,
-) ?? homePortfolioIntroSettings.characters[0];
+const defaultCharacter =
+	homePortfolioIntroSettings.characters.find(
+		(character) =>
+			character.id === homePortfolioIntroSettings.defaultCharacterId,
+	) ?? homePortfolioIntroSettings.characters[0];
 const desktopBanners = homePortfolioIntroSettings.banners.desktop;
 const mobileBanners = homePortfolioIntroSettings.banners.mobile;
-const defaultTopBanner = desktopBanners.top.find(
-	(banner) => banner.id === homePortfolioIntroSettings.defaultTopBannerId,
-) ?? desktopBanners.top[0];
-const defaultBottomBanner = desktopBanners.bottom.find(
-	(banner) => banner.id === homePortfolioIntroSettings.defaultBottomBannerId,
-) ?? desktopBanners.bottom[0];
-const defaultMobileTopBanner = mobileBanners.top.find(
-	(banner) => banner.id === homePortfolioIntroSettings.defaultMobileTopBannerId,
-) ?? mobileBanners.top[0];
-const defaultMobileBottomBanner = mobileBanners.bottom.find(
-	(banner) => banner.id === homePortfolioIntroSettings.defaultMobileBottomBannerId,
-) ?? mobileBanners.bottom[0];
+const defaultTopBanner =
+	desktopBanners.top.find(
+		(banner) => banner.id === homePortfolioIntroSettings.defaultTopBannerId,
+	) ?? desktopBanners.top[0];
+const defaultBottomBanner =
+	desktopBanners.bottom.find(
+		(banner) => banner.id === homePortfolioIntroSettings.defaultBottomBannerId,
+	) ?? desktopBanners.bottom[0];
+const defaultMobileTopBanner =
+	mobileBanners.top.find(
+		(banner) =>
+			banner.id === homePortfolioIntroSettings.defaultMobileTopBannerId,
+	) ?? mobileBanners.top[0];
+const defaultMobileBottomBanner =
+	mobileBanners.bottom.find(
+		(banner) =>
+			banner.id === homePortfolioIntroSettings.defaultMobileBottomBannerId,
+	) ?? mobileBanners.bottom[0];
 const initialStyle = initialHome
 	? "position: fixed; inset: 0; z-index: 49; background: #f8e4ad;"
 	: undefined;

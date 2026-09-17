@@ -2,9 +2,9 @@
 import { Image } from "astro:assets";
 import { Icon } from "astro-icon/components";
 import avatar from "@/assets/images/zaichen-avatar.webp";
-import MainGridLayout from "@/layouts/MainGridLayout.astro";
 import { profileConfig } from "@/config/profileConfig";
 import { siteConfig } from "@/config/siteConfig";
+import MainGridLayout from "@/layouts/MainGridLayout.astro";
 
 const principles = [
 	{
@@ -25,8 +25,14 @@ const principles = [
 ];
 
 const priorities = [
-	{ name: "学习记录", description: "第一优先级，持续积累可检索、可复现的知识。" },
-	{ name: "资源推荐", description: "独立成库，说明用途、理由、适用人群和替代方案。" },
+	{
+		name: "学习记录",
+		description: "第一优先级，持续积累可检索、可复现的知识。",
+	},
+	{
+		name: "资源推荐",
+		description: "独立成库，说明用途、理由、适用人群和替代方案。",
+	},
 	{ name: "个人项目", description: "记录完整闭环，保留可复用的工程经验。" },
 	{ name: "随笔", description: "保留约一成的人文观察，不让技术占据全部表达。" },
 ];

@@ -1,112 +1,117 @@
 <script lang="ts">
-	import { afterUpdate, onMount } from "svelte";
-	import { initLottieEmojis, setLottiePlayback } from "../../scripts/lottie";
+import { afterUpdate, onMount } from "svelte";
+import { initLottieEmojis, setLottiePlayback } from "../../scripts/lottie";
 
-	type LottieItem = {
+type LottieItem = {
+	name: string;
+	label: string;
+	group: "精选" | "QQ";
+	emojiId?: string;
+	description?: string;
+};
+
+type QqIndex = {
+	items: Array<{
 		name: string;
-		label: string;
-		group: "精选" | "QQ";
-		emojiId?: string;
-		description?: string;
-	};
+		emojiId: string;
+		describe: string;
+	}>;
+};
 
-	type QqIndex = {
-		items: Array<{
-			name: string;
-			emojiId: string;
-			describe: string;
-		}>;
-	};
+const featured: LottieItem[] = [
+	{ name: "aini", label: "爱你", group: "精选" },
+	{ name: "bianpao", label: "鞭炮", group: "精选" },
+	{ name: "bixin", label: "比心", group: "精选" },
+	{ name: "caigou", label: "采购", group: "精选" },
+	{ name: "cool", label: "酷", group: "精选" },
+	{ name: "daku", label: "大哭", group: "精选" },
+	{ name: "exin", label: "恶心", group: "精选" },
+	{ name: "fan", label: "烦", group: "精选" },
+	{ name: "foxi", label: "佛系", group: "精选" },
+	{ name: "gandong", label: "感动", group: "精选" },
+	{ name: "gongzuo", label: "工作", group: "精选" },
+	{ name: "huang", label: "慌", group: "精选" },
+	{ name: "jingxia", label: "惊吓", group: "精选" },
+	{ name: "jiong", label: "囧", group: "精选" },
+	{ name: "kaixin", label: "开心", group: "精选" },
+	{ name: "meiku", label: "没哭", group: "精选" },
+	{ name: "meishi", label: "美食", group: "精选" },
+	{ name: "re", label: "热", group: "精选" },
+	{ name: "shengqi", label: "生气", group: "精选" },
+	{ name: "shengri", label: "生日", group: "精选" },
+	{ name: "shuijiao", label: "睡觉", group: "精选" },
+	{ name: "tietie", label: "贴贴", group: "精选" },
+	{ name: "wangpan", label: "网盘", group: "精选" },
+	{ name: "wenhao", label: "问号", group: "精选" },
+	{ name: "wuzui", label: "捂嘴", group: "精选" },
+	{ name: "xiaoku", label: "笑哭", group: "精选" },
+	{ name: "yanhua", label: "烟花", group: "精选" },
+];
 
-	const featured: LottieItem[] = [
-		{ name: "aini", label: "爱你", group: "精选" },
-		{ name: "bianpao", label: "鞭炮", group: "精选" },
-		{ name: "bixin", label: "比心", group: "精选" },
-		{ name: "caigou", label: "采购", group: "精选" },
-		{ name: "cool", label: "酷", group: "精选" },
-		{ name: "daku", label: "大哭", group: "精选" },
-		{ name: "exin", label: "恶心", group: "精选" },
-		{ name: "fan", label: "烦", group: "精选" },
-		{ name: "foxi", label: "佛系", group: "精选" },
-		{ name: "gandong", label: "感动", group: "精选" },
-		{ name: "gongzuo", label: "工作", group: "精选" },
-		{ name: "huang", label: "慌", group: "精选" },
-		{ name: "jingxia", label: "惊吓", group: "精选" },
-		{ name: "jiong", label: "囧", group: "精选" },
-		{ name: "kaixin", label: "开心", group: "精选" },
-		{ name: "meiku", label: "没哭", group: "精选" },
-		{ name: "meishi", label: "美食", group: "精选" },
-		{ name: "re", label: "热", group: "精选" },
-		{ name: "shengqi", label: "生气", group: "精选" },
-		{ name: "shengri", label: "生日", group: "精选" },
-		{ name: "shuijiao", label: "睡觉", group: "精选" },
-		{ name: "tietie", label: "贴贴", group: "精选" },
-		{ name: "wangpan", label: "网盘", group: "精选" },
-		{ name: "wenhao", label: "问号", group: "精选" },
-		{ name: "wuzui", label: "捂嘴", group: "精选" },
-		{ name: "xiaoku", label: "笑哭", group: "精选" },
-		{ name: "yanhua", label: "烟花", group: "精选" },
-	];
+let items: LottieItem[] = featured;
+let query = "";
+let filter: "全部" | "精选" | "QQ" = "全部";
+let loading = true;
+let error = "";
 
-	let items: LottieItem[] = featured;
-	let query = "";
-	let filter: "全部" | "精选" | "QQ" = "全部";
-	let loading = true;
-	let error = "";
+$: normalizedQuery = query.trim().toLowerCase();
+$: filteredItems = items.filter((item) => {
+	const matchesFilter = filter === "全部" || item.group === filter;
+	const searchable = [item.name, item.label, item.emojiId, item.description]
+		.filter(Boolean)
+		.join(" ")
+		.toLowerCase();
+	return (
+		matchesFilter && (!normalizedQuery || searchable.includes(normalizedQuery))
+	);
+});
+$: visibleItems = filteredItems;
 
-	$: normalizedQuery = query.trim().toLowerCase();
-	$: filteredItems = items.filter((item) => {
-		const matchesFilter = filter === "全部" || item.group === filter;
-		const searchable = [item.name, item.label, item.emojiId, item.description]
-			.filter(Boolean)
-			.join(" ")
-			.toLowerCase();
-		return matchesFilter && (!normalizedQuery || searchable.includes(normalizedQuery));
-	});
-	$: visibleItems = filteredItems;
-
-	onMount(async () => {
-		try {
-			const response = await fetch(`${import.meta.env.BASE_URL}lottie/qq-index.json`);
-			if (!response.ok) throw new Error(`HTTP ${response.status}`);
-			const data = (await response.json()) as QqIndex;
-			const qqItems = data.items.map((item) => ({
-				name: item.name,
-				label: item.describe.replace(/^\//, "").trim() || `QQ 表情 ${item.emojiId}`,
-				group: "QQ" as const,
-				emojiId: item.emojiId,
-				description: item.describe,
-			}));
-			items = [...featured, ...qqItems];
-		} catch (loadError) {
-			console.error("Failed to load the Lottie index", loadError);
-			error = "QQ 表情索引暂时加载失败，但精选表情仍然可以预览。";
-		} finally {
-			loading = false;
-		}
-	});
-
-	afterUpdate(() => {
-		initLottieEmojis();
-	});
-
-	function changeFilter(nextFilter: "全部" | "精选" | "QQ") {
-		filter = nextFilter;
+onMount(async () => {
+	try {
+		const response = await fetch(
+			`${import.meta.env.BASE_URL}lottie/qq-index.json`,
+		);
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		const data = (await response.json()) as QqIndex;
+		const qqItems = data.items.map((item) => ({
+			name: item.name,
+			label:
+				item.describe.replace(/^\//, "").trim() || `QQ 表情 ${item.emojiId}`,
+			group: "QQ" as const,
+			emojiId: item.emojiId,
+			description: item.describe,
+		}));
+		items = [...featured, ...qqItems];
+	} catch (loadError) {
+		console.error("Failed to load the Lottie index", loadError);
+		error = "QQ 表情索引暂时加载失败，但精选表情仍然可以预览。";
+	} finally {
+		loading = false;
 	}
+});
 
-	function playPreview(name: string) {
-		setLottiePlayback(name, true);
-	}
+afterUpdate(() => {
+	initLottieEmojis();
+});
 
-	function pausePreview(name: string) {
-		setLottiePlayback(name, false);
-	}
+function changeFilter(nextFilter: "全部" | "精选" | "QQ") {
+	filter = nextFilter;
+}
 
-	function handleCardKeydown(event: KeyboardEvent, name: string) {
-		if (event.key !== "Enter" && event.key !== " ") return;
-		event.preventDefault();
-		playPreview(name);
-	}
+function playPreview(name: string) {
+	setLottiePlayback(name, true);
+}
+
+function pausePreview(name: string) {
+	setLottiePlayback(name, false);
+}
+
+function handleCardKeydown(event: KeyboardEvent, name: string) {
+	if (event.key !== "Enter" && event.key !== " ") return;
+	event.preventDefault();
+	playPreview(name);
+}
 </script>
 
 <section class="lottie-page" aria-labelledby="lottie-page-title">

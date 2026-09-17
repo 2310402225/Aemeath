@@ -36,7 +36,11 @@ function getConfiguredWallpaperCount(): number {
 	if (src && typeof src === "object") {
 		const desktop = src.desktop;
 		const mobile = src.mobile;
-		const desktopCount = Array.isArray(desktop) ? desktop.length : desktop ? 1 : 0;
+		const desktopCount = Array.isArray(desktop)
+			? desktop.length
+			: desktop
+				? 1
+				: 0;
 		const mobileCount = Array.isArray(mobile) ? mobile.length : mobile ? 1 : 0;
 		return Math.max(desktopCount, mobileCount);
 	}
@@ -161,7 +165,9 @@ export function applyThemeToDocument(theme: LIGHT_DARK_MODE): void {
 		startViewTransition?: (callback: () => void) => { finished: Promise<void> };
 	};
 	const transitionDocument = document as ThemeTransitionDocument;
-	const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+	const reducedMotion = window.matchMedia?.(
+		"(prefers-reduced-motion: reduce)",
+	).matches;
 
 	if (!reducedMotion && transitionDocument.startViewTransition) {
 		root.classList.add("is-theme-transitioning", "use-view-transition");
@@ -175,28 +181,11 @@ export function applyThemeToDocument(theme: LIGHT_DARK_MODE): void {
 	root.classList.add("is-theme-transitioning");
 	window.requestAnimationFrame(() => {
 		commitTheme();
-		window.setTimeout(() => root.classList.remove("is-theme-transitioning"), 360);
+		window.setTimeout(
+			() => root.classList.remove("is-theme-transitioning"),
+			360,
+		);
 	});
-	return;
-	// @ts-ignore -- retained legacy branch is bypassed by the transition path above.
-
-	// 批量 DOM 操作，减少重绘
-	if (needsThemeChange) {
-		// 添加过渡保护类（但会导致大量重绘，所以使用更轻量的方式）
-		// document.documentElement.classList.add("is-theme-transitioning");
-
-		// 直接切换主题，利用 CSS 变量的特性让浏览器优化过渡
-		if (targetIsDark) {
-			document.documentElement.classList.add("dark");
-		} else {
-			document.documentElement.classList.remove("dark");
-		}
-	}
-
-	// Set the theme for Expressive Code based on current mode
-	if (needsCodeThemeUpdate) {
-		document.documentElement.setAttribute("data-theme", expectedTheme);
-	}
 }
 
 // 系统主题监听器引用
@@ -250,24 +239,6 @@ export function setupSystemThemeListener(): void {
 		}
 
 		applyThemeToDocument(SYSTEM_MODE);
-		return;
-		// @ts-ignore -- retained legacy branch is bypassed by the transition path above.
-
-		// 直接应用系统主题，不使用过渡保护类以避免大量重绘
-		if (isDark) {
-			document.documentElement.classList.add("dark");
-		} else {
-			document.documentElement.classList.remove("dark");
-		}
-
-		// Set the theme for Expressive Code
-		const expressiveTheme = isDark
-			? expressiveCodeConfig.darkTheme
-			: expressiveCodeConfig.lightTheme;
-		document.documentElement.setAttribute("data-theme", expressiveTheme);
-
-		// 触发自定义事件通知其他组件（仅在真正切换时触发）
-		window.dispatchEvent(new CustomEvent("theme-change"));
 	};
 
 	// 立即调用一次以设置初始状态

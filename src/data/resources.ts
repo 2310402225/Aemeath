@@ -1,4 +1,10 @@
-export type ResourceCategory = "工具" | "课程" | "论文" | "书单" | "数据集" | "其他";
+export type ResourceCategory =
+	| "工具"
+	| "课程"
+	| "论文"
+	| "书单"
+	| "数据集"
+	| "其他";
 
 export interface ResourceItem {
 	name: string;
