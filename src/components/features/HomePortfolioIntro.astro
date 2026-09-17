@@ -604,18 +604,19 @@ const initialStyle = initialHome
 		display: inline-block;
 		color: #fff;
 		font-family: "ZCOOL KuaiLe", "Noto Sans SC", "Microsoft YaHei", sans-serif;
-		font-size: clamp(4rem, 13vw, 11.5rem);
+		font-size: clamp(2.4rem, 7.4vw, 6.4rem);
 		font-weight: 900;
 		line-height: 0.82;
 		letter-spacing: 0.045em;
-		text-shadow:
-			0.055em 0.055em 0 #15131a,
-			-0.055em 0.055em 0 #15131a,
-			0.055em -0.055em 0 #15131a,
-			-0.055em -0.055em 0 #15131a,
-			0 0.08em 0.18em rgba(0, 0, 0, 0.68);
-		will-change: transform, opacity;
+		/* 半透明处理：整体降到 0.72，描边与投影同步减弱，避免缩小后仍显得厚重。 */
 		opacity: 0;
+		text-shadow:
+			0.04em 0.04em 0 rgba(21, 19, 26, 0.5),
+			-0.04em 0.04em 0 rgba(21, 19, 26, 0.5),
+			0.04em -0.04em 0 rgba(21, 19, 26, 0.5),
+			-0.04em -0.04em 0 rgba(21, 19, 26, 0.5),
+			0 0.07em 0.16em rgba(0, 0, 0, 0.42);
+		will-change: transform, opacity;
 	}
 
 	.home-portfolio-intro__word--left {
@@ -633,8 +634,9 @@ const initialStyle = initialHome
 		left: 49%;
 		display: block;
 		width: auto;
-		max-width: min(88vw, 48rem);
-		height: min(100svh, 64rem);
+		/* 立绘整体收小，给上下两条横幅留出更多画面。 */
+		max-width: min(72vw, 38rem);
+		height: min(80svh, 50rem);
 		object-fit: contain;
 		object-position: center bottom;
 		opacity: 0;
@@ -691,12 +693,12 @@ const initialStyle = initialHome
 
 	@keyframes home-portfolio-intro-word-left {
 		0% { opacity: 0; transform: translate3d(-24vw, 0, 0) rotate(-5deg) scale(0.9); }
-		100% { opacity: 1; transform: translate3d(0, 0, 0) rotate(-1.5deg) scale(1); }
+		100% { opacity: 0.72; transform: translate3d(0, 0, 0) rotate(-1.5deg) scale(1); }
 	}
 
 	@keyframes home-portfolio-intro-word-right {
 		0% { opacity: 0; transform: translate3d(24vw, 0, 0) rotate(5deg) scale(0.9); }
-		100% { opacity: 1; transform: translate3d(0, 0, 0) rotate(1.5deg) scale(1); }
+		100% { opacity: 0.72; transform: translate3d(0, 0, 0) rotate(1.5deg) scale(1); }
 	}
 
 	@keyframes home-portfolio-intro-lift {
