@@ -35,6 +35,11 @@ const getDynamicNavBarConfig = (): NavBarConfig => {
 		url: "#",
 		icon: "material-symbols:more-horiz",
 		children: [
+			{
+				name: "资源与工具",
+				url: "/posts/resource-and-tools/",
+				icon: "material-symbols:menu-book-rounded",
+			},
 			LinkPresets.Gallery,
 			LinkPresets.Tools,
 			LinkPresets.Lottie,
