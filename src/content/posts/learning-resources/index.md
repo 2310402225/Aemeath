@@ -7,7 +7,7 @@ description: '四个反复验证过的学习站点：Kaggle Datasets、scikit-le
 tags:
   - 资源
   - 学习
-category: ''
+category: 资源推荐
 image: /assets/images/posts/learning-resources-cover.webp
 draft: false
 lang: zh_CN

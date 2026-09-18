@@ -15,7 +15,8 @@ const sortedPostsList = await getSortedPostsList();
       var cat = p.get("category") || "";
       var tag = p.get("tag") || "";
       var unc = p.get("uncategorized");
-      var t = cat || (unc ? "未分类" : "") || (tag ? "#" + tag : "");
+      var tp = p.get("topic") || "";
+      var t = tp || cat || (unc ? "未分类" : "") || (tag ? "#" + tag : "");
       if (t) {
         requestAnimationFrame(function() {
           var el = document.querySelector(".banner-page-title-text");

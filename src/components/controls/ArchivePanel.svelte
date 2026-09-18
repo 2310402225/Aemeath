@@ -15,14 +15,24 @@ tags = params.has("tag") ? params.getAll("tag") : [];
 categories = params.has("category") ? params.getAll("category") : [];
 const uncategorized = params.get("uncategorized");
 
+// topic 分类切换：与 learning / resources / tools 三个分类页共用同一套 frontmatter 字段
+const UNCATEGORIZED_TOPIC = "未分类";
+const TOPIC_ORDER = ["学习记录", "资源推荐", "工具推荐"];
+let activeTopic = params.get("topic") || "";
+
 interface Post {
 	id: string;
 	data: {
 		title: string;
 		tags: string[];
 		category?: string | null;
+		topic?: string | null;
 		published: Date;
 	};
+}
+
+function readTopic(post: Post) {
+	return (post.data.topic ?? "").trim();
 }
 
 interface Group {
@@ -41,6 +51,39 @@ let primaryFilter: ActiveFilter | null = null;
 let secondaryFilters: ActiveFilter[] = [];
 let filteredPostCount = 0;
 let collapsedYears: Set<number> = new Set();
+let layoutInitialized = false;
+
+const topicCountMap = new Map<string, number>();
+let uncategorizedTopicCount = 0;
+for (const post of sortedPosts) {
+	const topic = readTopic(post);
+	if (!topic) {
+		uncategorizedTopicCount++;
+		continue;
+	}
+	topicCountMap.set(topic, (topicCountMap.get(topic) ?? 0) + 1);
+}
+
+const orderedTopics = [
+	...TOPIC_ORDER.filter((topic) => topicCountMap.has(topic)),
+	...[...topicCountMap.keys()]
+		.filter((topic) => !TOPIC_ORDER.includes(topic))
+		.sort((a, b) => a.localeCompare(b, "zh-Hans-CN")),
+];
+
+const topicTabs = orderedTopics.map((topic) => ({
+	key: topic,
+	label: topic,
+	count: topicCountMap.get(topic) ?? 0,
+}));
+
+if (uncategorizedTopicCount > 0) {
+	topicTabs.push({
+		key: UNCATEGORIZED_TOPIC,
+		label: UNCATEGORIZED_TOPIC,
+		count: uncategorizedTopicCount,
+	});
+}
 
 function toggleYear(year: number) {
 	const willCollapse = !collapsedYears.has(year);
@@ -97,7 +140,7 @@ function formatFilterSummary(filters: ActiveFilter[]) {
 		.join("  ·  ");
 }
 
-onMount(async () => {
+function applyFilters() {
 	let filteredPosts: Post[] = sortedPosts;
 	const currentFilters: ActiveFilter[] = [];
 
@@ -140,6 +183,14 @@ onMount(async () => {
 		filteredPosts = filteredPosts.filter((post) => !post.data.category);
 	}
 
+	if (activeTopic) {
+		filteredPosts = filteredPosts.filter((post) =>
+			activeTopic === UNCATEGORIZED_TOPIC
+				? !readTopic(post)
+				: readTopic(post) === activeTopic,
+		);
+	}
+
 	// 按发布时间倒序排序，确保不受置顶影响
 	filteredPosts = filteredPosts
 		.slice()
@@ -168,9 +219,17 @@ onMount(async () => {
 
 	groups = groupedPostsArray;
 
+	// 首次进入：只展开最近一年；切换分类时保留用户手动展开/折叠的年份
 	if (siteConfig.foldArticle !== false && groupedPostsArray.length > 1) {
-		collapsedYears = new Set(groupedPostsArray.slice(1).map((g) => g.year));
+		const nextCollapsed = new Set<number>();
+		for (const group of groupedPostsArray.slice(1)) {
+			if (!layoutInitialized || collapsedYears.has(group.year)) {
+				nextCollapsed.add(group.year);
+			}
+		}
+		collapsedYears = nextCollapsed;
 	}
+	layoutInitialized = true;
 
 	// 更新横幅标题为当前筛选的分类名或标签名（带淡入淡出）
 	const bannerTitle = document.querySelector<HTMLElement>(
@@ -178,7 +237,9 @@ onMount(async () => {
 	);
 	if (bannerTitle) {
 		let newTitle = "";
-		if (categories.length > 0) {
+		if (activeTopic) {
+			newTitle = activeTopic;
+		} else if (categories.length > 0) {
 			newTitle = categories.join(" / ");
 		} else if (uncategorized) {
 			newTitle = i18n(I18nKey.uncategorized);
@@ -193,10 +254,58 @@ onMount(async () => {
 			}, 260);
 		}
 	}
+}
+
+function selectTopic(topic: string) {
+	// 再次点击当前分类 = 回到全部
+	activeTopic = topic === activeTopic ? "" : topic;
+
+	const url = new URL(window.location.href);
+	if (activeTopic) {
+		url.searchParams.set("topic", activeTopic);
+	} else {
+		url.searchParams.delete("topic");
+	}
+	history.pushState({}, "", url.toString());
+
+	applyFilters();
+}
+
+onMount(() => {
+	applyFilters();
 });
 </script>
 
 <div class="card-base px-8 py-6">
+	{#if topicTabs.length > 0}
+		<div class="mb-5 flex flex-wrap items-center gap-2" role="tablist" aria-label="按主题分类">
+			<button
+				type="button"
+				role="tab"
+				class="archive-topic-tab"
+				class:active={activeTopic === ""}
+				aria-selected={activeTopic === ""}
+				on:click={() => selectTopic("")}
+			>
+				全部
+				<span class="tab-count">{sortedPosts.length}</span>
+			</button>
+			{#each topicTabs as tab}
+				<button
+					type="button"
+					role="tab"
+					class="archive-topic-tab"
+					class:active={activeTopic === tab.key}
+					aria-selected={activeTopic === tab.key}
+					on:click={() => selectTopic(tab.key)}
+				>
+					{tab.label}
+					<span class="tab-count">{tab.count}</span>
+				</button>
+			{/each}
+		</div>
+	{/if}
+
 	{#if primaryFilter}
 		<div class="mb-5">
 			<div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
@@ -305,5 +414,34 @@ onMount(async () => {
 <style>
 	.archive-arrow {
 		display: inline-flex;
+	}
+
+	.archive-topic-tab {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.3rem 0.7rem;
+		border-radius: 0.6rem;
+		font-size: 0.8125rem;
+		line-height: 1.25rem;
+		color: var(--btn-content);
+		background-color: var(--btn-regular-bg);
+		transition:
+			color 0.15s,
+			background-color 0.15s;
+	}
+
+	.archive-topic-tab:hover {
+		color: var(--primary);
+	}
+
+	.archive-topic-tab.active {
+		color: #fff;
+		background-color: var(--primary);
+	}
+
+	.archive-topic-tab .tab-count {
+		font-size: 0.7rem;
+		opacity: 0.7;
 	}
 </style>
