@@ -2,7 +2,7 @@
 title: 实用工具
 published: 2026-09-18
 updated: 2026-09-18
-topic: 资源推荐
+topic: 工具推荐
 description: '四个常备的实用工具：小霸王、Desmos、Yandex 与 xfltd，以及它们各自替我解决的问题。'
 tags:
   - 资源

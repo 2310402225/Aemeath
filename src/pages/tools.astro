@@ -1,7 +1,14 @@
 ---
 import { Icon } from "astro-icon/components";
+import PostCard from "@/components/layout/PostCard.astro";
 import { tools } from "@/data/tools";
 import MainGridLayout from "@/layouts/MainGridLayout.astro";
+import { getSortedPosts } from "@/utils/content-utils";
+import { getPostUrlBySlug } from "@/utils/url-utils";
+
+const toolPosts = (await getSortedPosts()).filter(
+	(post) => post.data.topic === "工具推荐",
+);
 ---
 
 <MainGridLayout title="工具" description="载尘望星自用或维护的轻量工具">
@@ -19,6 +26,30 @@ import MainGridLayout from "@/layouts/MainGridLayout.astro";
 				</div>
 			</div>
 		</section>
+
+		{toolPosts.length > 0 && (
+			<section class="grid gap-4 md:grid-cols-2" aria-label="工具推荐文章">
+				{toolPosts.map((post, index) => (
+					<PostCard
+						entry={post}
+						title={post.data.title}
+						tags={post.data.tags}
+						category={post.data.category}
+						published={post.data.published}
+						updated={post.data.updated}
+						url={getPostUrlBySlug(post.id)}
+						image={post.data.image}
+						description={post.data.description}
+						draft={post.data.draft}
+						pinned={post.data.pinned}
+						password={!!post.data.password}
+						loading={index < 2 ? "eager" : "lazy"}
+						class="onload-animation"
+						style={`animation-delay: ${index * 50}ms;`}
+					/>
+				))}
+			</section>
+		)}
 
 		{tools.length > 0 ? (
 			<section class="grid gap-4 md:grid-cols-2" aria-label="工具列表">
@@ -43,13 +74,15 @@ import MainGridLayout from "@/layouts/MainGridLayout.astro";
 				))}
 			</section>
 		) : (
-			<section class="card-base p-10 text-center">
-				<Icon is:inline name="material-symbols:construction-rounded" class="mb-4 text-5xl text-(--primary) opacity-60" />
-				<h2 class="text-lg font-bold text-black/75 dark:text-white/75">暂时没有公开工具</h2>
-				<p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-black/50 dark:text-white/50">
-					页面结构已经保留，等工具有稳定用途和说明后再逐个补充。
-				</p>
-			</section>
+			toolPosts.length === 0 && (
+				<section class="card-base p-10 text-center">
+					<Icon is:inline name="material-symbols:construction-rounded" class="mb-4 text-5xl text-(--primary) opacity-60" />
+					<h2 class="text-lg font-bold text-black/75 dark:text-white/75">暂时没有公开工具</h2>
+					<p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-black/50 dark:text-white/50">
+						页面结构已经保留，等工具有稳定用途和说明后再逐个补充。
+					</p>
+				</section>
+			)
 		)}
 	</div>
 </MainGridLayout>
