@@ -49,6 +49,16 @@ export const sidebarLayoutConfig: SidebarLayoutConfig = {
 			showOnPostPage: true,
 		},
 		{
+			// 组件类型：音乐播放组件（头像卡片下方）
+			type: "musicPlayer",
+			// 是否启用该组件
+			enable: true,
+			// 组件位置
+			position: "top",
+			// 是否在文章详情页显示
+			showOnPostPage: true,
+		},
+		{
 			// 组件类型：公告组件
 			type: "announcement",
 			// 是否启用该组件
@@ -179,6 +189,14 @@ export const sidebarLayoutConfig: SidebarLayoutConfig = {
 		{
 			// 组件类型：用户资料组件
 			type: "profile",
+			// 是否启用该组件
+			enable: true,
+			// 文章页正文后不再堆叠侧栏卡片，保留正文与页脚的阅读空间
+			showOnPostPage: false,
+		},
+		{
+			// 组件类型：音乐播放组件（头像卡片下方）
+			type: "musicPlayer",
 			// 是否启用该组件
 			enable: true,
 			// 文章页正文后不再堆叠侧栏卡片，保留正文与页脚的阅读空间

@@ -11,7 +11,8 @@ export type WidgetComponentType =
 	| "siteInfo"
 	| "timeGreeting"
 	| "quoteOfTheDay"
-	| "scheduleProgress";
+	| "scheduleProgress"
+	| "musicPlayer";
 
 export type WidgetComponentConfig = {
 	type: WidgetComponentType; // 组件类型
