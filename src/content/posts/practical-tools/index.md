@@ -7,7 +7,7 @@ description: '四个常备的实用工具：小霸王、Desmos、Yandex 与 xflt
 tags:
   - 资源
   - 工具
-category: 工具推荐
+category: ''
 image: /assets/images/posts/practical-tools-cover.webp
 draft: false
 lang: zh_CN
