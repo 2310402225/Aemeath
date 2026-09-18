@@ -1,0 +1,107 @@
+/*
+ * 分类页文章卡片 grid-mode（封面在上、标题标签在下）共享样式。
+ * PostCard.astro 内部的 :global(.grid-mode) 规则负责卡片主体布局；
+ * 这里补齐 PostPage.astro 中仅对 #post-list-container 生效的排版微调，
+ * 让 learning / resources / tools 三个分类页与归档页网格模式观感一致。
+ */
+
+.post-card-grid.grid-mode .post-card-content {
+	width: 100% !important;
+	padding: 0.9rem !important;
+}
+
+.post-card-grid.grid-mode .no-cover .post-card-content {
+	padding-right: 4.5rem !important;
+}
+
+.post-card-grid.grid-mode .post-card-title {
+	font-size: 1.08rem !important;
+	line-height: 1.5rem !important;
+	margin-bottom: 0.4rem !important;
+}
+
+.post-card-grid.grid-mode .post-card-title::before {
+	display: none !important;
+}
+
+.post-card-grid.grid-mode .post-meta {
+	margin-bottom: 0.4rem !important;
+	gap: 0.35rem !important;
+}
+
+.post-card-grid.grid-mode .post-meta .text-xl {
+	font-size: 1rem !important;
+	line-height: 1.25rem !important;
+}
+
+.post-card-grid.grid-mode .meta-icon {
+	width: 1.5rem !important;
+	height: 1.5rem !important;
+	margin-right: 0.25rem !important;
+}
+
+.post-card-grid.grid-mode .post-meta .text-sm {
+	font-size: 0.7rem !important;
+	line-height: 1rem !important;
+}
+
+.post-card-grid.grid-mode .description {
+	font-size: 0.82rem !important;
+	line-height: 1.45rem !important;
+}
+
+.post-card-grid.grid-mode .post-card-image,
+.post-card-grid.grid-mode .cover-image-container,
+.post-card-grid.grid-mode .cover-image-container picture,
+.post-card-grid.grid-mode .cover-image-container img {
+	width: 100% !important;
+}
+
+.post-card-grid.grid-mode .cover-image-container img {
+	height: 100% !important;
+	object-fit: cover !important;
+	object-position: center !important;
+}
+
+/* Hand-designed 2:1 covers keep their source ratio and avoid hover
+   cropping, so small labels stay readable in generated previews. */
+.post-card-grid.grid-mode .post-card-wrapper.post-card-full-preview .cover-image-container img {
+	object-fit: contain !important;
+	object-position: center !important;
+}
+
+.post-card-grid.grid-mode .post-card-wrapper.post-card-full-preview .post-card-image {
+	aspect-ratio: 2 / 1 !important;
+}
+
+.post-card-grid.grid-mode .card-header-meta .text-sm {
+	font-size: 0.875rem !important;
+	line-height: 1.25rem !important;
+}
+
+.post-card-grid.grid-mode .card-header-meta .meta-icon {
+	width: 2rem !important;
+	height: 2rem !important;
+	margin-right: 0.5rem !important;
+}
+
+.post-card-grid.grid-mode .card-header-meta .text-xl {
+	font-size: 1.25rem !important;
+	line-height: 1.75rem !important;
+}
+
+.post-card-grid.grid-mode .post-meta .pinned-btn {
+	height: 2rem !important;
+	padding: 0 0.5rem !important;
+	gap: 0.25rem !important;
+}
+
+.post-card-grid.grid-mode .post-meta .pinned-btn .text-xl {
+	font-size: 1.25rem !important;
+	line-height: 1.75rem !important;
+}
+
+.post-card-grid.grid-mode .post-meta .pinned-btn .text-sm {
+	font-size: 0.875rem !important;
+	line-height: 1.25rem !important;
+}
