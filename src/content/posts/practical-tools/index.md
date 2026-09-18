@@ -8,7 +8,7 @@ tags:
   - 资源
   - 工具
 category: ''
-image: ''
+image: /assets/images/posts/practical-tools-cover.webp
 draft: false
 lang: zh_CN
 ---

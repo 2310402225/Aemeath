@@ -8,7 +8,7 @@ tags:
   - 资源
   - 学习
 category: ''
-image: ''
+image: /assets/images/posts/learning-resources-cover.webp
 draft: false
 lang: zh_CN
 ---
