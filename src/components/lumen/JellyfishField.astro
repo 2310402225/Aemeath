@@ -9,6 +9,8 @@
 // · 受力：远则趋光；贴到个人空间内反转为斥力，且内侧斜率更陡、力度再放大，
 //   保证"贴脸"时是真的被推开，而不是悬在光标旁边。彼此之间也保持距离。
 //   点击首屏空白处 → 从点击点向外辐射推力，1.5 秒内衰减回趋光。
+//   另外监听 hero 上的 lumen-burst（首屏方框绽开时派发）→ 以该点为圆心做一次
+//   半径更小、力度更弱的局部惊散，让"水花绽开"和"水母四散"看起来是同一件事。
 // · 兜底：prefers-reduced-motion 时整层不渲染；首屏滚出视口 / 标签页隐藏时停掉动画循环。
 ---
 
@@ -66,6 +68,9 @@
 		const SEPARATE_ACCEL = 0.03;
 		const DRIFT_ACCEL = 0.012; // 自由游动的摆动
 		const SCATTER_TIME = 1.5;
+		const BURST_RADIUS = 260; // 外部事件（方框绽开）激起的局部惊散半径
+		const BURST_POWER = 2.9; // 约为整屏惊散 5.2 的一半：是水花，不是爆炸
+		const BURST_SCATTER = 0.9; // 局部惊散抑制趋光的时长（秒）
 
 		let width = 0;
 		let height = 0;
@@ -387,6 +392,36 @@
 		hero.addEventListener("pointerup", onPointerUp, { passive: true });
 		hero.addEventListener("pointerleave", onPointerExit);
 		hero.addEventListener("pointercancel", onPointerExit); // 触摸端开始滚动时浏览器会取消指针
+
+		// ---- 外部事件：局部惊散 ----
+		// 首屏那三个方框绽开时会在 hero 上派发 lumen-burst（detail 是视口坐标）。
+		// 走事件而不是 import，是为了让这一层不需要知道页面上有谁在触发它。
+		const onBurst = (event: Event) => {
+			const detail = (event as CustomEvent<{ x: number; y: number }>).detail;
+			if (!detail) return;
+			const rect = hero.getBoundingClientRect();
+			const cx = detail.x - rect.left;
+			const cy = detail.y - rect.top;
+
+			for (const jelly of jellies) {
+				let dx = jelly.x - cx;
+				let dy = jelly.y - cy;
+				let dist = Math.hypot(dx, dy);
+				if (dist > BURST_RADIUS) continue; // 远处的水母不受影响
+				if (dist < 1) {
+					const angle = rand(0, Math.PI * 2);
+					dx = Math.cos(angle);
+					dy = Math.sin(angle);
+					dist = 1;
+				}
+				const power = 1 - dist / BURST_RADIUS; // 越靠近绽开点推得越狠
+				jelly.vx += (dx / dist) * BURST_POWER * power;
+				jelly.vy += (dy / dist) * BURST_POWER * power;
+				jelly.scatter = BURST_SCATTER;
+			}
+		};
+
+		hero.addEventListener("lumen-burst", onBurst);
 
 		// ---- 只在首屏可见、且标签页在前台时跑 ----
 		const observer = new IntersectionObserver(

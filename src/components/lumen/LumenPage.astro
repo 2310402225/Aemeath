@@ -19,8 +19,12 @@ const navItems = [
 const verticalPositions = ["12.6%", "37.5%", "61.9%", "86.2%"];
 const horizontalPositions = ["32.7%", "71.4%"];
 
+// 三个 HUD 节点。sq = 方框位置，label = 标签位置（两者由 connectors 里的折线连起来）。
+// blurb / impl 是「点击方框绽开后那块面板」的内容，同时也是移动端并进正文的那份文字 ——
+// 同一来源渲染两处，改一处两处同步。
 const nodes = [
 	{
+		index: "01",
 		sq: { top: "27%", left: "60%" },
 		sqDelay: "1500ms",
 		label: { top: "11%", left: "26%" },
@@ -29,8 +33,16 @@ const nodes = [
 		title: "[ 核心实体 ]",
 		desc: "实时处理数据流的神经节点",
 		descMax: "max-w-[160px]",
+		blurb:
+			"跨 12 个区域同时驻留的推理内核。每一次呼吸都是一次全量校验，不合规的数据在到达账本之前就被拦下。",
+		impl: "left 60% / top 27%，80×80（lg 100×100）1px 描边，入场延迟 1500ms。",
+		target: "#lumen-bg",
+		targetLabel: "项目背景",
+		// 面板高度上限 = 从方框往下到首屏底部还剩多少，留 28px 余量
+		panelMaxH: "calc(73vh - 28px)",
 	},
 	{
+		index: "02",
 		sq: { top: "58%", left: "32%" },
 		sqDelay: "1800ms",
 		label: { top: "76%", left: "3%" },
@@ -39,8 +51,15 @@ const nodes = [
 		title: "[ 流明洞察 ]",
 		desc: "把原始输入合成为洞见的深度学习引擎",
 		descMax: "max-w-[170px]",
+		blurb:
+			"把行情、持仓与新闻压进同一个语义空间，再抽出可比对的结构。它不预测价格，只标出与你上一次决定不同的地方。",
+		impl: "标签在左下角，两段折线接到方框左上角；折点写在 connectors 数组里。",
+		target: "#lumen-design",
+		targetLabel: "设计要点",
+		panelMaxH: "calc(42vh - 28px)",
 	},
 	{
+		index: "03",
 		sq: { top: "63%", left: "50%" },
 		sqDelay: "2100ms",
 		label: { top: "50%", left: "78%" },
@@ -49,16 +68,24 @@ const nodes = [
 		title: "[ 连通 ]",
 		desc: "分布式网络间的零延迟传输",
 		descMax: "max-w-[170px]",
+		blurb:
+			"结算层与托管层之间不经过任何中间账本。跨区传输的承诺上限是 40 毫秒，超时即撤回，不排队。",
+		impl: "三块里唯一的「线从右往左接」，标签动画因此用的是 anim-slide-right。",
+		target: "#lumen-stack",
+		targetLabel: "技术栈与移植路径",
+		panelMaxH: "calc(37vh - 28px)",
 	},
 ];
 
+// 折线：每两条一组，从标签侧接到方框的**左上角**。所以方框只能朝右下生长，
+// 左上角一钉住，这六条线的坐标就永远不用动。node 用于悬停/绽开时的联动高亮。
 const connectors = [
-	{ x1: "38%", y1: "14%", x2: "52%", y2: "14%", delay: "1200ms" },
-	{ x1: "52%", y1: "14%", x2: "60%", y2: "27%", delay: "1400ms" },
-	{ x1: "32%", y1: "58%", x2: "20%", y2: "74%", delay: "1500ms" },
-	{ x1: "20%", y1: "74%", x2: "6%", y2: "74%", delay: "1700ms" },
-	{ x1: "78%", y1: "53%", x2: "63%", y2: "53%", delay: "1800ms" },
-	{ x1: "63%", y1: "53%", x2: "50%", y2: "63%", delay: "2000ms" },
+	{ x1: "38%", y1: "14%", x2: "52%", y2: "14%", delay: "1200ms", node: "01" },
+	{ x1: "52%", y1: "14%", x2: "60%", y2: "27%", delay: "1400ms", node: "01" },
+	{ x1: "32%", y1: "58%", x2: "20%", y2: "74%", delay: "1500ms", node: "02" },
+	{ x1: "20%", y1: "74%", x2: "6%", y2: "74%", delay: "1700ms", node: "02" },
+	{ x1: "78%", y1: "53%", x2: "63%", y2: "53%", delay: "1800ms", node: "03" },
+	{ x1: "63%", y1: "53%", x2: "50%", y2: "63%", delay: "2000ms", node: "03" },
 ];
 
 const spec: { term: string; detail: string }[] = [
@@ -342,11 +369,12 @@ const spec: { term: string; detail: string }[] = [
 							style={{ animationDelay: c.delay }}
 						>
 							<line
+								class="lumen-node-line"
+								data-lumen-conn={c.node}
 								x1={c.x1}
 								y1={c.y1}
 								x2={c.x2}
 								y2={c.y2}
-								stroke="rgba(255,255,255,0.25)"
 								stroke-width="1"
 								vector-effect="non-scaling-stroke"
 							/>
@@ -357,13 +385,67 @@ const spec: { term: string; detail: string }[] = [
 				{
 					nodes.map((n) => (
 						<>
-							<div
-								class="absolute w-[80px] h-[80px] lg:w-[100px] lg:h-[100px] border border-white/80 anim-scale-in"
+							{/* 方框：常态静止，悬停亮起，点击在它左上角长出面板 */}
+							<button
+								type="button"
+								class="lumen-node-sq anim-scale-in absolute w-[80px] h-[80px] lg:w-[100px] lg:h-[100px] border border-white/80 bg-transparent p-0"
+								data-lumen-node={n.index}
 								style={{ top: n.sq.top, left: n.sq.left, animationDelay: n.sqDelay }}
-							/>
-							<div class="absolute" style={{ top: n.label.top, left: n.label.left }}>
+								aria-expanded="false"
+								aria-controls={`lumen-node-panel-${n.index}`}
+								aria-label={`展开「${n.title}」的说明`}
+							>
+								<span class="lumen-node-cross" aria-hidden="true" />
+								<span class="lumen-node-ripple" aria-hidden="true" />
+								<span class="lumen-node-ripple" aria-hidden="true" />
+								<span class="lumen-node-ripple" aria-hidden="true" />
+							</button>
+
+							{/* 面板：与方框同源点，朝右下生长。关着时 opacity 0 且不可点 */}
+							<div
+								id={`lumen-node-panel-${n.index}`}
+								class="lumen-node-panel"
+								data-lumen-panel={n.index}
+								style={{ top: n.sq.top, left: n.sq.left, maxHeight: n.panelMaxH }}
+								role="region"
+								aria-label={`${n.title} 说明`}
+							>
+								<button
+									type="button"
+									class="lumen-node-panel__close"
+									data-lumen-close
+									aria-label="收起说明"
+								>
+									<span aria-hidden="true">&#215;</span>
+								</button>
+								<div class="lumen-node-panel__head">
+									<span class="lumen-node-panel__index">{n.index}</span>
+									<span class="lumen-node-panel__title">{n.title}</span>
+								</div>
+								<div class="lumen-node-panel__foot">
+									<p class="lumen-node-panel__blurb">{n.blurb}</p>
+									<p class="lumen-node-panel__impl">
+										<span>实现</span>
+										{n.impl}
+									</p>
+									<button
+										type="button"
+										class="lumen-node-panel__jump"
+										data-scroll-to={n.target}
+									>
+										{n.targetLabel}
+										<span aria-hidden="true">&#8594;</span>
+									</button>
+								</div>
+							</div>
+
+							<div
+								class="lumen-node-label absolute"
+								data-lumen-node={n.index}
+								style={{ top: n.label.top, left: n.label.left }}
+							>
 								<div class={`${n.labelAnim}`} style={{ animationDelay: n.labelDelay }}>
-									<span class="font-manrope text-white text-[13px] leading-[15.6px] whitespace-nowrap">
+									<span class="lumen-node-label-title font-manrope text-white text-[13px] leading-[15.6px] whitespace-nowrap">
 										{n.title}
 									</span>
 									<p class={`font-manrope text-white/50 text-[11px] leading-[14px] mt-[4px] ${n.descMax}`}>
@@ -493,10 +575,25 @@ const spec: { term: string; detail: string }[] = [
 							CSS。
 						</li>
 						<li>
-							<strong>最终形态</strong>：首屏之后接一份项目说明——也就是你现在读到的地方。页面内的导航项与
-							CTA 都能点，会带你平滑滚动到对应小节。
+							<strong>最终形态</strong>：首屏之后接一份项目说明——也就是你现在读到的地方。页面内的导航项、CTA
+							都能点，会带你平滑滚动到对应小节；首屏那三个方框本身也能点开，见下。
 						</li>
 					</ul>
+				</div>
+
+				{/* 窄屏看不到首屏那三个方框，把三块设定文字并在这里；数据同一来源，不写两遍 */}
+				<div class="lumen-node-glossary lg:hidden">
+					<p>首屏那三个方框在说什么</p>
+					<dl>
+						{
+							nodes.map((n) => (
+								<>
+									<dt>{n.title}</dt>
+									<dd>{n.blurb}</dd>
+								</>
+							))
+						}
+					</dl>
 				</div>
 			</article>
 
@@ -619,6 +716,30 @@ const spec: { term: string; detail: string }[] = [
 							网格与 <code>#AFDDFF</code>），否则就会从「同一片海」变成「贴纸叠在照片上」。
 						</li>
 						<li>
+							<strong><code>opacity: 0</code> 不挡命中测试。</strong> 方框的入场动画是
+							<code>scaleIn</code>（<code>opacity: 0 → 1</code>），动画跑完之前它虽然看不见，却已经是合法的
+							hover / click 目标——鼠标推过去就能点亮一个看不见的方框，还能点开一块从空气里长出来的面板。
+							修法是动画结束前给它 <code>pointer-events: none</code>，等 <code>animationend</code> 再放开。
+							<strong>这条对任何「先隐藏、再动画出现」的元素都成立。</strong>
+						</li>
+						<li>
+							<strong>面板生长必须钉住连线端点。</strong> 六条折线的终点写死在
+							<code>60%,27%</code> / <code>32%,58%</code> / <code>50%,63%</code>，正好是三个方框的<strong
+								>左上角</strong
+							>。所以面板只能朝右下长；一旦改成居中生长或向上翻，那六条线的坐标就全废了。
+						</li>
+						<li>
+							<strong>两个组件之间用 <code>CustomEvent</code> 解耦。</strong> 方框绽开要顺手惊散水母，但水母层是独立组件、不该被页面
+							import。做法是在 <code>#lumen-hero</code> 上派发一个带坐标的 <code>lumen-burst</code>，水母层自己监听。这样水母的触发源可以是方框、也可以是别的东西，而页面完全不需要知道水母层内部长什么样。
+						</li>
+						<li>
+							<strong>百分比定位 + 固定宽面板，必须算窄屏断裂点。</strong> 方框用
+							<code>left: 60%</code> 这种百分比定位，面板却是固定宽。节点 2（32%）到节点 3（50%）只有
+							18vw，1440px 下放得下 240px、1280px 下就不够了。最后把宽度写成
+							<code>min(240px, 15vw)</code>——只要它永远小于那个 18vw 的间隙，就不会碰到邻居。交互门槛同时提到
+							<code>lg</code>：宁可窄屏不给，也不给一个被切掉的面板。
+						</li>
+						<li>
 							<strong>可复用</strong>：这套「全幅 hero + 下方正文」的骨架可以整块搬走。以后做任何单屏落地页，复制组件、换素材、改
 							frontmatter 两条字段即可。
 						</li>
@@ -724,6 +845,290 @@ const spec: { term: string; detail: string }[] = [
 	html:has(#lumen-page) top-gradient-highlight,
 	html:has(#lumen-page) #wallpaper-wrapper {
 		display: none !important;
+	}
+
+	/* ---------- HUD 节点：悬停联动 + 绽开面板 ----------
+	   交互只在 lg+ 开放。md 段（768–1023）方框仍是纯装饰，和改动前一致 ——
+	   因为面板宽 240px，而节点 2 的方框到节点 3 的方框只有 18vw，窄屏放不下。 */
+	#lumen-hero .lumen-node-line {
+		stroke: rgba(255, 255, 255, 0.25);
+		transition: stroke 0.3s ease;
+	}
+
+	#lumen-hero .lumen-node-sq {
+		display: block;
+		/* 入场动画跑完前不可点：opacity: 0 不挡命中测试，少了这句就会「看不见却能点亮」 */
+		pointer-events: none;
+		transition:
+			border-color 0.3s ease,
+			transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+	}
+
+	/* 悬停时框内浮现的十字准星，缓速自转 */
+	#lumen-hero .lumen-node-cross {
+		position: absolute;
+		inset: 0;
+		opacity: 0;
+		transition: opacity 0.35s ease;
+	}
+
+	#lumen-hero .lumen-node-cross::before,
+	#lumen-hero .lumen-node-cross::after {
+		content: "";
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		background: #afddff;
+	}
+
+	#lumen-hero .lumen-node-cross::before {
+		width: 34px;
+		height: 1px;
+		margin: -0.5px 0 0 -17px;
+	}
+
+	#lumen-hero .lumen-node-cross::after {
+		width: 1px;
+		height: 34px;
+		margin: -17px 0 0 -0.5px;
+	}
+
+	/* 绽开的三圈涟漪 */
+	#lumen-hero .lumen-node-ripple {
+		position: absolute;
+		inset: 0;
+		border: 1px solid #afddff;
+		border-radius: 50%;
+		opacity: 0;
+	}
+
+	#lumen-hero .lumen-node-sq.is-bursting .lumen-node-ripple {
+		animation: lumenRipple 0.95s cubic-bezier(0.16, 1, 0.3, 1) both;
+	}
+
+	#lumen-hero .lumen-node-sq.is-bursting .lumen-node-ripple + .lumen-node-ripple {
+		animation-delay: 0.11s;
+	}
+
+	#lumen-hero .lumen-node-sq.is-bursting .lumen-node-ripple + .lumen-node-ripple + .lumen-node-ripple {
+		animation-delay: 0.22s;
+	}
+
+	/* 面板：与方框同源点，朝右下生长。左上角那 100×100 正好是原方框的位置，
+	   做成关闭格 —— 点开它的那个像素，就是点关它的那个像素。 */
+	#lumen-hero .lumen-node-panel {
+		position: absolute;
+		z-index: 20;
+		display: flex;
+		flex-direction: column;
+		box-sizing: border-box;
+		width: min(240px, 15vw);
+		overflow: hidden;
+		background: rgba(5, 7, 11, 0.94);
+		border: 1px solid rgba(175, 221, 255, 0.45);
+		opacity: 0;
+		pointer-events: none;
+		transform: scale(0.42);
+		transform-origin: 0 0;
+		transition:
+			transform 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+			opacity 0.16s linear;
+	}
+
+	#lumen-hero .lumen-node-panel.is-open {
+		opacity: 1;
+		pointer-events: auto;
+		transform: scale(1);
+		transition:
+			transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+			opacity 0.2s linear 0.28s;
+	}
+
+	#lumen-hero .lumen-node-panel__close {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 100px;
+		height: 100px;
+		padding: 0;
+		border: 0;
+		border-right: 1px solid rgba(175, 221, 255, 0.16);
+		border-bottom: 1px solid rgba(175, 221, 255, 0.16);
+		background: transparent;
+		color: rgba(175, 221, 255, 0.66);
+		font: inherit;
+		font-size: 15px;
+		line-height: 1;
+		cursor: pointer;
+		transition:
+			color 0.25s ease,
+			background-color 0.25s ease;
+	}
+
+	#lumen-hero .lumen-node-panel__close:hover {
+		color: #afddff;
+		background: rgba(175, 221, 255, 0.07);
+	}
+
+	#lumen-hero .lumen-node-panel__head {
+		display: flex;
+		flex-direction: column;
+		justify-content: flex-end;
+		min-height: 100px;
+		margin-left: 100px;
+		padding: 0 12px 10px;
+		border-bottom: 1px solid rgba(175, 221, 255, 0.16);
+	}
+
+	#lumen-hero .lumen-node-panel__index {
+		font-size: 10px;
+		line-height: 1;
+		letter-spacing: 0.2em;
+		color: rgba(175, 221, 255, 0.8);
+	}
+
+	#lumen-hero .lumen-node-panel__title {
+		margin-top: 6px;
+		font-size: 13px;
+		line-height: 1.3;
+		color: #fff;
+	}
+
+	#lumen-hero .lumen-node-panel__foot {
+		display: flex;
+		flex: 1 1 auto;
+		flex-direction: column;
+		gap: 12px;
+		min-height: 0;
+		padding: 12px 14px 14px;
+		overflow-y: auto;
+	}
+
+	#lumen-hero .lumen-node-panel__blurb {
+		margin: 0;
+		font-size: 12.5px;
+		line-height: 1.7;
+		color: rgba(255, 255, 255, 0.78);
+	}
+
+	#lumen-hero .lumen-node-panel__impl {
+		margin: 0;
+		padding-top: 10px;
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+		font-size: 10.5px;
+		line-height: 1.65;
+		color: rgba(255, 255, 255, 0.42);
+	}
+
+	#lumen-hero .lumen-node-panel__impl span {
+		margin-right: 6px;
+		letter-spacing: 0.16em;
+		color: rgba(175, 221, 255, 0.6);
+	}
+
+	#lumen-hero .lumen-node-panel__jump {
+		display: inline-flex;
+		align-self: flex-start;
+		align-items: center;
+		gap: 7px;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		color: #afddff;
+		font: inherit;
+		font-size: 12px;
+		line-height: 1;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	#lumen-hero .lumen-node-panel__jump:hover {
+		text-decoration: underline;
+	}
+
+	/* 面板内的文字等生长到位再淡入，避免看到被压扁的字 */
+	#lumen-hero .lumen-node-panel__head,
+	#lumen-hero .lumen-node-panel__foot {
+		opacity: 0;
+		transition: opacity 0.2s linear;
+	}
+
+	#lumen-hero .lumen-node-panel.is-open .lumen-node-panel__head,
+	#lumen-hero .lumen-node-panel.is-open .lumen-node-panel__foot {
+		opacity: 1;
+		transition: opacity 0.3s linear 0.3s;
+	}
+
+	@media (min-width: 1024px) {
+		#lumen-hero .lumen-node-sq.is-ready,
+		#lumen-hero .lumen-node-label.is-ready {
+			pointer-events: auto;
+		}
+
+		#lumen-hero .lumen-node-sq {
+			cursor: pointer;
+		}
+
+		#lumen-hero .lumen-node-sq:hover,
+		#lumen-hero .lumen-node-sq.is-active {
+			border-color: #afddff;
+			transform: scale(1.04);
+		}
+
+		#lumen-hero .lumen-node-sq.is-open {
+			border-color: transparent;
+		}
+
+		#lumen-hero .lumen-node-sq:hover .lumen-node-cross,
+		#lumen-hero .lumen-node-sq.is-active .lumen-node-cross {
+			opacity: 0.78;
+			animation: lumenCrossSpin 6s linear infinite;
+		}
+
+		#lumen-hero .lumen-node-sq.is-open .lumen-node-cross {
+			animation: none;
+			opacity: 0;
+		}
+
+		#lumen-hero .lumen-node-label.is-active .lumen-node-label-title {
+			color: #afddff;
+		}
+
+		#lumen-hero .lumen-node-line.is-active {
+			stroke: rgba(175, 221, 255, 0.6);
+		}
+	}
+
+	/* 移动端 / 窄屏才出现：三个节点在说什么（同一份 nodes 数据渲染） */
+	#lumen-article .lumen-node-glossary {
+		margin-top: 32px;
+		padding-top: 24px;
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+	}
+
+	#lumen-article .lumen-node-glossary > p {
+		margin: 0 0 7px;
+		font-size: 12px;
+		line-height: 1.7;
+		letter-spacing: 0.12em;
+		color: rgba(175, 221, 255, 0.8);
+	}
+
+	#lumen-article .lumen-node-glossary dl {
+		margin: 0;
+	}
+
+	#lumen-article .lumen-node-glossary dd {
+		margin: 0 0 16px;
+		font-size: 14px;
+		line-height: 1.85;
+		color: rgba(255, 255, 255, 0.7);
+	}
+
+	#lumen-article .lumen-node-glossary dt {
+		font-size: 13px;
+		line-height: 1.6;
+		color: #fff;
 	}
 
 	/* ---------- 下方正文 ---------- */
@@ -858,6 +1263,49 @@ const spec: { term: string; detail: string }[] = [
 			opacity: 1;
 			transform: none;
 		}
+
+		/* 节点面板：不做涟漪、不做生长，直接把内容摆上去 */
+		#lumen-hero .lumen-node-panel,
+		#lumen-hero .lumen-node-panel.is-open,
+		#lumen-hero .lumen-node-panel__head,
+		#lumen-hero .lumen-node-panel__foot {
+			transition: none;
+			transform: none;
+		}
+
+		#lumen-hero .lumen-node-sq.is-bursting .lumen-node-ripple,
+		#lumen-hero .lumen-node-sq:hover .lumen-node-cross,
+		#lumen-hero .lumen-node-sq.is-active .lumen-node-cross {
+			animation: none;
+		}
+	}
+
+	@keyframes lumenRipple {
+		from {
+			opacity: 0.85;
+			transform: scale(0.35);
+		}
+		to {
+			opacity: 0;
+			transform: scale(5);
+		}
+	}
+
+	@keyframes lumenCrossSpin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	/* 方框落位时闪一下：既是「到位了」的收尾，也顺带暗示它可以点 */
+	@keyframes lumenSqLand {
+		0%,
+		55% {
+			border-color: #afddff;
+		}
+		to {
+			border-color: rgba(255, 255, 255, 0.8);
+		}
 	}
 
 	@keyframes fadeUp {
@@ -981,6 +1429,174 @@ const spec: { term: string; detail: string }[] = [
 		closeBtn?.addEventListener("click", () => setOpen(false));
 		backdrop?.addEventListener("click", () => setOpen(false));
 
+		// ---- HUD 节点：悬停联动 + 点击绽开 ----
+		// 同时只开一个。四种关闭：再点原位（面板左上角那格就是关闭格）/ Esc /
+		// 点面板外部空白 / 点另一个方框（切换）。
+		// 联动高亮（方框提亮、十字准星、对应折线、标签）统一走 is-active，
+		// 悬停和绽开是同一条代码路径，不写两份。
+		const sqs = Array.from(hero.querySelectorAll<HTMLButtonElement>(".lumen-node-sq"));
+		const labels = Array.from(hero.querySelectorAll<HTMLElement>(".lumen-node-label"));
+		const lines = Array.from(hero.querySelectorAll<SVGLineElement>(".lumen-node-line"));
+		const panels = Array.from(hero.querySelectorAll<HTMLElement>(".lumen-node-panel"));
+		const lgQuery = window.matchMedia("(min-width: 1024px)");
+
+		let openIndex: string | null = null;
+		let hoverIndex: string | null = null;
+
+		const indexOf = (el: Element | null) => el?.getAttribute("data-lumen-node") ?? null;
+		const panelOf = (index: string) =>
+			panels.find((p) => p.getAttribute("data-lumen-panel") === index) ?? null;
+		const sqOf = (index: string) => sqs.find((s) => indexOf(s) === index) ?? null;
+
+		const paint = () => {
+			const active = openIndex ?? hoverIndex;
+			for (const el of sqs) el.classList.toggle("is-active", indexOf(el) === active);
+			for (const el of labels) el.classList.toggle("is-active", indexOf(el) === active);
+			for (const el of lines) {
+				el.classList.toggle(
+					"is-active",
+					active !== null && el.getAttribute("data-lumen-conn") === active,
+				);
+			}
+		};
+
+		const closePanel = (restoreFocus: boolean) => {
+			if (!openIndex) return;
+			const index = openIndex;
+			const panel = panelOf(index);
+			const sq = sqOf(index);
+			openIndex = null;
+			panel?.classList.remove("is-open");
+			sq?.classList.remove("is-open");
+			sq?.setAttribute("aria-expanded", "false");
+			paint();
+			if (restoreFocus) sq?.focus();
+		};
+
+		const openPanel = (index: string, fromKeyboard: boolean) => {
+			if (openIndex === index) {
+				closePanel(false);
+				return;
+			}
+			closePanel(false);
+
+			const panel = panelOf(index);
+			const sq = sqOf(index);
+			if (!panel || !sq) return;
+
+			openIndex = index;
+			panel.classList.add("is-open");
+			sq.classList.add("is-open");
+			sq.setAttribute("aria-expanded", "true");
+			paint();
+
+			// 涟漪：先摘类再挂回去，重复点同一块也能重放
+			sq.classList.remove("is-bursting");
+			void sq.offsetWidth;
+			sq.classList.add("is-bursting");
+
+			// 绽开的同时把附近水母惊散。事件派发在 hero 上、水母层自己监听，
+			// 两个组件不用互相 import（面板中心 = 方框中心）。
+			const rect = hero.getBoundingClientRect();
+			hero.dispatchEvent(
+				new CustomEvent("lumen-burst", {
+					detail: {
+						x: rect.left + (rect.width * Number.parseFloat(sq.style.left)) / 100 + 50,
+						y: rect.top + (rect.height * Number.parseFloat(sq.style.top)) / 100 + 50,
+					},
+				}),
+			);
+
+			// 只有键盘触发才把焦点移进面板；鼠标点击移焦点会多出一个焦点环
+			if (fromKeyboard) panel.querySelector<HTMLButtonElement>("[data-lumen-close]")?.focus();
+		};
+
+		for (const sq of sqs) {
+			const index = indexOf(sq);
+			if (!index) continue;
+			sq.addEventListener("click", (event) => {
+				openPanel(index, event.detail === 0);
+			});
+			sq.addEventListener("pointerenter", () => {
+				hoverIndex = index;
+				paint();
+			});
+			sq.addEventListener("pointerleave", () => {
+				if (hoverIndex === index) hoverIndex = null;
+				paint();
+			});
+		}
+
+		// 标签只做悬停联动，不绑点击 —— 保持「方框才是开关」这一个语义
+		for (const label of labels) {
+			const index = indexOf(label);
+			if (!index) continue;
+			label.addEventListener("pointerenter", () => {
+				hoverIndex = index;
+				paint();
+			});
+			label.addEventListener("pointerleave", () => {
+				if (hoverIndex === index) hoverIndex = null;
+				paint();
+			});
+		}
+
+		// 关闭格：面板左上角那 100×100 正好压在方框原位之上（z-index 20），
+		// 所以「再点原位关掉」实际命中的是它，而不是下面那个方框 ——
+		// 方框自带的 toggle 只是这道压盖失效时的兜底。
+		for (const panel of panels) {
+			panel
+				.querySelector<HTMLElement>("[data-lumen-close]")
+				?.addEventListener("click", () => closePanel(true));
+		}
+
+		document.addEventListener("keydown", (event) => {
+			if (event.key === "Escape") closePanel(true);
+		});
+
+		// 点面板外部空白收起（点在面板里、或点在方框上都不算外部）
+		hero.addEventListener("pointerdown", (event) => {
+			if (!openIndex) return;
+			const target = event.target as Element | null;
+			if (target?.closest(".lumen-node-panel, .lumen-node-sq")) return;
+			closePanel(false);
+		});
+
+		// 入场动画跑完才允许交互：opacity: 0 不挡命中测试，不加这道闸就会
+		// 「看不见却能被点亮、被点开」。reduced-motion 下没有动画，直接放行。
+		const unlock = (el: HTMLElement) => el.classList.add("is-ready");
+
+		if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+			for (const el of [...sqs, ...labels]) unlock(el);
+		} else {
+			for (const sq of sqs) {
+				sq.addEventListener(
+					"animationend",
+					() => {
+						// 摘掉入场动画的 forwards 填充，否则它会一直压着 hover 的 transform
+						sq.classList.remove("anim-scale-in");
+						sq.classList.add("is-landed");
+						unlock(sq);
+					},
+					{ once: true },
+				);
+			}
+			for (const label of labels) {
+				const inner = label.firstElementChild as HTMLElement | null;
+				inner?.addEventListener("animationend", () => unlock(label), { once: true });
+			}
+		}
+
+		// 交互只在 lg+ 开放（窄屏放不下面板）。pointer-events 管住鼠标，
+		// disabled 管住 Tab，两者都要。
+		const syncInteractive = () => {
+			const on = lgQuery.matches;
+			if (!on) closePanel(false);
+			for (const sq of sqs) sq.disabled = !on;
+		};
+		syncInteractive();
+		lgQuery.addEventListener("change", syncInteractive);
+
 		// ---- 页内所有可点击元素：平滑滚动到目标小节 ----
 		// 首屏的 4 个导航项、CTA、信息卡链接、滚动提示，以及正文底部的「回到首屏」，
 		// 统一走 data-scroll-to（值是 CSS 选择器）。
@@ -990,8 +1606,9 @@ const spec: { term: string; detail: string }[] = [
 		const scrollToTarget = (selector: string) => {
 			const target = document.querySelector(selector);
 			if (!target) return;
-			// 移动端菜单：点击后先收起，再滚动
+			// 先把叠层收掉再滚：移动端菜单、以及首屏的节点面板
 			setOpen(false);
+			closePanel(false);
 			target.scrollIntoView({
 				behavior: prefersReduced() ? "auto" : "smooth",
 				block: "start",
