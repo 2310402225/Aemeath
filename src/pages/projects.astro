@@ -27,7 +27,7 @@ const projectPosts = (await getSortedPosts()).filter(
 		</section>
 
 		{projectPosts.length > 0 ? (
-			<section class="grid gap-4 md:grid-cols-2" aria-label="个人项目列表">
+			<section class="post-card-grid grid-mode grid gap-4 md:grid-cols-2" aria-label="个人项目列表">
 				{projectPosts.map((post, index) => (
 					<PostCard
 						entry={post}

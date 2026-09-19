@@ -1,0 +1,1014 @@
+---
+// LŪMEN // ÍNDEX — 全幅页面
+// 结构：首屏 hero（占满视口，1:1 还原 React + Vite + Tailwind v3 设计稿）
+//      + 下方「项目背景介绍」正文（可滚动）。
+// 页面内所有可点击元素（4 个导航项、CTA、信息卡链接、滚动提示）都通过
+// data-scroll-to 平滑滚动到对应小节。零额外依赖，动效全部是 CSS @keyframes。
+
+const navItems = [
+	{ number: "01", label: "ECOSYSTEM", delay: "350ms", target: "#lumen-bg" },
+	{
+		number: "02",
+		label: "LIQUIDITY_POOLS",
+		delay: "450ms",
+		target: "#lumen-stack",
+	},
+	{
+		number: "03",
+		label: "LUMEN_INDEX",
+		delay: "550ms",
+		target: "#lumen-design",
+	},
+	{ number: "04", label: "GOVERNANCE", delay: "650ms", target: "#lumen-notes" },
+];
+
+const verticalPositions = ["12.6%", "37.5%", "61.9%", "86.2%"];
+const horizontalPositions = ["32.7%", "71.4%"];
+
+const nodes = [
+	{
+		sq: { top: "27%", left: "60%" },
+		sqDelay: "1500ms",
+		label: { top: "11%", left: "26%" },
+		labelAnim: "anim-slide-left",
+		labelDelay: "1100ms",
+		title: "[ CORE_ENTITY ]",
+		desc: "Neural node processing real-time data streams.",
+		descMax: "max-w-[160px]",
+	},
+	{
+		sq: { top: "58%", left: "32%" },
+		sqDelay: "1800ms",
+		label: { top: "76%", left: "3%" },
+		labelAnim: "anim-slide-left",
+		labelDelay: "1400ms",
+		title: "[ LUMINOUS_INSIGHT ]",
+		desc: "Deep-learning engine synthesizing raw inputs.",
+		descMax: "max-w-[160px]",
+	},
+	{
+		sq: { top: "63%", left: "50%" },
+		sqDelay: "2100ms",
+		label: { top: "50%", left: "78%" },
+		labelAnim: "anim-slide-right",
+		labelDelay: "1700ms",
+		title: "[ CONNECTIVITY ]",
+		desc: "Latency-free transmission across distributed networks.",
+		descMax: "max-w-[180px]",
+	},
+];
+
+const connectors = [
+	{ x1: "38%", y1: "14%", x2: "52%", y2: "14%", delay: "1200ms" },
+	{ x1: "52%", y1: "14%", x2: "60%", y2: "27%", delay: "1400ms" },
+	{ x1: "32%", y1: "58%", x2: "20%", y2: "74%", delay: "1500ms" },
+	{ x1: "20%", y1: "74%", x2: "6%", y2: "74%", delay: "1700ms" },
+	{ x1: "78%", y1: "53%", x2: "63%", y2: "53%", delay: "1800ms" },
+	{ x1: "63%", y1: "53%", x2: "50%", y2: "63%", delay: "2000ms" },
+];
+
+const spec: { term: string; detail: string }[] = [
+	{
+		term: "组件",
+		detail: "src/components/lumen/LumenPage.astro —— 单文件包含首屏与下方正文",
+	},
+	{ term: "原稿", detail: "React 18 + Vite + Tailwind CSS v3" },
+	{ term: "落地", detail: "Astro 7 + Tailwind v4 + 原生 CSS @keyframes" },
+	{ term: "依赖", detail: "零。没有 React runtime，也没有动画库" },
+	{
+		term: "接入",
+		detail:
+			"frontmatter 里一条 fullBleed: true，文章路由就把它渲染进裸布局，而不是博客主布局",
+	},
+	{
+		term: "边界",
+		detail:
+			"astro.config.mjs 的 swup ignore 登记这条路由，进出这一页走整页导航",
+	},
+	{
+		term: "字体",
+		detail:
+			"设计稿的 Graphik LCG / Manrope 未随项目分发，回退到已通过 Astro Font API 加载的 Inter（--font-inter）",
+	},
+];
+---
+
+<div id="lumen-page">
+	<section
+		id="lumen-hero"
+		data-menu-open="false"
+		class="group relative w-full h-screen overflow-hidden bg-black text-white font-manrope"
+	>
+		<!-- layer 0a: gradient fallback (shows until/unless the video paints its first frame) -->
+		<div class="absolute inset-0 lumen-fallback"></div>
+
+		<!-- layer 0b: background video -->
+		<video
+			class="absolute inset-0 w-full h-full object-cover anim-fade-in"
+			src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260813_115057_94c3699b-0fd1-4124-bcf3-3626bb8c1f77.mp4"
+			autoplay
+			muted
+			loop
+			playsinline></video>
+
+		<!-- content layer -->
+		<div class="relative z-10 w-full h-full">
+			<!-- ===== NAV ===== -->
+			<nav class="absolute top-0 left-0 w-full flex items-center px-5 md:px-[35px] py-5 md:py-[27px]">
+				<!-- left group -->
+				<div class="flex items-center gap-[40px]">
+					<span
+						class="font-graphik text-white text-[18px] md:text-[21px] leading-[21px] whitespace-nowrap anim-fade-up"
+						style={{ animationDelay: "200ms" }}
+					>
+						LŪMEN // ÍNDEX
+					</span>
+					<div class="hidden lg:flex items-center gap-[40px]">
+						{
+							navItems.map((item) => (
+								<div class="flex items-center gap-[3px] anim-fade-up" style={{ animationDelay: item.delay }}>
+									<span class="font-manrope text-[#AFDDFF]/80 text-[13px] leading-[15.6px]">
+										{item.number}.
+									</span>
+									<button
+										type="button"
+										data-scroll-to={item.target}
+										class="font-manrope text-white text-[13px] leading-[15.6px] cursor-pointer hover:text-[#AFDDFF] transition-colors"
+									>
+										{item.label}
+									</button>
+								</div>
+							))
+						}
+					</div>
+				</div>
+
+				<!-- right group (desktop) -->
+				<div
+					class="hidden lg:flex items-center gap-[12px] ml-auto anim-slide-right"
+					style={{ animationDelay: "600ms" }}
+				>
+					<svg
+						class="w-[15px] h-[15px] text-white"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2"></path>
+						<path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7"></path>
+						<path d="M21 11h-3a2 2 0 0 0 0 4h3"></path>
+					</svg>
+					<span class="font-manrope text-white text-[13px] leading-[15.6px]">0x71...f4e2</span>
+					<span class="font-manrope text-[#AFDDFF] text-[13px] leading-[15.6px]">[ CONNECTED ]</span>
+					<span class="font-manrope text-white text-[13px] leading-[15.6px] ml-[20px]">STATUS:</span>
+					<span class="bg-[#AFDDFF] rounded-[3px] px-[5px] py-[2px] text-black text-[13px] leading-[15.6px]">
+						PRIME_MEMBER
+					</span>
+				</div>
+
+				<!-- hamburger (mobile) -->
+				<button
+					type="button"
+					class="lg:hidden ml-auto relative w-[40px] h-[40px] flex items-center justify-center anim-fade-in"
+					style={{ animationDelay: "400ms" }}
+					aria-label="Toggle menu"
+					data-menu-toggle
+				>
+					<span
+						class="absolute transition-all duration-300 ease-[cubic-bezier(0.76,0,0.24,1)] opacity-100 rotate-0 scale-100 group-data-[menu-open=true]:opacity-0 group-data-[menu-open=true]:rotate-90 group-data-[menu-open=true]:scale-50"
+					>
+						<svg
+							class="w-[22px] h-[22px] text-white"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h16"></path>
+						</svg>
+					</span>
+					<span
+						class="absolute transition-all duration-300 ease-[cubic-bezier(0.76,0,0.24,1)] opacity-0 -rotate-90 scale-50 group-data-[menu-open=true]:opacity-100 group-data-[menu-open=true]:rotate-0 group-data-[menu-open=true]:scale-100"
+					>
+						<svg
+							class="w-[22px] h-[22px] text-white"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<path d="M18 6 6 18"></path><path d="m6 6 12 12"></path>
+						</svg>
+					</span>
+				</button>
+			</nav>
+
+			<!-- ===== MOBILE MENU OVERLAY ===== -->
+			<div
+				class="fixed inset-0 z-50 lg:hidden invisible opacity-0 transition-all duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] group-data-[menu-open=true]:visible group-data-[menu-open=true]:opacity-100"
+				data-menu-overlay
+			>
+				<div
+					class="absolute inset-0 bg-black/90 backdrop-blur-md opacity-0 transition-opacity duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] group-data-[menu-open=true]:opacity-100"
+					data-menu-backdrop
+				>
+				</div>
+
+				<div
+					class="relative h-full flex flex-col px-5 pt-24 pb-10 transition-all duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] opacity-0 -translate-y-4 group-data-[menu-open=true]:opacity-100 group-data-[menu-open=true]:translate-y-0"
+				>
+					<button
+						type="button"
+						class="absolute top-5 right-5 w-[40px] h-[40px] flex items-center justify-center"
+						aria-label="Close menu"
+						data-menu-close
+					>
+						<svg
+							class="w-[22px] h-[22px] text-white"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<path d="M18 6 6 18"></path><path d="m6 6 12 12"></path>
+						</svg>
+					</button>
+
+					<nav class="flex flex-col gap-8">
+						{
+							navItems.map((item) => (
+								<button
+									type="button"
+									data-scroll-to={item.target}
+									class="flex items-center gap-3 text-left transition-all duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] opacity-100 translate-x-0 group-data-[menu-open=false]:opacity-0 group-data-[menu-open=false]:-translate-x-6"
+									style={{ transitionDelay: "150ms" }}
+								>
+									<span class="font-manrope text-[#AFDDFF]/80 text-[14px] leading-[1]">
+										{item.number}.
+									</span>
+									<span class="font-manrope text-white text-[28px] leading-[1.2] tracking-tight">
+										{item.label}
+									</span>
+								</button>
+							))
+						}
+					</nav>
+
+					<!-- wallet block, pinned bottom -->
+					<div
+						class="mt-auto pt-10 border-t border-white/10 transition-all duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] opacity-100 translate-y-0 group-data-[menu-open=false]:opacity-0 group-data-[menu-open=false]:translate-y-4"
+						style={{ transitionDelay: "450ms" }}
+					>
+						<div class="flex items-center gap-[10px] mb-3">
+							<svg
+								class="w-[15px] h-[15px] text-white"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2"></path>
+								<path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7"></path>
+								<path d="M21 11h-3a2 2 0 0 0 0 4h3"></path>
+							</svg>
+							<span class="font-manrope text-white text-[13px] leading-[15.6px]">0x71...f4e2</span>
+							<span class="font-manrope text-[#AFDDFF] text-[13px] leading-[15.6px]">[ CONNECTED ]</span>
+						</div>
+						<div class="flex items-center gap-[8px]">
+							<span class="font-manrope text-white text-[13px] leading-[15.6px]">STATUS:</span>
+							<span class="bg-[#AFDDFF] rounded-[3px] px-[5px] py-[2px] text-black text-[13px] leading-[15.6px]">
+								PRIME_MEMBER
+							</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- ===== H1 ===== -->
+			<h1
+				class="font-graphik text-white font-normal leading-[1em] absolute anim-fade-up text-[32px] sm:text-[48px] md:text-[68px] top-[140px] sm:top-[160px] md:top-[178px] left-5 md:left-[35px] max-w-[300px] sm:max-w-[420px] md:max-w-[554px]"
+				style={{ animationDelay: "400ms" }}
+			>
+				Liquid Assets. Luminous Returns.
+			</h1>
+
+			<!-- ===== GRID LINES + PLUS MARKS ===== -->
+			{
+				verticalPositions.map((left, i) => (
+					<div
+						class="absolute top-0 h-full w-px bg-white/[0.04] anim-grid-v"
+						style={{ left, animationDelay: `${600 + i * 100}ms` }}
+					/>
+				))
+			}
+			{
+				horizontalPositions.map((top, i) => (
+					<div
+						class="absolute left-0 w-full h-px bg-white/[0.04] anim-grid-h"
+						style={{ top, animationDelay: `${800 + i * 150}ms` }}
+					/>
+				))
+			}
+			{
+				horizontalPositions.map((top, hi) =>
+					verticalPositions.map((left, vi) => (
+						<div
+							class="absolute anim-scale-in"
+							style={{ top, left, animationDelay: `${1000 + (hi * 4 + vi) * 80}ms` }}
+						>
+							<div class="absolute w-[10px] h-px bg-white/70 -translate-x-1/2 -translate-y-1/2" />
+							<div class="absolute w-px h-[10px] bg-white/70 -translate-x-1/2 -translate-y-1/2" />
+						</div>
+					)),
+				)
+			}
+
+			<!-- ===== CENTRAL NODES ===== -->
+			<div class="absolute inset-0 pointer-events-none hidden md:block">
+				{
+					connectors.map((c) => (
+						<svg
+							class="absolute inset-0 w-full h-full pointer-events-none anim-fade-in"
+							style={{ animationDelay: c.delay }}
+						>
+							<line
+								x1={c.x1}
+								y1={c.y1}
+								x2={c.x2}
+								y2={c.y2}
+								stroke="rgba(255,255,255,0.25)"
+								stroke-width="1"
+								vector-effect="non-scaling-stroke"
+							/>
+						</svg>
+					))
+				}
+
+				{
+					nodes.map((n) => (
+						<>
+							<div
+								class="absolute w-[80px] h-[80px] lg:w-[100px] lg:h-[100px] border border-white/80 anim-scale-in"
+								style={{ top: n.sq.top, left: n.sq.left, animationDelay: n.sqDelay }}
+							/>
+							<div class="absolute" style={{ top: n.label.top, left: n.label.left }}>
+								<div class={`${n.labelAnim}`} style={{ animationDelay: n.labelDelay }}>
+									<span class="font-manrope text-white text-[13px] leading-[15.6px] whitespace-nowrap">
+										{n.title}
+									</span>
+									<p class={`font-manrope text-white/50 text-[11px] leading-[14px] mt-[4px] ${n.descMax}`}>
+										{n.desc}
+									</p>
+								</div>
+							</div>
+						</>
+					))
+				}
+			</div>
+
+			<!-- ===== BOTTOM ROW ===== -->
+			<div
+				class="absolute bottom-5 md:bottom-[35px] left-5 md:left-[35px] right-5 md:right-[35px] flex flex-col md:flex-row items-start md:items-end justify-between gap-5 md:gap-0"
+			>
+				<!-- CTA -->
+				<button
+					type="button"
+					data-scroll-to="#lumen-bg"
+					class="bg-[#AFDDFF] px-[16px] md:px-[20px] py-[10px] md:py-[12px] flex items-center gap-[10px] cursor-pointer hover:bg-[#c8e8ff] transition-colors anim-fade-up"
+					style={{ animationDelay: "900ms" }}
+				>
+					<span class="text-black text-[16px] leading-none">&#10022;</span>
+					<span class="font-manrope text-black text-[12px] md:text-[13px] leading-[15.6px] uppercase tracking-wide">
+						Explore Private Banking
+					</span>
+				</button>
+
+				<!-- info card -->
+				<div class="relative max-w-[280px] hidden sm:block anim-slide-right" style={{ animationDelay: "1100ms" }}>
+					<span
+						class="font-manrope text-black text-[13px] leading-[15.6px] bg-[#AFDDFF] px-[6px] py-[2px] inline-block mb-[10px]"
+					>
+						NOT A BANK — AN ECOSYSTEM
+					</span>
+					<div class="relative p-[20px]">
+						<svg
+							class="absolute inset-0 w-full h-full pointer-events-none"
+							viewBox="0 0 280 168"
+							preserveAspectRatio="none"
+						>
+							<polygon
+								points="0.5,0.5 279.5,0.5 279.5,167.5 30,167.5 0.5,137.5"
+								fill="none"
+								stroke="#AFDDFF"
+								stroke-width="1"
+								vector-effect="non-scaling-stroke"></polygon>
+						</svg>
+						<p class="relative font-manrope text-white text-[13px] leading-[18px] mb-[18px]">
+							Maps the complexity of modern finance with a partner that brings clarity and organic
+							growth to your portfolio.
+						</p>
+						<button
+							type="button"
+							data-scroll-to="#lumen-notes"
+							class="relative font-manrope text-[#AFDDFF] text-[13px] leading-[15.6px] cursor-pointer hover:underline"
+						>
+							VIEW_TRANSPARENCY_REPORT
+						</button>
+					</div>
+				</div>
+			</div>
+
+			<!-- ===== SCROLL HINT ===== -->
+			<button
+				type="button"
+				data-scroll-to="#lumen-bg"
+				class="hidden sm:flex absolute bottom-[35px] left-1/2 -translate-x-1/2 flex-col items-center gap-[10px] cursor-pointer group/scroll anim-fade-up"
+				style={{ animationDelay: "1300ms" }}
+				aria-label="向下滚动，查看项目背景介绍"
+			>
+				<span class="font-manrope text-white/45 text-[10px] leading-none tracking-[0.28em] group-hover/scroll:text-white/80 transition-colors"
+					>SCROLL</span
+				>
+				<span class="lumen-scroll-line"></span>
+			</button>
+		</div>
+	</section>
+
+	<!-- ===== BELOW THE FOLD: 项目背景介绍 ===== -->
+	<section id="lumen-article" class="relative w-full bg-black text-white font-manrope overflow-hidden">
+		<!-- 与首屏呼应的细网格轨道 -->
+		<div class="absolute inset-y-0 left-[35px] w-px bg-white/[0.04] hidden xl:block"></div>
+		<div class="absolute inset-y-0 right-[35px] w-px bg-white/[0.04] hidden xl:block"></div>
+
+		<div class="relative mx-auto w-full max-w-[1080px] px-5 md:px-[60px] py-24 md:py-[120px]">
+			<!-- intro -->
+			<header class="mb-20 md:mb-28 lumen-reveal">
+				<div class="flex items-center gap-3 mb-7">
+					<span class="h-px w-8 bg-[#AFDDFF]/60"></span>
+					<span class="font-manrope text-[#AFDDFF] text-[11px] tracking-[0.28em] uppercase"
+						>Project Record</span
+					>
+				</div>
+				<p class="font-graphik text-white text-[22px] md:text-[30px] leading-[1.45] max-w-[760px]">
+					这一页没有第二页。首屏是设计稿里的样子，往下滚，是它的来处、搭法和可以搬走的部分。
+				</p>
+				<p class="mt-7 max-w-[680px] text-[15px] leading-[1.9] text-white/55">
+					LŪMEN // ÍNDEX 是一个虚构的 DeFi / 私人银行品牌落地页。我把它搬进博客，当作一次完整的
+					「设计稿 → 可发布页面」移植练习。
+				</p>
+			</header>
+
+			<!-- 01 -->
+			<article id="lumen-bg" class="lumen-block lumen-reveal">
+				<div class="flex items-baseline gap-4 mb-4">
+					<span class="font-manrope text-[#AFDDFF]/80 text-[12px] tracking-[0.2em]">01</span>
+					<span class="font-manrope text-white/35 text-[11px] tracking-[0.24em] uppercase">Ecosystem</span>
+				</div>
+				<h2 class="font-graphik text-white text-[26px] md:text-[36px] leading-[1.2] mb-7">项目背景</h2>
+				<div class="lumen-prose max-w-[760px]">
+					<p>
+						它没有真实业务，卖点是气质：纯黑底、冷蓝强调色 <code>#AFDDFF</code>、中性无衬线、1px
+						细网格加节点连线。整套视觉语言只为一件事服务——让人相信「精密、克制、有资本感」。
+					</p>
+					<p>
+						我真正想验证的不是把它做成独立站点，而是一个更窄的问题：<strong
+							>一个完全不属于博客调性的单屏页面，能不能安静地住在博客里？</strong
+						>
+						不做 iframe，不做外链跳转，而是博客自己的一个路由，进入时没有博客导航、侧栏、页脚和壁纸装饰。
+					</p>
+					<ul>
+						<li><strong>还原目标</strong>：首屏占满视口，版式、时序、配色对齐设计稿。</li>
+						<li>
+							<strong>工程目标</strong>：不引入 React / GSAP / framer-motion 等运行时，动效全部走原生
+							CSS。
+						</li>
+						<li>
+							<strong>最终形态</strong>：首屏之后接一份项目说明——也就是你现在读到的地方。页面内的导航项与
+							CTA 都能点，会带你平滑滚动到对应小节。
+						</li>
+					</ul>
+				</div>
+			</article>
+
+			<!-- 02 -->
+			<article id="lumen-stack" class="lumen-block lumen-reveal">
+				<div class="flex items-baseline gap-4 mb-4">
+					<span class="font-manrope text-[#AFDDFF]/80 text-[12px] tracking-[0.2em]">02</span>
+					<span class="font-manrope text-white/35 text-[11px] tracking-[0.24em] uppercase"
+						>Liquidity Pools</span
+					>
+				</div>
+				<h2 class="font-graphik text-white text-[26px] md:text-[36px] leading-[1.2] mb-7">
+					技术栈与移植路径
+				</h2>
+				<dl class="lumen-spec max-w-[820px]">
+					{
+						spec.map((row) => (
+							<div>
+								<dt>{row.term}</dt>
+								<dd>{row.detail}</dd>
+							</div>
+						))
+					}
+				</dl>
+				<div class="lumen-prose max-w-[760px] mt-8">
+					<p>
+						顺带一个好消息：Tailwind v3 → v4 在这类页面上几乎 1:1。<code>bg-white/[0.04]</code>、<code
+							>text-[13px]</code
+						>、<code>top-[178px]</code>、<code>ease-[cubic-bezier(0.16,1,0.3,1)]</code>
+						这些任意值语法两版通用，所以移植的主要成本不在类名，而在<strong
+							>把 React 的组件状态与副作用，翻译成 CSS 加少量原生 JS</strong
+						>。
+					</p>
+				</div>
+			</article>
+
+			<!-- 03 -->
+			<article id="lumen-design" class="lumen-block lumen-reveal">
+				<div class="flex items-baseline gap-4 mb-4">
+					<span class="font-manrope text-[#AFDDFF]/80 text-[12px] tracking-[0.2em]">03</span>
+					<span class="font-manrope text-white/35 text-[11px] tracking-[0.24em] uppercase">Lumen Index</span>
+				</div>
+				<h2 class="font-graphik text-white text-[26px] md:text-[36px] leading-[1.2] mb-7">设计要点</h2>
+				<div class="lumen-prose max-w-[820px]">
+					<ul>
+						<li>
+							<strong>网格骨架</strong>：4 条竖线（12.6% / 37.5% / 61.9% / 86.2%）乘 2
+							条横线（32.7% / 71.4%），1px、白色 4% 透明度，交叉点放 8 个十字标记。整页的「技术感」几乎全来自这一层。
+						</li>
+						<li>
+							<strong>节点与连线</strong>：三组 80px（移动）/ 100px（桌面）的空心方框，配引出标签
+							<code>[ CORE_ENTITY ]</code>、<code>[ LUMINOUS_INSIGHT ]</code>、<code>[ CONNECTIVITY ]</code
+							>，再用 1px 细线连到画面元素，制造「数据在系统里流动」的错觉。
+						</li>
+						<li>
+							<strong>动效时序</strong>：入场从 200ms 铺到 2100ms，六种动画
+							<code>fadeUp</code> / <code>fadeIn</code> / <code>slideInLeft</code> /
+							<code>slideInRight</code> / <code>scaleIn</code> / <code>gridReveal</code>，统一缓动
+							<code>cubic-bezier(0.16, 1, 0.3, 1)</code>。快出慢收，观感「贵」而不「飘」。
+						</li>
+						<li>
+							<strong>缺角卡片</strong>：底部右侧的信息框不是矩形，而是用 <code>&lt;svg&gt;&lt;polygon&gt;</code
+							> 描边、左下角切掉一块。这是全套稿里最容易被忽略、却最提气质的一笔。
+						</li>
+						<li>
+							<strong>排版层级</strong>：标题 32 / 48 / 68px 三档（移动 / 平板 / 桌面），正文标签固定 13px、行高
+							15.6px。小字号标签加大字号标题的强对比，撑住了「私人银行」的调性。
+						</li>
+					</ul>
+				</div>
+			</article>
+
+			<!-- 04 -->
+			<article id="lumen-notes" class="lumen-block lumen-reveal">
+				<div class="flex items-baseline gap-4 mb-4">
+					<span class="font-manrope text-[#AFDDFF]/80 text-[12px] tracking-[0.2em]">04</span>
+					<span class="font-manrope text-white/35 text-[11px] tracking-[0.24em] uppercase">Governance</span>
+				</div>
+				<h2 class="font-graphik text-white text-[26px] md:text-[36px] leading-[1.2] mb-7">
+					踩坑与可复用点
+				</h2>
+				<div class="lumen-prose max-w-[820px]">
+					<ul>
+						<li>
+							<strong>Tailwind v4 的 <code>data-[...]</code> 变体只作用于元素自身。</strong> 全屏菜单的
+							<code>data-menu-open</code> 挂在 <code>&lt;section&gt;</code> 上，后代元素写
+							<code>data-[menu-open=true]:</code> 永远匹配不到；必须给父元素加 <code>group</code>、改用
+							<code>group-data-[menu-open=true]:</code>。这个坑当时让移动端菜单完全打不开。
+						</li>
+						<li>
+							<strong>全幅页要显式关掉博客装饰。</strong> 樱花 canvas、欢迎 toast、背景壁纸层、顶部高光、背景装饰层，都要在这一页里
+							<code>display: none</code>，否则会浮在首屏上面。
+						</li>
+						<li>
+							<strong>远端背景视频必须留退路。</strong> 视频挂在外部 CDN，可能被网络拦掉。做法是先铺一层 CSS
+							冷光渐变当底，再监听 <code>error</code> 把 <code>&lt;video&gt;</code>
+							摘掉。最差情况用户看到的是一块成品，而不是黑屏。
+						</li>
+						<li>
+							<strong>滚动条是全局隐藏的。</strong>
+							博客把根滚动条换成了顶部阅读进度条，全幅页不用额外处理，只要不锁
+							<code>overflow</code> 就能正常滚——本页原本是「锁滚动」的单屏，现在改成了「可滚动」。
+						</li>
+						<li>
+							<strong>可复用</strong>：这套「全幅 hero + 下方正文」的骨架可以整块搬走。以后做任何单屏落地页，复制组件、换素材、改
+							frontmatter 两条字段即可。
+						</li>
+					</ul>
+				</div>
+			</article>
+
+			<!-- footer -->
+			<footer
+				class="mt-20 md:mt-28 pt-10 border-t border-white/[0.07] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6"
+			>
+				<div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+					<span class="font-manrope text-[#AFDDFF] text-[11px] tracking-[0.2em] uppercase"
+						>Filed under</span
+					>
+					<a
+						href="/projects/"
+						class="font-manrope text-white/70 text-[13px] hover:text-[#AFDDFF] transition-colors"
+						>项目记录</a
+					>
+					<a
+						href="/archive/"
+						class="font-manrope text-white/70 text-[13px] hover:text-[#AFDDFF] transition-colors"
+						>全部文章</a
+					>
+				</div>
+				<button
+					type="button"
+					data-scroll-to="#lumen-hero"
+					class="font-manrope text-white/50 text-[13px] hover:text-white transition-colors cursor-pointer self-start sm:self-auto"
+				>
+					↑ 回到首屏
+				</button>
+			</footer>
+		</div>
+	</section>
+</div>
+
+<style is:global>
+	/* ---- LŪMEN // ÍNDEX 全幅页样式（本组件只在这一页渲染，所以用 global 统一管） ---- */
+	/* 设计稿用的 Graphik LCG / Manrope 未随项目分发。回退到项目已通过 Astro Font API
+	   加载的 Inter（--font-inter），同属中性新怪诞体，观感 1:1。若日后把 Manrope 加进
+	   fontConfig，会优先生效。 */
+	#lumen-page {
+		background-color: #000;
+	}
+
+	#lumen-page,
+	#lumen-hero,
+	#lumen-article {
+		font-family: "Manrope", var(--font-inter), "Inter", "Helvetica Neue", Arial, sans-serif;
+	}
+
+	#lumen-hero .font-graphik,
+	#lumen-article .font-graphik {
+		font-family: "Graphik LCG Regular", "Graphik LCG", var(--font-inter), "Inter", "Helvetica Neue",
+			Arial, sans-serif;
+	}
+
+	#lumen-hero .font-manrope,
+	#lumen-article .font-manrope {
+		font-family: "Manrope", var(--font-inter), "Inter", "Helvetica Neue", Arial, sans-serif;
+	}
+
+	/* 整页黑底，避免主题浅色背景在 overscroll 时露出来。
+	   用 :has() 把作用域钉在本页（页面里有 #lumen-page 时才生效），
+	   防止这份 global 样式被 Astro 打进全站 CSS 后在别的页面误伤。 */
+	html:has(#lumen-page),
+	html:has(#lumen-page) body {
+		background-color: #000;
+	}
+
+	/* 视频未加载 / 慢网络时的兜底：一块深色、带冷光晕的渐变，视觉上仍是"成品" */
+	#lumen-hero .lumen-fallback {
+		background:
+			radial-gradient(
+				120% 90% at 64% 40%,
+				rgba(175, 221, 255, 0.14) 0%,
+				rgba(175, 221, 255, 0.04) 40%,
+				rgba(0, 0, 0, 0) 68%
+			),
+			radial-gradient(
+				90% 70% at 28% 80%,
+				rgba(110, 160, 220, 0.1) 0%,
+				rgba(0, 0, 0, 0) 60%
+			),
+			linear-gradient(180deg, #05070c 0%, #000 62%, #000 100%);
+	}
+
+	/* 首屏底部的滚动提示 */
+	#lumen-hero .lumen-scroll-line {
+		display: block;
+		width: 1px;
+		height: 28px;
+		background: linear-gradient(to bottom, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0));
+	}
+
+	/* Suppress blog-wide decorations that would sit on top of the hero.
+	   同样用 :has() 限定在本页，避免影响其它页面。 */
+	html:has(#lumen-page) #canvas_sakura,
+	html:has(#lumen-page) welcome-toast,
+	html:has(#lumen-page) #page-background-decoration,
+	html:has(#lumen-page) top-gradient-highlight,
+	html:has(#lumen-page) #wallpaper-wrapper {
+		display: none !important;
+	}
+
+	/* ---------- 下方正文 ---------- */
+	#lumen-article .lumen-block {
+		border-top: 1px solid rgba(255, 255, 255, 0.07);
+		padding-top: 56px;
+		scroll-margin-top: 32px;
+	}
+
+	#lumen-article .lumen-block + .lumen-block {
+		margin-top: 64px;
+	}
+
+	#lumen-article .lumen-prose p {
+		margin: 0 0 16px;
+		font-size: 15px;
+		line-height: 1.9;
+		color: rgba(255, 255, 255, 0.72);
+	}
+
+	#lumen-article .lumen-prose p:last-child {
+		margin-bottom: 0;
+	}
+
+	#lumen-article .lumen-prose strong {
+		color: #afddff;
+		font-weight: 600;
+	}
+
+	#lumen-article .lumen-prose code {
+		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+		font-size: 13px;
+		padding: 2px 6px;
+		border-radius: 3px;
+		background: rgba(175, 221, 255, 0.1);
+		color: #afddff;
+	}
+
+	#lumen-article .lumen-prose ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	#lumen-article .lumen-prose li {
+		position: relative;
+		margin-bottom: 14px;
+		padding-left: 20px;
+		font-size: 15px;
+		line-height: 1.85;
+		color: rgba(255, 255, 255, 0.72);
+	}
+
+	#lumen-article .lumen-prose li:last-child {
+		margin-bottom: 0;
+	}
+
+	#lumen-article .lumen-prose li::before {
+		content: "";
+		position: absolute;
+		top: 11px;
+		left: 0;
+		width: 8px;
+		height: 1px;
+		background: #afddff;
+	}
+
+	#lumen-article .lumen-spec {
+		margin: 0;
+		border-top: 1px solid rgba(255, 255, 255, 0.08);
+	}
+
+	#lumen-article .lumen-spec > div {
+		display: grid;
+		grid-template-columns: 96px 1fr;
+		gap: 16px;
+		padding: 14px 0;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	}
+
+	#lumen-article .lumen-spec dt {
+		font-size: 12px;
+		line-height: 1.7;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: rgba(255, 255, 255, 0.42);
+	}
+
+	#lumen-article .lumen-spec dd {
+		margin: 0;
+		font-size: 15px;
+		line-height: 1.7;
+		color: rgba(255, 255, 255, 0.78);
+	}
+
+	@media (max-width: 640px) {
+		#lumen-article .lumen-spec > div {
+			grid-template-columns: 1fr;
+			gap: 6px;
+		}
+	}
+
+	/* 正文小节的入场：只有 JS 可用时才隐藏（.lumen-js 由脚本加上） */
+	.lumen-js #lumen-article .lumen-reveal {
+		opacity: 0;
+		transform: translateY(24px);
+		transition:
+			opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+			transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+	}
+
+	.lumen-js #lumen-article .lumen-reveal.is-visible {
+		opacity: 1;
+		transform: none;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.lumen-js #lumen-article .lumen-reveal {
+			opacity: 1;
+			transform: none;
+			transition: none;
+		}
+
+		#lumen-hero .anim-fade-up,
+		#lumen-hero .anim-fade-in,
+		#lumen-hero .anim-slide-left,
+		#lumen-hero .anim-slide-right,
+		#lumen-hero .anim-scale-in,
+		#lumen-hero .anim-grid-v,
+		#lumen-hero .anim-grid-h {
+			animation: none;
+			opacity: 1;
+			transform: none;
+		}
+	}
+
+	@keyframes fadeUp {
+		from {
+			opacity: 0;
+			transform: translateY(18px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+	@keyframes slideInLeft {
+		from {
+			opacity: 0;
+			transform: translateX(-20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
+	}
+	@keyframes slideInRight {
+		from {
+			opacity: 0;
+			transform: translateX(20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
+	}
+	@keyframes scaleIn {
+		from {
+			opacity: 0;
+			transform: scale(0.85);
+		}
+		to {
+			opacity: 1;
+			transform: scale(1);
+		}
+	}
+	@keyframes gridReveal {
+		from {
+			opacity: 0;
+			transform: scaleY(0);
+		}
+		to {
+			opacity: 1;
+			transform: scaleY(1);
+		}
+	}
+	@keyframes gridRevealH {
+		from {
+			opacity: 0;
+			transform: scaleX(0);
+		}
+		to {
+			opacity: 1;
+			transform: scaleX(1);
+		}
+	}
+
+	#lumen-hero .anim-fade-up {
+		opacity: 0;
+		animation: fadeUp 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	}
+	#lumen-hero .anim-fade-in {
+		opacity: 0;
+		animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	}
+	#lumen-hero .anim-slide-left {
+		opacity: 0;
+		animation: slideInLeft 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	}
+	#lumen-hero .anim-slide-right {
+		opacity: 0;
+		animation: slideInRight 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	}
+	#lumen-hero .anim-scale-in {
+		opacity: 0;
+		animation: scaleIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	}
+	#lumen-hero .anim-grid-v {
+		opacity: 0;
+		transform-origin: top;
+		animation: gridReveal 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	}
+	#lumen-hero .anim-grid-h {
+		opacity: 0;
+		transform-origin: left;
+		animation: gridRevealH 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	}
+</style>
+
+<script>
+	const hero = document.getElementById("lumen-hero");
+
+	if (hero) {
+		const toggle = hero.querySelector("[data-menu-toggle]");
+		const backdrop = hero.querySelector("[data-menu-backdrop]");
+		const closeBtn = hero.querySelector("[data-menu-close]");
+
+		// 远端视频加载失败时移除它，露出下方的渐变兜底
+		const video = hero.querySelector("video");
+		video?.addEventListener("error", () => video?.remove());
+
+		const setOpen = (open: boolean) => hero.setAttribute("data-menu-open", String(open));
+
+		toggle?.addEventListener("click", () => {
+			setOpen(hero.getAttribute("data-menu-open") !== "true");
+		});
+		closeBtn?.addEventListener("click", () => setOpen(false));
+		backdrop?.addEventListener("click", () => setOpen(false));
+
+		// ---- 页内所有可点击元素：平滑滚动到目标小节 ----
+		// 首屏的 4 个导航项、CTA、信息卡链接、滚动提示，以及正文底部的「回到首屏」，
+		// 统一走 data-scroll-to（值是 CSS 选择器）。
+		const prefersReduced = () =>
+			window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+		const scrollToTarget = (selector: string) => {
+			const target = document.querySelector(selector);
+			if (!target) return;
+			// 移动端菜单：点击后先收起，再滚动
+			setOpen(false);
+			target.scrollIntoView({
+				behavior: prefersReduced() ? "auto" : "smooth",
+				block: "start",
+			});
+		};
+
+		document.querySelectorAll<HTMLElement>("[data-scroll-to]").forEach((el) => {
+			el.addEventListener("click", (event) => {
+				const selector = el.dataset.scrollTo;
+				if (!selector) return;
+				event.preventDefault();
+				scrollToTarget(selector);
+			});
+		});
+
+		// ---- 正文小节入场 ----
+		// 默认可见；只有脚本跑起来（.lumen-js）才会先隐藏，避免无 JS 时白屏。
+		document.documentElement.classList.add("lumen-js");
+		const reveals = document.querySelectorAll("#lumen-article .lumen-reveal");
+
+		if ("IntersectionObserver" in window) {
+			const observer = new IntersectionObserver(
+				(entries) => {
+					for (const entry of entries) {
+						if (!entry.isIntersecting) continue;
+						entry.target.classList.add("is-visible");
+						observer.unobserve(entry.target);
+					}
+				},
+				{ rootMargin: "0px 0px -12% 0px", threshold: 0.05 },
+			);
+			reveals.forEach((el) => observer.observe(el));
+		} else {
+			reveals.forEach((el) => el.classList.add("is-visible"));
+		}
+	}
+</script>
