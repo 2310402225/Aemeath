@@ -4,22 +4,16 @@
 //      + 下方「项目背景介绍」正文（可滚动）。
 // 页面内所有可点击元素（4 个导航项、CTA、信息卡链接、滚动提示）都通过
 // data-scroll-to 平滑滚动到对应小节。零额外依赖，动效全部是 CSS @keyframes。
+// 首屏另叠一层线框水母交互层（JellyfishField）。
 
+import JellyfishField from "./JellyfishField.astro";
+
+// 导航项与下方正文的四节严格 1:1 对应；改文案时两边要一起改。
 const navItems = [
-	{ number: "01", label: "ECOSYSTEM", delay: "350ms", target: "#lumen-bg" },
-	{
-		number: "02",
-		label: "LIQUIDITY_POOLS",
-		delay: "450ms",
-		target: "#lumen-stack",
-	},
-	{
-		number: "03",
-		label: "LUMEN_INDEX",
-		delay: "550ms",
-		target: "#lumen-design",
-	},
-	{ number: "04", label: "GOVERNANCE", delay: "650ms", target: "#lumen-notes" },
+	{ number: "01", label: "生态系统", delay: "350ms", target: "#lumen-bg" },
+	{ number: "02", label: "流动性池", delay: "450ms", target: "#lumen-stack" },
+	{ number: "03", label: "流明指数", delay: "550ms", target: "#lumen-design" },
+	{ number: "04", label: "治理", delay: "650ms", target: "#lumen-notes" },
 ];
 
 const verticalPositions = ["12.6%", "37.5%", "61.9%", "86.2%"];
@@ -32,8 +26,8 @@ const nodes = [
 		label: { top: "11%", left: "26%" },
 		labelAnim: "anim-slide-left",
 		labelDelay: "1100ms",
-		title: "[ CORE_ENTITY ]",
-		desc: "Neural node processing real-time data streams.",
+		title: "[ 核心实体 ]",
+		desc: "实时处理数据流的神经节点",
 		descMax: "max-w-[160px]",
 	},
 	{
@@ -42,9 +36,9 @@ const nodes = [
 		label: { top: "76%", left: "3%" },
 		labelAnim: "anim-slide-left",
 		labelDelay: "1400ms",
-		title: "[ LUMINOUS_INSIGHT ]",
-		desc: "Deep-learning engine synthesizing raw inputs.",
-		descMax: "max-w-[160px]",
+		title: "[ 流明洞察 ]",
+		desc: "把原始输入合成为洞见的深度学习引擎",
+		descMax: "max-w-[170px]",
 	},
 	{
 		sq: { top: "63%", left: "50%" },
@@ -52,9 +46,9 @@ const nodes = [
 		label: { top: "50%", left: "78%" },
 		labelAnim: "anim-slide-right",
 		labelDelay: "1700ms",
-		title: "[ CONNECTIVITY ]",
-		desc: "Latency-free transmission across distributed networks.",
-		descMax: "max-w-[180px]",
+		title: "[ 连通 ]",
+		desc: "分布式网络间的零延迟传输",
+		descMax: "max-w-[170px]",
 	},
 ];
 
@@ -70,10 +64,14 @@ const connectors = [
 const spec: { term: string; detail: string }[] = [
 	{
 		term: "组件",
-		detail: "src/components/lumen/LumenPage.astro —— 单文件包含首屏与下方正文",
+		detail:
+			"LumenPage.astro（首屏与正文）+ JellyfishField.astro（首屏水母交互层），均在 src/components/lumen/",
 	},
 	{ term: "原稿", detail: "React 18 + Vite + Tailwind CSS v3" },
-	{ term: "落地", detail: "Astro 7 + Tailwind v4 + 原生 CSS @keyframes" },
+	{
+		term: "落地",
+		detail: "Astro 7 + Tailwind v4 + 原生 CSS @keyframes，水母层是 canvas 2D",
+	},
 	{ term: "依赖", detail: "零。没有 React runtime，也没有动画库" },
 	{
 		term: "接入",
@@ -110,6 +108,9 @@ const spec: { term: string; detail: string }[] = [
 			muted
 			loop
 			playsinline></video>
+
+		<!-- layer 1: 线框水母交互层（视频之上、内容层之下） -->
+		<JellyfishField />
 
 		<!-- content layer -->
 		<div class="relative z-10 w-full h-full">
@@ -162,10 +163,10 @@ const spec: { term: string; detail: string }[] = [
 						<path d="M21 11h-3a2 2 0 0 0 0 4h3"></path>
 					</svg>
 					<span class="font-manrope text-white text-[13px] leading-[15.6px]">0x71...f4e2</span>
-					<span class="font-manrope text-[#AFDDFF] text-[13px] leading-[15.6px]">[ CONNECTED ]</span>
-					<span class="font-manrope text-white text-[13px] leading-[15.6px] ml-[20px]">STATUS:</span>
+					<span class="font-manrope text-[#AFDDFF] text-[13px] leading-[15.6px]">[ 已连接 ]</span>
+					<span class="font-manrope text-white text-[13px] leading-[15.6px] ml-[20px]">身份:</span>
 					<span class="bg-[#AFDDFF] rounded-[3px] px-[5px] py-[2px] text-black text-[13px] leading-[15.6px]">
-						PRIME_MEMBER
+						尊享会员
 					</span>
 				</div>
 
@@ -283,12 +284,12 @@ const spec: { term: string; detail: string }[] = [
 								<path d="M21 11h-3a2 2 0 0 0 0 4h3"></path>
 							</svg>
 							<span class="font-manrope text-white text-[13px] leading-[15.6px]">0x71...f4e2</span>
-							<span class="font-manrope text-[#AFDDFF] text-[13px] leading-[15.6px]">[ CONNECTED ]</span>
+							<span class="font-manrope text-[#AFDDFF] text-[13px] leading-[15.6px]">[ 已连接 ]</span>
 						</div>
 						<div class="flex items-center gap-[8px]">
-							<span class="font-manrope text-white text-[13px] leading-[15.6px]">STATUS:</span>
+							<span class="font-manrope text-white text-[13px] leading-[15.6px]">身份:</span>
 							<span class="bg-[#AFDDFF] rounded-[3px] px-[5px] py-[2px] text-black text-[13px] leading-[15.6px]">
-								PRIME_MEMBER
+								尊享会员
 							</span>
 						</div>
 					</div>
@@ -297,11 +298,9 @@ const spec: { term: string; detail: string }[] = [
 
 			<!-- ===== H1 ===== -->
 			<h1
-				class="font-graphik text-white font-normal leading-[1em] absolute anim-fade-up text-[32px] sm:text-[48px] md:text-[68px] top-[140px] sm:top-[160px] md:top-[178px] left-5 md:left-[35px] max-w-[300px] sm:max-w-[420px] md:max-w-[554px]"
+				class="font-graphik text-white font-normal leading-[1.12em] absolute anim-fade-up text-[32px] sm:text-[48px] md:text-[68px] top-[140px] sm:top-[160px] md:top-[178px] left-5 md:left-[35px] max-w-[300px] sm:max-w-[420px] md:max-w-[554px]"
 				style={{ animationDelay: "400ms" }}
-			>
-				Liquid Assets. Luminous Returns.
-			</h1>
+			>资产如水。<br />回报如光。</h1>
 
 			<!-- ===== GRID LINES + PLUS MARKS ===== -->
 			{
@@ -389,8 +388,8 @@ const spec: { term: string; detail: string }[] = [
 					style={{ animationDelay: "900ms" }}
 				>
 					<span class="text-black text-[16px] leading-none">&#10022;</span>
-					<span class="font-manrope text-black text-[12px] md:text-[13px] leading-[15.6px] uppercase tracking-wide">
-						Explore Private Banking
+					<span class="font-manrope text-black text-[12px] md:text-[13px] leading-[15.6px] tracking-wide">
+						探索私人银行
 					</span>
 				</button>
 
@@ -399,7 +398,7 @@ const spec: { term: string; detail: string }[] = [
 					<span
 						class="font-manrope text-black text-[13px] leading-[15.6px] bg-[#AFDDFF] px-[6px] py-[2px] inline-block mb-[10px]"
 					>
-						NOT A BANK — AN ECOSYSTEM
+						不是银行，是一个生态
 					</span>
 					<div class="relative p-[20px]">
 						<svg
@@ -414,16 +413,15 @@ const spec: { term: string; detail: string }[] = [
 								stroke-width="1"
 								vector-effect="non-scaling-stroke"></polygon>
 						</svg>
-						<p class="relative font-manrope text-white text-[13px] leading-[18px] mb-[18px]">
-							Maps the complexity of modern finance with a partner that brings clarity and organic
-							growth to your portfolio.
+						<p class="relative font-manrope text-white text-[13px] leading-[19px] mb-[18px]">
+							在纷繁的现代金融中理清头绪，让你的投资组合获得清晰的、有机的增长。
 						</p>
 						<button
 							type="button"
 							data-scroll-to="#lumen-notes"
 							class="relative font-manrope text-[#AFDDFF] text-[13px] leading-[15.6px] cursor-pointer hover:underline"
 						>
-							VIEW_TRANSPARENCY_REPORT
+							查看透明度报告
 						</button>
 					</div>
 				</div>
@@ -437,8 +435,9 @@ const spec: { term: string; detail: string }[] = [
 				style={{ animationDelay: "1300ms" }}
 				aria-label="向下滚动，查看项目背景介绍"
 			>
-				<span class="font-manrope text-white/45 text-[10px] leading-none tracking-[0.28em] group-hover/scroll:text-white/80 transition-colors"
-					>SCROLL</span
+				<span
+					class="font-manrope text-white/45 text-[10px] leading-none tracking-[0.2em] group-hover/scroll:text-white/80 transition-colors"
+					>向下滚动</span
 				>
 				<span class="lumen-scroll-line"></span>
 			</button>
@@ -456,8 +455,8 @@ const spec: { term: string; detail: string }[] = [
 			<header class="mb-20 md:mb-28 lumen-reveal">
 				<div class="flex items-center gap-3 mb-7">
 					<span class="h-px w-8 bg-[#AFDDFF]/60"></span>
-					<span class="font-manrope text-[#AFDDFF] text-[11px] tracking-[0.28em] uppercase"
-						>Project Record</span
+					<span class="font-manrope text-[#AFDDFF] text-[11px] tracking-[0.12em]"
+						>项目记录</span
 					>
 				</div>
 				<p class="font-graphik text-white text-[22px] md:text-[30px] leading-[1.45] max-w-[760px]">
@@ -473,7 +472,7 @@ const spec: { term: string; detail: string }[] = [
 			<article id="lumen-bg" class="lumen-block lumen-reveal">
 				<div class="flex items-baseline gap-4 mb-4">
 					<span class="font-manrope text-[#AFDDFF]/80 text-[12px] tracking-[0.2em]">01</span>
-					<span class="font-manrope text-white/35 text-[11px] tracking-[0.24em] uppercase">Ecosystem</span>
+					<span class="font-manrope text-white/35 text-[11px] tracking-[0.12em]">生态系统</span>
 				</div>
 				<h2 class="font-graphik text-white text-[26px] md:text-[36px] leading-[1.2] mb-7">项目背景</h2>
 				<div class="lumen-prose max-w-[760px]">
@@ -505,8 +504,8 @@ const spec: { term: string; detail: string }[] = [
 			<article id="lumen-stack" class="lumen-block lumen-reveal">
 				<div class="flex items-baseline gap-4 mb-4">
 					<span class="font-manrope text-[#AFDDFF]/80 text-[12px] tracking-[0.2em]">02</span>
-					<span class="font-manrope text-white/35 text-[11px] tracking-[0.24em] uppercase"
-						>Liquidity Pools</span
+					<span class="font-manrope text-white/35 text-[11px] tracking-[0.12em]"
+						>流动性池</span
 					>
 				</div>
 				<h2 class="font-graphik text-white text-[26px] md:text-[36px] leading-[1.2] mb-7">
@@ -538,7 +537,7 @@ const spec: { term: string; detail: string }[] = [
 			<article id="lumen-design" class="lumen-block lumen-reveal">
 				<div class="flex items-baseline gap-4 mb-4">
 					<span class="font-manrope text-[#AFDDFF]/80 text-[12px] tracking-[0.2em]">03</span>
-					<span class="font-manrope text-white/35 text-[11px] tracking-[0.24em] uppercase">Lumen Index</span>
+					<span class="font-manrope text-white/35 text-[11px] tracking-[0.12em]">流明指数</span>
 				</div>
 				<h2 class="font-graphik text-white text-[26px] md:text-[36px] leading-[1.2] mb-7">设计要点</h2>
 				<div class="lumen-prose max-w-[820px]">
@@ -574,7 +573,7 @@ const spec: { term: string; detail: string }[] = [
 			<article id="lumen-notes" class="lumen-block lumen-reveal">
 				<div class="flex items-baseline gap-4 mb-4">
 					<span class="font-manrope text-[#AFDDFF]/80 text-[12px] tracking-[0.2em]">04</span>
-					<span class="font-manrope text-white/35 text-[11px] tracking-[0.24em] uppercase">Governance</span>
+					<span class="font-manrope text-white/35 text-[11px] tracking-[0.12em]">治理</span>
 				</div>
 				<h2 class="font-graphik text-white text-[26px] md:text-[36px] leading-[1.2] mb-7">
 					踩坑与可复用点
@@ -602,6 +601,24 @@ const spec: { term: string; detail: string }[] = [
 							<code>overflow</code> 就能正常滚——本页原本是「锁滚动」的单屏，现在改成了「可滚动」。
 						</li>
 						<li>
+							<strong>远端视频里的水母改不了运动。</strong>
+							首屏背景那三只是烤进 mp4 的像素，鼠标移到哪都不会有反应。所以想要「能互动的水母」只有两条路：换掉整段视频自己重做，或者<strong
+								>在视频之上再叠一层可控的图层</strong
+							>。选了后者。
+						</li>
+						<li>
+							<strong>叠一层 canvas 线框水母。</strong> 5 只 1px <code>#AFDDFF</code> 描边的小水母（伞盖 26–38px、各 3
+							根 verlet 触须），用的是页面自己的视觉语言，刻意比主景更小更暗，当「前景里的小鱼群」。受力上让「实际距离 −
+							理想距离」的正负天然给出双向力：远则趋光、贴到 80px 内自动反转成斥力，再加一层彼此分离，最后落成一个会呼吸的小群落；点击首屏空白处从点击点向外辐射推力，1.5
+							秒衰减回趋光。兜底三条：<code>prefers-reduced-motion</code> 时整层不渲染，首屏滚出视口或标签页切后台就停掉动画循环，canvas 按
+							<code>devicePixelRatio</code> 缩放保证 1px 描边不发虚。
+						</li>
+						<li>
+							<strong>可复用：底层素材不可控，就在它上面叠一层可控的。</strong>
+							这条对任何「效果很好但不能响应交互」的现成素材都成立——视频、GIF、第三方 iframe 都一样。关键是新图层的视觉语言必须跟页面一致（这里直接复用了已有的 1px
+							网格与 <code>#AFDDFF</code>），否则就会从「同一片海」变成「贴纸叠在照片上」。
+						</li>
+						<li>
 							<strong>可复用</strong>：这套「全幅 hero + 下方正文」的骨架可以整块搬走。以后做任何单屏落地页，复制组件、换素材、改
 							frontmatter 两条字段即可。
 						</li>
@@ -615,7 +632,7 @@ const spec: { term: string; detail: string }[] = [
 			>
 				<div class="flex flex-wrap items-center gap-x-4 gap-y-2">
 					<span class="font-manrope text-[#AFDDFF] text-[11px] tracking-[0.2em] uppercase"
-						>Filed under</span
+						>归入</span
 					>
 					<a
 						href="/projects/"

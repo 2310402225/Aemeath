@@ -1,0 +1,413 @@
+---
+// JellyfishField —— 首屏的线框水母交互层
+//
+// 设计约束（见 /posts/lumen-index/ 04 节）：
+// · 背景视频里的三只是照片级写实水母，它们的运动烤死在 mp4 里，改不了。
+//   所以这里在视频之上、文字之下叠一层**可控**的图层：5 只线框水母，
+//   用的是页面自己的视觉语言（#AFDDFF 描边 + 方括号标签），刻意做得小、做得克制，
+//   当"前景里的小鱼群"，不跟主景抢戏。
+// · 受力：远则趋光；贴到个人空间内反转为斥力，且内侧斜率更陡、力度再放大，
+//   保证"贴脸"时是真的被推开，而不是悬在光标旁边。彼此之间也保持距离。
+//   点击首屏空白处 → 从点击点向外辐射推力，1.5 秒内衰减回趋光。
+// · 兜底：prefers-reduced-motion 时整层不渲染；首屏滚出视口 / 标签页隐藏时停掉动画循环。
+---
+
+<canvas class="lumen-jellyfish anim-fade-in" data-jellyfish-canvas aria-hidden="true" style="animation-delay: 1400ms"
+></canvas>
+
+<style is:global>
+	/* 只在本页生效：类名唯一，且只在这一页的 DOM 里出现 */
+	#lumen-hero .lumen-jellyfish {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		z-index: 5; /* 视频之上、内容层 z-10 之下 */
+		pointer-events: none; /* 绝不拦截点击 */
+	}
+</style>
+
+<script>
+	type Point = { x: number; y: number; px: number; py: number };
+
+	type Jelly = {
+		x: number;
+		y: number;
+		vx: number;
+		vy: number;
+		r: number; // 伞盖半径（伞盖宽度 = 2r）
+		ring: number; // 各自偏好的悬停半径偏移，避免全挤在一个圈上
+		phase: number;
+		pulse: number;
+		scatter: number; // >0 时抑制趋光，单位秒
+		label: string;
+		tentacles: Point[][];
+	};
+
+	const canvas = document.querySelector<HTMLCanvasElement>("[data-jellyfish-canvas]");
+	const hero = document.getElementById("lumen-hero");
+	const context = canvas?.getContext("2d") ?? null;
+	const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+	if (canvas && hero && context && !reduceMotion) {
+		const ctx = context;
+		const INK = "175, 221, 255"; // #AFDDFF
+
+		const COUNT = 5;
+		const PERSONAL_SPACE = 80; // 个人空间半径：贴到这个距离内就反转为斥力
+		const MIN_SEPARATION = 58; // 彼此最小间距，防止叠成一个亮点
+		const SEGMENTS = 8; // 每根触须的段数
+		const DAMPING = 0.985; // 每帧阻尼（60fps 基准）
+		const MAX_SPEED = 3.2; // 常规限速（px/帧）
+		const MAX_SPEED_SCATTER = 6.5; // 受惊时的限速
+		const ATTRACT_ACCEL = 0.05; // 趋光加速度上限
+		const REPEL_SLOPE = 0.032; // 个人空间内侧：力随距离变化更快
+		const REPEL_BOOST = 2.2; // 个人空间内侧：斥力再放大，确保真的被推开
+		const SEPARATE_ACCEL = 0.03;
+		const DRIFT_ACCEL = 0.012; // 自由游动的摆动
+		const SCATTER_TIME = 1.5;
+
+		let width = 0;
+		let height = 0;
+		let raf = 0;
+		let running = false;
+		let lastFrame = 0;
+		let time = 0;
+		let activity = 0; // 指针活跃度 0–1，静止时会衰减，让水母慢慢散开
+
+		const pointer = { x: 0, y: 0, active: false, movedAt: 0 };
+		const jellies: Jelly[] = [];
+		const rand = (min: number, max: number) => min + Math.random() * (max - min);
+
+		const buildTentacles = (jelly: Jelly): Point[][] => {
+			const chains: Point[][] = [];
+			const seg = jelly.r * 0.9; // 单段长度，总长约 3.6 倍伞盖宽
+			for (let c = 0; c < 3; c++) {
+				const rootX = jelly.x + (c - 1) * jelly.r * 0.48;
+				const chain: Point[] = [];
+				for (let i = 0; i < SEGMENTS; i++) {
+					const x = rootX;
+					const y = jelly.y + i * seg;
+					chain.push({ x, y, px: x, py: y });
+				}
+				chains.push(chain);
+			}
+			return chains;
+		};
+
+		const seed = () => {
+			jellies.length = 0;
+			for (let i = 0; i < COUNT; i++) {
+				// 起始位置偏右半侧，避开左上角的大标题
+				const jelly: Jelly = {
+					x: width * rand(0.48, 0.88),
+					y: height * rand(0.22, 0.72),
+					vx: rand(-0.25, 0.25),
+					vy: rand(-0.25, 0.25),
+					r: rand(13, 19), // 伞盖宽 26–38px
+					ring: rand(0, 46),
+					phase: rand(0, Math.PI * 2),
+					pulse: rand(0.85, 1.3),
+					scatter: 0,
+					label: `[ 目标 ${String(i + 1).padStart(2, "0")} ]`,
+					tentacles: [],
+				};
+				jelly.tentacles = buildTentacles(jelly);
+				jellies.push(jelly);
+			}
+		};
+
+		const resize = () => {
+			const rect = hero.getBoundingClientRect();
+			width = rect.width;
+			height = rect.height;
+			const dpr = Math.min(window.devicePixelRatio || 1, 2);
+			canvas.width = Math.max(1, Math.round(width * dpr));
+			canvas.height = Math.max(1, Math.round(height * dpr));
+			// 逻辑坐标 = CSS 像素：线宽 1 就是 1 CSS 像素，配合 dpr 缩放保证描边干净不发虚
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+			if (jellies.length === 0) seed();
+		};
+
+		const stepTentacles = (jelly: Jelly) => {
+			const seg = jelly.r * 0.9;
+			for (let c = 0; c < jelly.tentacles.length; c++) {
+				const chain = jelly.tentacles[c];
+				const rootX = jelly.x + (c - 1) * jelly.r * 0.48;
+				const rootY = jelly.y + jelly.r * 0.06;
+				chain[0].x = rootX;
+				chain[0].y = rootY;
+				chain[0].px = rootX;
+				chain[0].py = rootY;
+
+				for (let i = 1; i < chain.length; i++) {
+					const p = chain[i];
+					// verlet：惯性 + 跟随母体 + 横向摆动 + 轻微下沉
+					const nx =
+						(p.x - p.px) * 0.92 +
+						jelly.vx * 0.9 +
+						Math.sin(time * 2.2 + i * 0.6 + jelly.phase) * 0.34;
+					const ny = (p.y - p.py) * 0.92 + jelly.vy * 0.9 + 0.3;
+					p.px = p.x;
+					p.py = p.y;
+					p.x += nx;
+					p.y += ny;
+				}
+
+				// 距离约束，走两遍让它更稳
+				for (let pass = 0; pass < 2; pass++) {
+					for (let i = 1; i < chain.length; i++) {
+						const a = chain[i - 1];
+						const b = chain[i];
+						const dx = b.x - a.x;
+						const dy = b.y - a.y;
+						const dist = Math.hypot(dx, dy) || 1;
+						const diff = (dist - seg) / dist;
+						if (i === 1) {
+							// 第一段只动子节点，根节点钉在伞盖上
+							b.x -= dx * diff;
+							b.y -= dy * diff;
+						} else {
+							a.x += dx * diff * 0.5;
+							a.y += dy * diff * 0.5;
+							b.x -= dx * diff * 0.5;
+							b.y -= dy * diff * 0.5;
+						}
+					}
+				}
+			}
+		};
+
+		const step = (delta: number) => {
+			const k = delta * 60; // 换算成"60fps 的帧数"
+			const damp = DAMPING ** k;
+			activity *= Math.exp(-delta / 2.5);
+
+			for (const jelly of jellies) {
+				// 1) 趋光 / 个人空间：用「实际距离 − 理想距离」的正负天然给出双向力。
+				//    内侧换成更陡的斜率 + 额外增益，避免漂移力把斥力顶掉、水母赖在光标边上。
+				if (pointer.active) {
+					const dx = pointer.x - jelly.x;
+					const dy = pointer.y - jelly.y;
+					const dist = Math.hypot(dx, dy) || 1;
+					const ideal = PERSONAL_SPACE + jelly.ring;
+					const gap = dist - ideal;
+					const inside = gap < 0;
+					const pull = Math.max(-1, Math.min(1, gap * (inside ? REPEL_SLOPE : 0.01)));
+					const gain =
+						pull *
+						(inside ? REPEL_BOOST : 1) *
+						ATTRACT_ACCEL *
+						(0.55 + 0.45 * activity) *
+						(1 - jelly.scatter / SCATTER_TIME);
+					jelly.vx += (dx / dist) * gain * k;
+					jelly.vy += (dy / dist) * gain * k;
+				}
+
+				// 2) 彼此分离
+				for (const other of jellies) {
+					if (other === jelly) continue;
+					const dx = jelly.x - other.x;
+					const dy = jelly.y - other.y;
+					const dist2 = dx * dx + dy * dy;
+					if (dist2 <= 0 || dist2 >= MIN_SEPARATION * MIN_SEPARATION) continue;
+					const dist = Math.sqrt(dist2);
+					const push = ((MIN_SEPARATION - dist) / MIN_SEPARATION) * SEPARATE_ACCEL * k;
+					jelly.vx += (dx / dist) * push;
+					jelly.vy += (dy / dist) * push;
+				}
+
+				// 3) 自由游动：无论有没有指针，都得是"活"的
+				const lazy = 1 - 0.5 * activity;
+				jelly.vx += Math.cos(time * 0.35 + jelly.phase) * DRIFT_ACCEL * lazy * k;
+				jelly.vy += Math.sin(time * 0.29 + jelly.phase * 1.7) * DRIFT_ACCEL * lazy * k;
+
+				// 4) 受惊衰减
+				if (jelly.scatter > 0) jelly.scatter = Math.max(0, jelly.scatter - delta);
+
+				// 5) 阻尼 / 限速 / 软边界
+				jelly.vx *= damp;
+				jelly.vy *= damp;
+
+				const speed = Math.hypot(jelly.vx, jelly.vy);
+				const limit = jelly.scatter > 0 ? MAX_SPEED_SCATTER : MAX_SPEED;
+				if (speed > limit) {
+					jelly.vx = (jelly.vx / speed) * limit;
+					jelly.vy = (jelly.vy / speed) * limit;
+				}
+
+				jelly.x += jelly.vx * k;
+				jelly.y += jelly.vy * k;
+
+				const pad = 44;
+				if (jelly.x < pad) jelly.vx += (pad - jelly.x) * 0.0006 * k;
+				if (jelly.x > width - pad) jelly.vx -= (jelly.x - (width - pad)) * 0.0006 * k;
+				if (jelly.y < pad) jelly.vy += (pad - jelly.y) * 0.0006 * k;
+				if (jelly.y > height - pad) jelly.vy -= (jelly.y - (height - pad)) * 0.0006 * k;
+
+				stepTentacles(jelly);
+			}
+		};
+
+		const draw = () => {
+			ctx.clearRect(0, 0, width, height);
+			ctx.lineCap = "round";
+			ctx.lineJoin = "round";
+
+			for (const jelly of jellies) {
+				// 触须：逐段画，靠透明度与线宽做出由粗到细的收尾
+				for (const chain of jelly.tentacles) {
+					for (let i = 1; i < chain.length; i++) {
+						const t = i / (chain.length - 1);
+						ctx.strokeStyle = `rgba(${INK}, ${(0.62 * (1 - t) ** 1.15 + 0.07).toFixed(3)})`;
+						ctx.lineWidth = 1 - t * 0.3;
+						ctx.beginPath();
+						ctx.moveTo(chain[i - 1].x, chain[i - 1].y);
+						ctx.lineTo(chain[i].x, chain[i].y);
+						ctx.stroke();
+					}
+				}
+
+				// 伞盖：穹顶 + 三瓣裙边 + 内圈。
+				// 只用一根弧线会被暗底吃掉，闭合的轮廓才认得出是水母。
+				const beat = Math.sin(time * 1.6 * jelly.pulse + jelly.phase);
+				const rx = jelly.r * (1 + 0.07 * beat);
+				const ry = jelly.r * (1 - 0.07 * beat);
+
+				ctx.strokeStyle = `rgba(${INK}, 0.78)`;
+				ctx.lineWidth = 1;
+				ctx.beginPath();
+				ctx.ellipse(jelly.x, jelly.y, rx, ry, 0, Math.PI, Math.PI * 2);
+				ctx.stroke();
+
+				ctx.beginPath();
+				for (let s = 0; s < 3; s++) {
+					const x0 = jelly.x - rx + (s * 2 * rx) / 3;
+					const x1 = x0 + (2 * rx) / 3;
+					ctx.moveTo(x0, jelly.y);
+					ctx.quadraticCurveTo((x0 + x1) / 2, jelly.y + ry * 0.3 * (1 + beat * 0.5), x1, jelly.y);
+				}
+				ctx.stroke();
+
+				ctx.strokeStyle = `rgba(${INK}, 0.22)`;
+				ctx.beginPath();
+				ctx.ellipse(jelly.x, jelly.y - ry * 0.1, rx * 0.58, ry * 0.5, 0, Math.PI, Math.PI * 2);
+				ctx.stroke();
+
+				// 十字定位标记
+				ctx.strokeStyle = `rgba(${INK}, 0.46)`;
+				const cross = 3.2;
+				ctx.beginPath();
+				ctx.moveTo(jelly.x - cross, jelly.y - ry * 0.34);
+				ctx.lineTo(jelly.x + cross, jelly.y - ry * 0.34);
+				ctx.moveTo(jelly.x, jelly.y - ry * 0.34 - cross);
+				ctx.lineTo(jelly.x, jelly.y - ry * 0.34 + cross);
+				ctx.stroke();
+
+				// 追踪标记：小小的方括号编号，压低存在感
+				ctx.fillStyle = `rgba(${INK}, 0.26)`;
+				ctx.font = '9px Inter, "Helvetica Neue", Arial, sans-serif';
+				ctx.textAlign = "center";
+				ctx.textBaseline = "alphabetic";
+				ctx.fillText(jelly.label, jelly.x, jelly.y - ry - 8);
+			}
+		};
+
+		const frame = (now: number) => {
+			if (!running) return;
+			const delta = Math.min((now - lastFrame) / 1000, 0.05);
+			lastFrame = now;
+			time += delta;
+			step(delta);
+			draw();
+			raf = window.requestAnimationFrame(frame);
+		};
+
+		const start = () => {
+			if (running) return;
+			running = true;
+			lastFrame = window.performance.now();
+			raf = window.requestAnimationFrame(frame);
+		};
+
+		const stop = () => {
+			running = false;
+			if (raf) window.cancelAnimationFrame(raf);
+			raf = 0;
+		};
+
+		// ---- 指针 ----
+		const onPointerMove = (event: PointerEvent) => {
+			const rect = hero.getBoundingClientRect();
+			pointer.x = event.clientX - rect.left;
+			pointer.y = event.clientY - rect.top;
+			pointer.active = true;
+			pointer.movedAt = window.performance.now();
+			activity = 1;
+		};
+
+		const onPointerDown = (event: PointerEvent) => {
+			// 只响应首屏空白处的点击：点导航、CTA、信息卡链接时不能惊散水母
+			const target = event.target as Element | null;
+			if (target?.closest("a, button, [role='button'], input, select, label, [data-scroll-to]")) return;
+
+			const rect = hero.getBoundingClientRect();
+			const cx = event.clientX - rect.left;
+			const cy = event.clientY - rect.top;
+
+			for (const jelly of jellies) {
+				let dx = jelly.x - cx;
+				let dy = jelly.y - cy;
+				let dist = Math.hypot(dx, dy);
+				if (dist < 1) {
+					// 正好点在伞盖正中：方向退化，随机给一个，别让这次点击落空
+					const angle = rand(0, Math.PI * 2);
+					dx = Math.cos(angle);
+					dy = Math.sin(angle);
+					dist = 1;
+				}
+				const power = Math.max(0.35, 1 - dist / 520); // 离点击点越近推得越狠
+				jelly.vx += (dx / dist) * 5.2 * power;
+				jelly.vy += (dy / dist) * 5.2 * power;
+				jelly.scatter = SCATTER_TIME;
+			}
+		};
+
+		const onPointerExit = () => {
+			pointer.active = false;
+		};
+
+		const onPointerUp = (event: PointerEvent) => {
+			// 触摸端抬手之后没有 pointerleave 可依赖，显式断开吸附，交回自由游动
+			if (event.pointerType !== "mouse") pointer.active = false;
+		};
+
+		hero.addEventListener("pointermove", onPointerMove, { passive: true });
+		hero.addEventListener("pointerdown", onPointerDown, { passive: true });
+		hero.addEventListener("pointerup", onPointerUp, { passive: true });
+		hero.addEventListener("pointerleave", onPointerExit);
+		hero.addEventListener("pointercancel", onPointerExit); // 触摸端开始滚动时浏览器会取消指针
+
+		// ---- 只在首屏可见、且标签页在前台时跑 ----
+		const observer = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					if (entry.isIntersecting && !document.hidden) start();
+					else stop();
+				}
+			},
+			{ threshold: 0 },
+		);
+		observer.observe(hero);
+
+		document.addEventListener("visibilitychange", () => {
+			if (document.hidden) stop();
+			else if (hero.getBoundingClientRect().bottom > 0) start();
+		});
+
+		window.addEventListener("resize", resize);
+
+		resize();
+		start();
+	}
+</script>
