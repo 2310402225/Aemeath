@@ -60,7 +60,10 @@ const connectors = [
 	data-menu-open="false"
 	class="group relative w-full h-screen overflow-hidden bg-black text-white font-manrope"
 >
-	<!-- layer 0: background video -->
+	<!-- layer 0a: gradient fallback (shows until/unless the video paints its first frame) -->
+	<div class="absolute inset-0 lumen-fallback" />
+
+	<!-- layer 0b: background video -->
 	<video
 		class="absolute inset-0 w-full h-full object-cover anim-fade-in"
 		src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260813_115057_94c3699b-0fd1-4124-bcf3-3626bb8c1f77.mp4"
@@ -395,16 +398,37 @@ const connectors = [
 
 <style is:global>
 	/* ---- LŪMEN // ÍNDEX hero styles (scoped to the page that renders this component) ---- */
+	/* 设计稿用的 Graphik LCG / Manrope 未随项目分发。回退到项目已通过 Astro Font API
+	   加载的 Inter（--font-inter），同属中性新怪诞体，观感 1:1。若日后把 Manrope 加进
+	   fontConfig，会优先生效。 */
 	#lumen-hero {
-		font-family: "Manrope", sans-serif;
+		font-family: "Manrope", var(--font-inter), "Inter", "Helvetica Neue", Arial, sans-serif;
 	}
 
 	#lumen-hero .font-graphik {
-		font-family: "Graphik LCG Regular Regular", "Graphik LCG", sans-serif;
+		font-family: "Graphik LCG Regular", "Graphik LCG", var(--font-inter), "Inter",
+			"Helvetica Neue", Arial, sans-serif;
 	}
 
 	#lumen-hero .font-manrope {
-		font-family: "Manrope", sans-serif;
+		font-family: "Manrope", var(--font-inter), "Inter", "Helvetica Neue", Arial, sans-serif;
+	}
+
+	/* 视频未加载 / 慢网络时的兜底：一块深色、带冷光晕的渐变，视觉上仍是"成品" */
+	#lumen-hero .lumen-fallback {
+		background:
+			radial-gradient(
+				120% 90% at 64% 40%,
+				rgba(175, 221, 255, 0.14) 0%,
+				rgba(175, 221, 255, 0.04) 40%,
+				rgba(0, 0, 0, 0) 68%
+			),
+			radial-gradient(
+				90% 70% at 28% 80%,
+				rgba(110, 160, 220, 0.1) 0%,
+				rgba(0, 0, 0, 0) 60%
+			),
+			linear-gradient(180deg, #05070c 0%, #000 62%, #000 100%);
 	}
 
 	/* Lock the page so the spec's "no scroll, single section" holds */
@@ -530,6 +554,10 @@ const connectors = [
 		const overlay = section.querySelector("[data-menu-overlay]");
 		const backdrop = section.querySelector("[data-menu-backdrop]");
 		const closeBtn = section.querySelector("[data-menu-close]");
+
+		// 远端视频加载失败时移除它，露出下方的渐变兜底
+		const video = section.querySelector("video");
+		video?.addEventListener("error", () => video?.remove());
 
 		const setOpen = (open: boolean) =>
 			section.setAttribute("data-menu-open", String(open));

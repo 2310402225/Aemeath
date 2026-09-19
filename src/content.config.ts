@@ -9,6 +9,7 @@ type PostData = {
 	updated?: Date;
 	topic: string;
 	draft: boolean;
+	fullBleed: boolean;
 	description: string;
 	aiSummary: string;
 	aiPolished: boolean;
