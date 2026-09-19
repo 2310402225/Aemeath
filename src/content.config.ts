@@ -42,6 +42,7 @@ const postsCollection: PostsCollection = defineCollection({
 		updated: z.date().optional(),
 		topic: z.string().min(1),
 		draft: z.boolean().optional().default(false),
+		fullBleed: z.boolean().optional().default(false),
 		description: z.string().optional().default(""),
 		aiSummary: z.string().optional().default(""),
 		aiPolished: z.boolean().optional().default(true),

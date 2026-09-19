@@ -4,6 +4,7 @@ import Markdown from "@components/common/Markdown.astro";
 import PostMetadata from "@components/layout/PostMeta.astro";
 import License from "@components/misc/License.astro";
 import MainGridLayout from "@layouts/MainGridLayout.astro";
+import Layout from "@layouts/Layout.astro";
 import { getRelatedPosts, getSortedPosts } from "@utils/content-utils";
 import { getPostUrlBySlug, removeFileExtension } from "@utils/url-utils";
 import { Icon } from "astro-icon/components";
@@ -31,20 +32,32 @@ const sourceLink = entry.data.sourceLink || Astro.url.toString();
 const hasNeighbor = Boolean(entry.data.prevSlug || entry.data.nextSlug);
 ---
 
-<MainGridLayout
-	title={entry.data.title}
-	description={description}
-	lang={siteConfig.lang}
-	setOGTypeArticle
-	postSlug={entry.id}
-	postCategory={entry.data.category || topic}
-	headings={headings}
-	bannerPostMeta={{
-		title: entry.data.title,
-		published: entry.data.published,
-		updated: entry.data.updated,
-	}}
->
+{
+	entry.data.fullBleed ? (
+		<Layout
+			title={entry.data.title}
+			description={description}
+			lang={siteConfig.lang}
+			setOGTypeArticle
+			postSlug={entry.id}
+		>
+			<Content />
+		</Layout>
+	) : (
+		<MainGridLayout
+			title={entry.data.title}
+			description={description}
+			lang={siteConfig.lang}
+			setOGTypeArticle
+			postSlug={entry.id}
+			postCategory={entry.data.category || topic}
+			headings={headings}
+			bannerPostMeta={{
+				title: entry.data.title,
+				published: entry.data.published,
+				updated: entry.data.updated,
+			}}
+		>
 	<article class="card-base px-6 py-7 md:px-10 md:py-10 mb-4">
 		<header class="mb-8 border-b border-(--line-divider) pb-6">
 			<div class="mb-3 flex flex-wrap items-center gap-2 text-sm text-(--primary)">
@@ -155,7 +168,9 @@ const hasNeighbor = Boolean(entry.data.prevSlug || entry.data.nextSlug);
 			)}
 		</nav>
 	)}
-</MainGridLayout>
+		</MainGridLayout>
+	)
+}
 
 <style is:global>
 	.post-content {

@@ -101,14 +101,17 @@ export default defineConfig({
 			cache: true,
 			preload: true,
 			accessibility: true,
-			// The portfolio is a deliberately full-bleed layout and does not use the
-			// standard MainGridLayout Swup containers. Crossing this layout boundary
-			// with a partial DOM swap leaves stale containers/styles behind, so both
-			// directions use a normal document navigation instead.
+			// The portfolio and the full-bleed LŪMEN article are deliberately full-bleed
+			// layouts that do not use the standard MainGridLayout Swup containers.
+			// Crossing this layout boundary with a partial DOM swap leaves stale
+			// containers/styles behind, so both directions use a normal document
+			// navigation instead. Trailing slashes are normalized away for robustness.
 			ignore: (targetUrl) => {
-				const targetPath = targetUrl.split(/[?#]/)[0] || "/";
-				const currentPath = window.location.pathname;
-				return targetPath === "/portfolio/" || currentPath === "/portfolio/";
+				const normalize = (p) => (p || "/").replace(/\/+$/, "") || "/";
+				const targetPath = normalize(targetUrl.split(/[?#]/)[0]);
+				const currentPath = normalize(window.location.pathname);
+				const isFullBleed = (p) => p === "/portfolio" || p === "/posts/lumen-index";
+				return isFullBleed(targetPath) || isFullBleed(currentPath);
 			},
 			updateHead: true,
 			updateBodyClass: false,

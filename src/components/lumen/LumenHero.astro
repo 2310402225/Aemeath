@@ -1,0 +1,543 @@
+---
+// LŪMEN // ÍNDEX — full-screen hero, ported from the React+Vite+Tailwind v3 spec
+// to a dependency-free Astro component (Tailwind v4 arbitrary values are 1:1).
+
+const navItems = [
+	{ number: "01", label: "ECOSYSTEM", delay: "350ms" },
+	{ number: "02", label: "LIQUIDITY_POOLS", delay: "450ms" },
+	{ number: "03", label: "LUMEN_INDEX", delay: "550ms" },
+	{ number: "04", label: "GOVERNANCE", delay: "650ms" },
+];
+
+const verticalPositions = ["12.6%", "37.5%", "61.9%", "86.2%"];
+const horizontalPositions = ["32.7%", "71.4%"];
+
+const nodes = [
+	{
+		sq: { top: "27%", left: "60%" },
+		sqDelay: "1500ms",
+		label: { top: "11%", left: "26%" },
+		labelAnim: "anim-slide-left",
+		labelDelay: "1100ms",
+		title: "[ CORE_ENTITY ]",
+		desc: "Neural node processing real-time data streams.",
+		descMax: "max-w-[160px]",
+	},
+	{
+		sq: { top: "58%", left: "32%" },
+		sqDelay: "1800ms",
+		label: { top: "76%", left: "3%" },
+		labelAnim: "anim-slide-left",
+		labelDelay: "1400ms",
+		title: "[ LUMINOUS_INSIGHT ]",
+		desc: "Deep-learning engine synthesizing raw inputs.",
+		descMax: "max-w-[160px]",
+	},
+	{
+		sq: { top: "63%", left: "50%" },
+		sqDelay: "2100ms",
+		label: { top: "50%", left: "78%" },
+		labelAnim: "anim-slide-right",
+		labelDelay: "1700ms",
+		title: "[ CONNECTIVITY ]",
+		desc: "Latency-free transmission across distributed networks.",
+		descMax: "max-w-[180px]",
+	},
+];
+
+const connectors = [
+	{ x1: "38%", y1: "14%", x2: "52%", y2: "14%", delay: "1200ms" },
+	{ x1: "52%", y1: "14%", x2: "60%", y2: "27%", delay: "1400ms" },
+	{ x1: "32%", y1: "58%", x2: "20%", y2: "74%", delay: "1500ms" },
+	{ x1: "20%", y1: "74%", x2: "6%", y2: "74%", delay: "1700ms" },
+	{ x1: "78%", y1: "53%", x2: "63%", y2: "53%", delay: "1800ms" },
+	{ x1: "63%", y1: "53%", x2: "50%", y2: "63%", delay: "2000ms" },
+];
+---
+
+<section
+	id="lumen-hero"
+	data-menu-open="false"
+	class="group relative w-full h-screen overflow-hidden bg-black text-white font-manrope"
+>
+	<!-- layer 0: background video -->
+	<video
+		class="absolute inset-0 w-full h-full object-cover anim-fade-in"
+		src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260813_115057_94c3699b-0fd1-4124-bcf3-3626bb8c1f77.mp4"
+		autoplay
+		muted
+		loop
+		playsinline
+	></video>
+
+	<!-- content layer -->
+	<div class="relative z-10 w-full h-full">
+		<!-- ===== NAV ===== -->
+		<nav
+			class="absolute top-0 left-0 w-full flex items-center px-5 md:px-[35px] py-5 md:py-[27px]"
+		>
+			<!-- left group -->
+			<div class="flex items-center gap-[40px]">
+				<span
+					class="font-graphik text-white text-[18px] md:text-[21px] leading-[21px] whitespace-nowrap anim-fade-up"
+					style={{ animationDelay: "200ms" }}
+				>
+					LŪMEN // ÍNDEX
+				</span>
+				<div class="hidden lg:flex items-center gap-[40px]">
+					{
+						navItems.map((item) => (
+							<div class="flex items-center gap-[3px] anim-fade-up" style={{ animationDelay: item.delay }}>
+								<span class="font-manrope text-[#AFDDFF]/80 text-[13px] leading-[15.6px]">
+									{item.number}.
+								</span>
+								<span class="font-manrope text-white text-[13px] leading-[15.6px] cursor-pointer hover:text-[#AFDDFF] transition-colors">
+									{item.label}
+								</span>
+							</div>
+						))
+					}
+				</div>
+			</div>
+
+			<!-- right group (desktop) -->
+			<div
+				class="hidden lg:flex items-center gap-[12px] ml-auto anim-slide-right"
+				style={{ animationDelay: "600ms" }}
+			>
+				<svg
+					class="w-[15px] h-[15px] text-white"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2"></path>
+					<path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7"></path>
+					<path d="M21 11h-3a2 2 0 0 0 0 4h3"></path>
+				</svg>
+				<span class="font-manrope text-white text-[13px] leading-[15.6px]">0x71...f4e2</span>
+				<span class="font-manrope text-[#AFDDFF] text-[13px] leading-[15.6px]">[ CONNECTED ]</span>
+				<span class="font-manrope text-white text-[13px] leading-[15.6px] ml-[20px]">STATUS:</span>
+				<span
+					class="bg-[#AFDDFF] rounded-[3px] px-[5px] py-[2px] text-black text-[13px] leading-[15.6px]"
+				>
+					PRIME_MEMBER
+				</span>
+			</div>
+
+			<!-- hamburger (mobile) -->
+			<button
+				type="button"
+				class="lg:hidden ml-auto relative w-[40px] h-[40px] flex items-center justify-center anim-fade-in"
+				style={{ animationDelay: "400ms" }}
+				aria-label="Toggle menu"
+				data-menu-toggle
+			>
+				<span
+					class="absolute transition-all duration-300 ease-[cubic-bezier(0.76,0,0.24,1)] opacity-100 rotate-0 scale-100 group-data-[menu-open=true]:opacity-0 group-data-[menu-open=true]:rotate-90 group-data-[menu-open=true]:scale-50"
+				>
+					<svg
+						class="w-[22px] h-[22px] text-white"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h16"></path>
+					</svg>
+				</span>
+				<span
+					class="absolute transition-all duration-300 ease-[cubic-bezier(0.76,0,0.24,1)] opacity-0 -rotate-90 scale-50 group-data-[menu-open=true]:opacity-100 group-data-[menu-open=true]:rotate-0 group-data-[menu-open=true]:scale-100"
+				>
+					<svg
+						class="w-[22px] h-[22px] text-white"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M18 6 6 18"></path><path d="m6 6 12 12"></path>
+					</svg>
+				</span>
+			</button>
+		</nav>
+
+		<!-- ===== MOBILE MENU OVERLAY ===== -->
+		<div
+			class="fixed inset-0 z-50 lg:hidden invisible opacity-0 transition-all duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] group-data-[menu-open=true]:visible group-data-[menu-open=true]:opacity-100"
+			data-menu-overlay
+		>
+			<div
+				class="absolute inset-0 bg-black/90 backdrop-blur-md opacity-0 transition-opacity duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] group-data-[menu-open=true]:opacity-100"
+				data-menu-backdrop
+			>
+			</div>
+
+			<div
+				class="relative h-full flex flex-col px-5 pt-24 pb-10 transition-all duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] opacity-0 -translate-y-4 group-data-[menu-open=true]:opacity-100 group-data-[menu-open=true]:translate-y-0"
+			>
+				<button
+					type="button"
+					class="absolute top-5 right-5 w-[40px] h-[40px] flex items-center justify-center"
+					aria-label="Close menu"
+					data-menu-close
+				>
+					<svg
+						class="w-[22px] h-[22px] text-white"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M18 6 6 18"></path><path d="m6 6 12 12"></path>
+					</svg>
+				</button>
+
+				<nav class="flex flex-col gap-8">
+					{
+						navItems.map((item, i) => (
+							<div
+								class="flex items-center gap-3 transition-all duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] opacity-100 translate-x-0 group-data-[menu-open=false]:opacity-0 group-data-[menu-open=false]:-translate-x-6"
+								style={{ transitionDelay: "150ms" }}
+							>
+								<span class="font-manrope text-[#AFDDFF]/80 text-[14px] leading-[1]">
+									{item.number}.
+								</span>
+								<span class="font-manrope text-white text-[28px] leading-[1.2] tracking-tight">
+									{item.label}
+								</span>
+							</div>
+						))
+					}
+				</nav>
+
+				<!-- wallet block, pinned bottom -->
+				<div
+					class="mt-auto pt-10 border-t border-white/10 transition-all duration-500 ease-[cubic-bezier(0.76,0,0.24,1)] opacity-100 translate-y-0 group-data-[menu-open=false]:opacity-0 group-data-[menu-open=false]:translate-y-4"
+					style={{ transitionDelay: "450ms" }}
+				>
+					<div class="flex items-center gap-[10px] mb-3">
+						<svg
+							class="w-[15px] h-[15px] text-white"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2"></path>
+							<path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7"></path>
+							<path d="M21 11h-3a2 2 0 0 0 0 4h3"></path>
+						</svg>
+						<span class="font-manrope text-white text-[13px] leading-[15.6px]">0x71...f4e2</span>
+						<span class="font-manrope text-[#AFDDFF] text-[13px] leading-[15.6px]">[ CONNECTED ]</span>
+					</div>
+					<div class="flex items-center gap-[8px]">
+						<span class="font-manrope text-white text-[13px] leading-[15.6px]">STATUS:</span>
+						<span
+							class="bg-[#AFDDFF] rounded-[3px] px-[5px] py-[2px] text-black text-[13px] leading-[15.6px]"
+						>
+							PRIME_MEMBER
+						</span>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- ===== H1 ===== -->
+		<h1
+			class="font-graphik text-white font-normal leading-[1em] absolute anim-fade-up text-[32px] sm:text-[48px] md:text-[68px] top-[140px] sm:top-[160px] md:top-[178px] left-5 md:left-[35px] max-w-[300px] sm:max-w-[420px] md:max-w-[554px]"
+			style={{ animationDelay: "400ms" }}
+		>
+			Liquid Assets. Luminous Returns.
+		</h1>
+
+		<!-- ===== GRID LINES + PLUS MARKS ===== -->
+		{
+			verticalPositions.map((left, i) => (
+				<div
+					class="absolute top-0 h-full w-px bg-white/[0.04] anim-grid-v"
+					style={{ left, animationDelay: `${600 + i * 100}ms` }}
+				/>
+			))
+		}
+		{
+			horizontalPositions.map((top, i) => (
+				<div
+					class="absolute left-0 w-full h-px bg-white/[0.04] anim-grid-h"
+					style={{ top, animationDelay: `${800 + i * 150}ms` }}
+				/>
+			))
+		}
+		{
+			horizontalPositions.map((top, hi) =>
+				verticalPositions.map((left, vi) => (
+					<div
+						class="absolute anim-scale-in"
+						style={{ top, left, animationDelay: `${1000 + (hi * 4 + vi) * 80}ms` }}
+					>
+						<div class="absolute w-[10px] h-px bg-white/70 -translate-x-1/2 -translate-y-1/2" />
+						<div class="absolute w-px h-[10px] bg-white/70 -translate-x-1/2 -translate-y-1/2" />
+					</div>
+				)),
+			)
+		}
+
+		<!-- ===== CENTRAL NODES ===== -->
+		<div class="absolute inset-0 pointer-events-none hidden md:block">
+			{
+				connectors.map((c) => (
+					<svg
+						class="absolute inset-0 w-full h-full pointer-events-none anim-fade-in"
+						style={{ animationDelay: c.delay }}
+					>
+						<line
+							x1={c.x1}
+							y1={c.y1}
+							x2={c.x2}
+							y2={c.y2}
+							stroke="rgba(255,255,255,0.25)"
+							stroke-width="1"
+							vector-effect="non-scaling-stroke"
+						/>
+					</svg>
+				))
+			}
+
+			{
+				nodes.map((n) => (
+					<>
+						<div
+							class="absolute w-[80px] h-[80px] lg:w-[100px] lg:h-[100px] border border-white/80 anim-scale-in"
+							style={{ top: n.sq.top, left: n.sq.left, animationDelay: n.sqDelay }}
+						/>
+						<div
+							class="absolute"
+							style={{ top: n.label.top, left: n.label.left }}
+						>
+							<div class={`${n.labelAnim}`} style={{ animationDelay: n.labelDelay }}>
+								<span class="font-manrope text-white text-[13px] leading-[15.6px] whitespace-nowrap">
+									{n.title}
+								</span>
+								<p class={`font-manrope text-white/50 text-[11px] leading-[14px] mt-[4px] ${n.descMax}`}>
+									{n.desc}
+								</p>
+							</div>
+						</div>
+					</>
+				))
+			}
+		</div>
+
+		<!-- ===== BOTTOM ROW ===== -->
+		<div
+			class="absolute bottom-5 md:bottom-[35px] left-5 md:left-[35px] right-5 md:right-[35px] flex flex-col md:flex-row items-start md:items-end justify-between gap-5 md:gap-0"
+		>
+			<!-- CTA -->
+			<button
+				class="bg-[#AFDDFF] px-[16px] md:px-[20px] py-[10px] md:py-[12px] flex items-center gap-[10px] hover:bg-[#c8e8ff] transition-colors anim-fade-up"
+				style={{ animationDelay: "900ms" }}
+			>
+				<span class="text-black text-[16px] leading-none">&#10022;</span>
+				<span
+					class="font-manrope text-black text-[12px] md:text-[13px] leading-[15.6px] uppercase tracking-wide"
+				>
+					Explore Private Banking
+				</span>
+			</button>
+
+			<!-- info card -->
+			<div class="relative max-w-[280px] hidden sm:block anim-slide-right" style={{ animationDelay: "1100ms" }}>
+				<span
+					class="font-manrope text-black text-[13px] leading-[15.6px] bg-[#AFDDFF] px-[6px] py-[2px] inline-block mb-[10px]"
+				>
+					NOT A BANK — AN ECOSYSTEM
+				</span>
+				<div class="relative p-[20px]">
+					<svg
+						class="absolute inset-0 w-full h-full pointer-events-none"
+						viewBox="0 0 280 168"
+						preserveAspectRatio="none"
+					>
+						<polygon
+							points="0.5,0.5 279.5,0.5 279.5,167.5 30,167.5 0.5,137.5"
+							fill="none"
+							stroke="#AFDDFF"
+							stroke-width="1"
+							vector-effect="non-scaling-stroke"
+						>
+						</polygon>
+					</svg>
+					<p class="relative font-manrope text-white text-[13px] leading-[18px] mb-[18px]">
+						Maps the complexity of modern finance with a partner that brings clarity
+						and organic growth to your portfolio.
+					</p>
+					<span
+						class="relative font-manrope text-[#AFDDFF] text-[13px] leading-[15.6px] cursor-pointer hover:underline"
+					>
+						VIEW_TRANSPARENCY_REPORT
+					</span>
+				</div>
+			</div>
+		</div>
+	</div>
+</section>
+
+<style is:global>
+	/* ---- LŪMEN // ÍNDEX hero styles (scoped to the page that renders this component) ---- */
+	#lumen-hero {
+		font-family: "Manrope", sans-serif;
+	}
+
+	#lumen-hero .font-graphik {
+		font-family: "Graphik LCG Regular Regular", "Graphik LCG", sans-serif;
+	}
+
+	#lumen-hero .font-manrope {
+		font-family: "Manrope", sans-serif;
+	}
+
+	/* Lock the page so the spec's "no scroll, single section" holds */
+	html,
+	body {
+		overflow: hidden;
+	}
+
+	/* Suppress blog-wide decorations that would sit on top of the hero */
+	#canvas_sakura,
+	welcome-toast,
+	#page-background-decoration,
+	top-gradient-highlight,
+	#wallpaper-wrapper {
+		display: none !important;
+	}
+
+	@keyframes fadeUp {
+		from {
+			opacity: 0;
+			transform: translateY(18px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+	@keyframes fadeIn {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+	@keyframes slideInLeft {
+		from {
+			opacity: 0;
+			transform: translateX(-20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
+	}
+	@keyframes slideInRight {
+		from {
+			opacity: 0;
+			transform: translateX(20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
+	}
+	@keyframes scaleIn {
+		from {
+			opacity: 0;
+			transform: scale(0.85);
+		}
+		to {
+			opacity: 1;
+			transform: scale(1);
+		}
+	}
+	@keyframes gridReveal {
+		from {
+			opacity: 0;
+			transform: scaleY(0);
+		}
+		to {
+			opacity: 1;
+			transform: scaleY(1);
+		}
+	}
+	@keyframes gridRevealH {
+		from {
+			opacity: 0;
+			transform: scaleX(0);
+		}
+		to {
+			opacity: 1;
+			transform: scaleX(1);
+		}
+	}
+
+	#lumen-hero .anim-fade-up {
+		opacity: 0;
+		animation: fadeUp 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	}
+	#lumen-hero .anim-fade-in {
+		opacity: 0;
+		animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	}
+	#lumen-hero .anim-slide-left {
+		opacity: 0;
+		animation: slideInLeft 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	}
+	#lumen-hero .anim-slide-right {
+		opacity: 0;
+		animation: slideInRight 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	}
+	#lumen-hero .anim-scale-in {
+		opacity: 0;
+		animation: scaleIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	}
+	#lumen-hero .anim-grid-v {
+		opacity: 0;
+		transform-origin: top;
+		animation: gridReveal 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	}
+	#lumen-hero .anim-grid-h {
+		opacity: 0;
+		transform-origin: left;
+		animation: gridRevealH 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	}
+</style>
+
+<script>
+	const section = document.getElementById("lumen-hero");
+	if (section) {
+		const toggle = section.querySelector("[data-menu-toggle]");
+		const overlay = section.querySelector("[data-menu-overlay]");
+		const backdrop = section.querySelector("[data-menu-backdrop]");
+		const closeBtn = section.querySelector("[data-menu-close]");
+
+		const setOpen = (open: boolean) =>
+			section.setAttribute("data-menu-open", String(open));
+
+		toggle?.addEventListener("click", () => {
+			setOpen(section.getAttribute("data-menu-open") !== "true");
+		});
+		closeBtn?.addEventListener("click", () => setOpen(false));
+		backdrop?.addEventListener("click", () => setOpen(false));
+	}
+</script>
