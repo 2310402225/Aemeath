@@ -9,7 +9,7 @@ tags:
   - 设计
   - 灵感
 category: 资源推荐
-image: ''
+image: /assets/images/posts/inspiration-sources-cover.webp
 draft: false
 lang: zh_CN
 ---

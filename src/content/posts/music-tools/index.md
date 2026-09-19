@@ -8,7 +8,7 @@ tags:
   - 工具
   - 音乐
 category: 工具推荐
-image: ''
+image: /assets/images/posts/music-tools-cover.webp
 draft: false
 lang: zh_CN
 ---
