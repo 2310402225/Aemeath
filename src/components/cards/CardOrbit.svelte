@@ -12,6 +12,7 @@ import { onMount } from "svelte";
 import { CARDS, COLLECTION, cardThumb } from "./cards";
 import HoloCard from "./HoloCard.svelte";
 import StarSphere from "./StarSphere.svelte";
+import type { StarFieldHandle } from "./star-field";
 
 /** 一圈多少度／毫秒：0.0042 → 约 86 秒转一圈 */
 const BASE_SPEED = 0.0042;
@@ -27,9 +28,17 @@ let hoverIndex = $state<number | null>(null);
 let openIndex = $state<number | null>(null);
 /** 悬停与绽开共用一条代码路径：谁在前就用谁 */
 let active = $derived(openIndex ?? hoverIndex);
-let rippleKey = $state(0);
+/** 冲击波计数：点星核与开卡各来一发，递增一次就能让 {#key} 重放动画 */
+let burstKey = $state(0);
+let burstFromCore = $state(false);
+/** 刚被按下那张卡（只闪一下） */
+let tapped = $state<number | null>(null);
 let isDesktop = $state(true);
 let ready = $state(false);
+
+/** 星核的绘制句柄：点击时 pulse() 一下 */
+let star: StarFieldHandle | null = null;
+let tapTimer = 0;
 
 const cardEls: (HTMLButtonElement | undefined)[] = [];
 const behindFlags: boolean[] = [];
@@ -121,15 +130,39 @@ onMount(() => {
 
 	return () => {
 		cancelAnimationFrame(raf);
+		clearTimeout(tapTimer);
 		desktop.removeEventListener("change", applyMode);
 		window.removeEventListener("resize", relayout);
 		document.body.style.overflow = "";
 	};
 });
 
+/** 冲击波：点星核来一发短的，开卡来一发长的 */
+function burst(fromCore: boolean) {
+	burstFromCore = fromCore;
+	burstKey += 1;
+}
+
+/** 卡片被按下的即时反馈：比 overlay 打开早一拍，手感才不空 */
+function tap(index: number) {
+	tapped = index;
+	clearTimeout(tapTimer);
+	tapTimer = window.setTimeout(() => {
+		tapped = null;
+	}, 520);
+}
+
+/** 点星核本体：让它自己脉冲一下，再补一圈冲击波 */
+function tapCore() {
+	star?.pulse();
+	burst(true);
+}
+
 function open(index: number) {
 	openIndex = index;
-	rippleKey += 1;
+	tap(index);
+	star?.pulse();
+	burst(false);
 	document.body.style.overflow = "hidden";
 	// 用 replaceState：返回键不该把用户丢进半开的 overlay，深链依然可分享
 	history.replaceState(null, "", `#card-${CARDS[index].id}`);
@@ -152,17 +185,32 @@ function close() {
 	<div class="holo-stage" bind:this={stage}>
 		<div class="holo-orbit holo-orbit--back" bind:this={orbitBack}></div>
 
-		<div class="holo-sphere" class:is-active={active !== null}>
-			<StarSphere
-				hue={active !== null ? CARDS[active].hue : 205}
-				accent={active !== null ? 1 : 0}
-				frozen={openIndex !== null}
-			/>
-			{#if openIndex !== null}
-				{#key rippleKey}
-					<div class="holo-ripples">
+		<div
+			class="holo-sphere"
+			class:is-active={active !== null}
+			style:--ring-hue={active !== null ? CARDS[active].hue : 205}
+		>
+			<button
+				type="button"
+				class="holo-core"
+				aria-label="触碰星核"
+				onclick={tapCore}
+			>
+				<StarSphere
+					hue={active !== null ? CARDS[active].hue : 205}
+					accent={active !== null ? 1 : 0}
+					frozen={openIndex !== null}
+					onReady={(handle) => {
+						star = handle;
+					}}
+				/>
+			</button>
+
+			{#if burstKey > 0}
+				{#key burstKey}
+					<div class="holo-ripples" class:is-core={burstFromCore}>
 						{#each [0, 1, 2] as ring (ring)}
-							<span class="holo-ring" style:--delay="{ring * 170}ms"></span>
+							<span class="holo-ring" style:--delay="{ring * 140}ms"></span>
 						{/each}
 					</div>
 				{/key}
@@ -176,6 +224,7 @@ function close() {
 					class="orbit-card"
 					class:is-active={active === index}
 					class:is-muted={active !== null && active !== index}
+					class:is-tapped={tapped === index}
 					style:--a={card.accent[0]}
 					style:--b={card.accent[1]}
 					bind:this={cardEls[index]}
@@ -210,7 +259,7 @@ function close() {
 		<p class="holo-eyebrow">WUTHERING WAVES · HOLOGRAPHIC ARCHIVE</p>
 		<h1 class="holo-headline">潮声六记</h1>
 		<p class="holo-note">{COLLECTION}</p>
-		<p class="holo-hint">悬停任一张 · 点击展开全息卡</p>
+		<p class="holo-hint">悬停任一张 · 点击展开全息卡 · 触碰星核有回应</p>
 	</header>
 
 	<footer class="holo-foot">
@@ -220,6 +269,7 @@ function close() {
 					<button
 						type="button"
 						class:is-active={active === index}
+						class:is-tapped={tapped === index}
 						onclick={() => open(index)}
 						onmouseenter={() => (hoverIndex = index)}
 						onmouseleave={() => (hoverIndex = null)}
@@ -300,6 +350,25 @@ function close() {
 		transform: translate(-50%, -50%) scale(1.06);
 	}
 
+	/* 星核本体从「装饰」升级成「按钮」：画布是方的，命中区按圆切 */
+	.holo-core {
+		position: absolute;
+		inset: 0;
+		display: block;
+		padding: 0;
+		border: 0;
+		border-radius: 50%;
+		background: none;
+		cursor: pointer;
+		pointer-events: auto;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.holo-core:focus-visible {
+		outline: 1px solid rgb(226 236 255 / 0.55);
+		outline-offset: 8px;
+	}
+
 	.holo-ripples {
 		position: absolute;
 		inset: -30%;
@@ -312,9 +381,15 @@ function close() {
 		margin: auto;
 		width: 40%;
 		height: 40%;
-		border: 1px solid hsl(200 80% 72% / 0.55);
+		border: 1px solid hsl(var(--ring-hue, 205) 82% 76% / 0.5);
 		border-radius: 50%;
 		animation: holo-ring 1.5s cubic-bezier(0.2, 0.7, 0.3, 1) var(--delay, 0ms) 1 both;
+	}
+
+	/* 点星核来得比开卡快：一圈收得更紧、散得更快，才像"被打了一下" */
+	.holo-ripples.is-core .holo-ring {
+		animation-duration: 900ms;
+		border-color: hsl(var(--ring-hue, 205) 88% 82% / 0.72);
 	}
 
 	.orbit-card {
@@ -405,6 +480,12 @@ function close() {
 	.orbit-card.is-muted .orbit-card-inner {
 		filter: saturate(0.3) brightness(0.6);
 		opacity: 0.7;
+	}
+
+	/* 点下去那一下：卡面亮一档 + 外圈闪一道主色边。
+	   刻意不碰 transform —— is-active 的抬升是用 transform 做的，两条动画抢同一个属性必然打架。 */
+	.orbit-card.is-tapped .orbit-card-inner {
+		animation: card-flash 560ms cubic-bezier(0.2, 0.8, 0.3, 1);
 	}
 
 	.holo-hud {
@@ -509,6 +590,11 @@ function close() {
 		color: rgb(245 248 255 / 0.92);
 	}
 
+	.holo-legend button.is-tapped {
+		background: rgb(255 255 255 / 0.26);
+		color: rgb(255 255 255 / 0.98);
+	}
+
 	.holo-scroll {
 		margin: 0;
 		font-family: var(--font-jetbrains-mono), monospace;
@@ -529,6 +615,16 @@ function close() {
 			height: 34%;
 			opacity: 0;
 			transform: scale(3.4);
+		}
+	}
+
+	@keyframes card-flash {
+		0% {
+			filter: brightness(1.55) saturate(1.25);
+			box-shadow: 0 0 0 2px color-mix(in srgb, var(--b) 85%, transparent), 0 20px 46px rgb(0 0 0 / 0.6);
+		}
+		100% {
+			filter: brightness(1) saturate(1);
 		}
 	}
 
@@ -602,6 +698,13 @@ function close() {
 		.holo-ring {
 			animation: none;
 			opacity: 0;
+		}
+
+		/* 动效关了也不能没有反馈：给一个静态高亮顶替那 520ms */
+		.orbit-card.is-tapped .orbit-card-inner {
+			animation: none;
+			filter: brightness(1.25);
+			box-shadow: 0 0 0 2px color-mix(in srgb, var(--b) 85%, transparent);
 		}
 	}
 </style>
