@@ -1,16 +1,32 @@
 # Cloudflare Pages 缓存策略（构建时 public/ 会被原样复制到 dist/）
-# 构建产物带内容哈希，可长期强缓存
+# 只有构建产物带内容哈希，那批才可以长期强缓存
 /_astro/*
-  Cache-Control: public, max-age=31536000, immutable
-
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable
-
-/pagefind/*
   Cache-Control: public, max-age=31536000, immutable
 
 /fonts/*
   Cache-Control: public, max-age=31536000, immutable
+
+# ⚠️ public/ 下是**原样复制的固定文件名**，换图就是同名覆盖（这是刻意的：配置引用固定路径，
+#    换图零改代码）。这类资源绝不能 immutable —— 一旦 immutable，浏览器会把旧图认成
+#    "一年内不可能变"，连 If-None-Match 都不发，换了图也永远看不到（2026-09-20 就栽在这）。
+#    一律回源校验：内容没变是 304（几乎无开销），变了立刻拿到新的。
+/assets/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/gallery/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/images/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/lottie/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/mouse/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/pagefind/*
+  Cache-Control: public, max-age=0, must-revalidate
 
 # HTML 与站点元数据始终回源校验，避免更新后看到旧页面
 /*.html
