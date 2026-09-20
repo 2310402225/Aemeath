@@ -1,0 +1,53 @@
+---
+// 全幅页外壳：首屏轨道（Svelte 岛）+ 下方正文容器。
+//
+// 为什么需要这个 .astro：全幅分支绕开了 MainGridLayout，站点背景装饰会压在首屏上，
+// 而要压掉它们只能用 global 样式 —— Svelte 的 <style> 会被加作用域哈希，写不了
+// html:has(...) 这种选择器。正文走 <slot />，排版交给 Tailwind 的 prose。
+import CardOrbit from "./CardOrbit.svelte";
+---
+
+<div id="holo-page">
+	<CardOrbit client:visible />
+</div>
+
+<article class="holo-article">
+	<div class="holo-article-inner prose prose-base dark:prose-invert max-w-none!">
+		<slot />
+	</div>
+</article>
+
+<style is:global>
+	/* 首屏是全黑的，站点的樱花／壁纸／顶部渐变都会糊在上面。
+	   用 :has() 把作用域钉在本页（页面里有 #holo-page 时才生效），
+	   否则这份 global 样式会被打进全站 CSS，在别的页面误伤。 */
+	html:has(#holo-page) #canvas_sakura,
+	html:has(#holo-page) welcome-toast,
+	html:has(#holo-page) #page-background-decoration,
+	html:has(#holo-page) top-gradient-highlight,
+	html:has(#holo-page) #wallpaper-wrapper {
+		display: none !important;
+	}
+</style>
+
+<style>
+	.holo-article {
+		position: relative;
+		z-index: 1;
+	}
+
+	/* 正文容器写在组件模板里（而非 slot 内容），作用域哈希才管得住 */
+	.holo-article-inner {
+		width: min(760px, calc(100% - 2.5rem));
+		margin: 0 auto;
+		padding: clamp(3rem, 7vh, 5.5rem) 0 clamp(4rem, 10vh, 7rem);
+	}
+
+	.holo-article-inner :global(h2) {
+		margin-top: 2.6em;
+	}
+
+	.holo-article-inner :global(h2:first-child) {
+		margin-top: 0;
+	}
+</style>
