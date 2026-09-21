@@ -1,6 +1,7 @@
 ---
 import I18nKey from "@/i18n/i18nKey";
 import { i18n } from "@/i18n/translation";
+import { readPublicImageSize } from "@/utils/image-utils";
 import { getLqipProps } from "@/utils/lqip-utils";
 import { url } from "@/utils/url-utils";
 
@@ -30,6 +31,7 @@ const {
 
 // LQIP 渐变占位
 const lqipProps = cover ? getLqipProps(cover, undefined, true) : { style: "" };
+const coverSize = cover ? await readPublicImageSize(cover) : null;
 ---
 
 <a
@@ -45,6 +47,8 @@ const lqipProps = cover ? getLqipProps(cover, undefined, true) : { style: "" };
         <img
           src={cover}
           alt={name}
+          width={coverSize?.width}
+          height={coverSize?.height}
           class="w-full h-full object-cover pointer-events-none opacity-0 transition-all duration-500 ease-out group-hover:scale-105"
           loading="lazy"
           decoding="async"

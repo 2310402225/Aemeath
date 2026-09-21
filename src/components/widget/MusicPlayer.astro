@@ -1,5 +1,6 @@
 ---
 import { Icon } from "astro-icon/components";
+import { readPublicImageSize } from "@/utils/image-utils";
 
 interface Props {
 	class?: string;
@@ -7,6 +8,10 @@ interface Props {
 }
 const { style } = Astro.props;
 const className = Astro.props.class;
+
+const playerBgSize =
+	(await readPublicImageSize("/assets/images/music-player-bg.webp")) ??
+	undefined;
 
 // 歌单：以后加歌直接往这里追加即可，切歌按钮会循环整个列表
 const playlist = [
@@ -31,21 +36,27 @@ const playlist = [
 		src="/assets/images/music-player-bg.webp"
 		alt=""
 		aria-hidden="true"
+		width={playerBgSize?.width}
+		height={playerBgSize?.height}
 		draggable="false"
 		loading="lazy"
+		decoding="async"
 		class="music-player-bg absolute inset-0 w-full h-full object-cover select-none"
 	/>
 	<div class="music-player-overlay absolute inset-0" aria-hidden="true"></div>
 
 	<div class="relative z-10 flex flex-col gap-2.5 p-4">
 		<div class="flex items-center gap-3">
-			<img
-				src="/assets/images/music-player-bg.webp"
-				alt="音乐封面"
-				draggable="false"
-				loading="lazy"
-				class="music-player-disc h-12 w-12 shrink-0 rounded-full object-cover shadow-lg ring-2 ring-white/50 select-none"
-			/>
+		<img
+			src="/assets/images/music-player-bg.webp"
+			alt="音乐封面"
+			width={playerBgSize?.width}
+			height={playerBgSize?.height}
+			draggable="false"
+			loading="lazy"
+			decoding="async"
+			class="music-player-disc h-12 w-12 shrink-0 rounded-full object-cover shadow-lg ring-2 ring-white/50 select-none"
+		/>
 			<div class="min-w-0 flex-1">
 				<div class="music-player-title truncate text-sm font-bold text-white">
 					{playlist[0]?.title}

@@ -8,7 +8,10 @@ import { getSortedPostsList } from "@/utils/content-utils";
 const sortedPostsList = await getSortedPostsList();
 ---
 
-<MainGridLayout title={i18n(I18nKey.archive)}>
+<MainGridLayout
+  title={i18n(I18nKey.archive)}
+  description={`载尘望星的全部文章归档，按发布时间倒序排列，共 ${sortedPostsList.length} 条记录`}
+>
   <script is:inline>
     (function() {
       var p = new URLSearchParams(location.search);

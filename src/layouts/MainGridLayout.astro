@@ -47,6 +47,15 @@ interface Props {
 	setOGTypeArticle?: boolean;
 	postSlug?: string;
 	postCategory?: string;
+	/** 显式的 OG 图（相对站点根的路径或绝对 URL），通常是文章封面 */
+	ogImage?: string;
+	/** OG 图的替代文本，缺省时回落到页面标题 */
+	ogImageAlt?: string;
+	/**
+	 * 页面自己已经渲染了可见的 <h1>。
+	 * 此时不再补 hidden 的 h1，保证每页有且仅有一个 h1。
+	 */
+	hasPageHeading?: boolean;
 	headings?: MarkdownHeading[];
 	bannerPostMeta?: {
 		title: string;
@@ -82,6 +91,9 @@ const {
 	setOGTypeArticle,
 	postSlug,
 	postCategory,
+	ogImage,
+	ogImageAlt,
+	hasPageHeading = false,
 	headings = [],
 	bannerPostMeta,
 	bannerPostAiSummary,
@@ -131,6 +143,11 @@ const shouldRenderCategoryBar = !!siteConfig.categoryBar;
 
 // 检查是否在文章详情页
 const isPostPage = !!postSlug;
+// 首页壁纸卡片自带站点名的可见 <h1>，渲染它时不能再补隐藏 h1
+const rendersHomeWallpaperCard =
+	isHomePageCheck && (isFullscreenMode || isWallpaperSwitchable);
+// 隐藏标题的文本：页面没传标题时回落到站点名，避免渲染出空的 <h1>
+const srOnlyHeading = title || siteConfig.title;
 const enabledMobileBottomComponents =
 	sidebarLayoutConfig.mobileBottomComponents?.filter(
 		(component) => component.enable,
@@ -304,7 +321,7 @@ const hasMultipleImages =
 	backgroundImages.desktop.length > 1 || backgroundImages.mobile.length > 1;
 ---
 
-<Layout title={title} banner={banner} description={description} lang={lang} setOGTypeArticle={setOGTypeArticle} postSlug={postSlug}>
+<Layout title={title} banner={banner} description={description} lang={lang} setOGTypeArticle={setOGTypeArticle} postSlug={postSlug} ogImage={ogImage} ogImageAlt={ogImageAlt}>
 
 
 <!-- 为全屏壁纸模式添加body类 -->
@@ -766,7 +783,7 @@ const hasMultipleImages =
         </div>
     )}
 
-    {isHomePageCheck && (isFullscreenMode || isWallpaperSwitchable) && <HomeWallpaperDecor />}
+    {rendersHomeWallpaperCard && <HomeWallpaperDecor />}
 
     <script is:inline>
         function setRandomSubtitle() {
@@ -1012,8 +1029,10 @@ const hasMultipleImages =
                 >
                 {/* 携带网格布局类名，用于JS更新父容器 */}
                 <div id="grid-class-carrier" data-grid-class={gridCols} class="hidden"></div>
-                {/* 为每个页面提供一个隐藏的h1标题，用于SEO和可访问性 */}
-                <h1 class="sr-only">{title}</h1>
+                {/* 每页有且仅有一个 h1：页面自带可见标题时不重复渲染这个隐藏标题 */}
+                {!hasPageHeading && !rendersHomeWallpaperCard && srOnlyHeading && (
+                    <h1 class="sr-only">{srOnlyHeading}</h1>
+                )}
                 <div id="content-wrapper" class="onload-animation transition-leaving">
                     {showBannerPostAiSummary && (
                         <div class="mobile-post-ai-summary-shell">

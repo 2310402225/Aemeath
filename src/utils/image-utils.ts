@@ -106,6 +106,54 @@ export function getFallbackFormat(): "avif" | "webp" {
 }
 
 /**
+ * 读取 public/ 下静态图片的真实像素尺寸。
+ *
+ * public/ 里的图是「同名覆盖」的固定文件名，没走 astro:assets，
+ * 所以没有 ImageMetadata 可用；而缺少 width/height 的 <img> 会在图片解码后
+ * 撑开容器造成瀑布流重排（CLS）。构建期用 sharp 读一次头信息并按路径缓存。
+ *
+ * 只处理站内绝对路径（以 "/" 开头），远程 URL / data: 直接返回 null。
+ */
+const publicImageSizeCache = new Map<
+	string,
+	{ width: number; height: number } | null
+>();
+
+export async function readPublicImageSize(
+	src: string,
+): Promise<{ width: number; height: number } | null> {
+	if (!src?.startsWith("/")) return null;
+
+	const cached = publicImageSizeCache.get(src);
+	if (cached !== undefined) return cached;
+
+	let result: { width: number; height: number } | null = null;
+	try {
+		const [{ promises: fs }, nodePath, { default: sharp }] = await Promise.all([
+			import("node:fs"),
+			import("node:path"),
+			import("sharp"),
+		]);
+		const filePath = nodePath.join(
+			process.cwd(),
+			"public",
+			decodeURIComponent(src).replace(/^\/+/, ""),
+		);
+		const buffer = await fs.readFile(filePath);
+		const meta = await sharp(buffer).metadata();
+		if (meta.width && meta.height) {
+			result = { width: meta.width, height: meta.height };
+		}
+	} catch {
+		// 文件不存在或不是图片：静默跳过，页面上退回「无尺寸」的普通 img
+		result = null;
+	}
+
+	publicImageSizeCache.set(src, result);
+	return result;
+}
+
+/**
  * 检查是否需要为图片添加 referrerpolicy="no-referrer" 以解决防盗链 403 问题
  */
 export function shouldAddNoReferrer(urlStr: string): boolean {

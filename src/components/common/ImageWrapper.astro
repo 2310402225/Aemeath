@@ -22,6 +22,9 @@ interface Props {
 	loading?: "lazy" | "eager";
 	fetchpriority?: "high" | "low" | "auto";
 	defer?: boolean;
+	/** 固有像素尺寸： `<Image>`/`<Picture>` 会自动补，非本地分支需要显式传入才能避免布局抖动 */
+	width?: number;
+	height?: number;
 	// 响应式图像属性
 	layout?: ResponsiveImageLayout;
 	usePicture?: boolean;
@@ -134,5 +137,5 @@ const lqipProps = isLocal
             {...responsiveProps}
         />
     )}
-    {!isLocal && <img src={defer ? undefined : imageSrc} data-src={defer ? imageSrc : undefined} alt={alt || ""} class={imageClass} style={imageStyle} loading={loading} fetchpriority={fetchpriority} referrerpolicy={referrerPolicy} decoding="async" />}
+    {!isLocal && <img src={defer ? undefined : imageSrc} data-src={defer ? imageSrc : undefined} alt={alt || ""} width={Astro.props.width} height={Astro.props.height} class={imageClass} style={imageStyle} loading={loading} fetchpriority={fetchpriority} referrerpolicy={referrerPolicy} decoding="async" />}
 </div>

@@ -1,16 +1,21 @@
 ---
+import { readPublicImageSize } from "@/utils/image-utils";
 import { getLqipProps } from "@/utils/lqip-utils";
 
 interface Props {
 	src: string;
 	albumId: string;
 	alt?: string;
+	/** 首屏瀑布流前几张：提前加载并标记为高优先级 */
+	priority?: boolean;
 }
 
-const { src, albumId, alt = "" } = Astro.props;
+const { src, albumId, alt = "", priority = false } = Astro.props;
 
 // LQIP 渐变占位
 const lqipProps = getLqipProps(src, undefined, true);
+// 瀑布流按图片固有比例排布，缺 width/height 会在解码后重排 → 构建期读出真实尺寸
+const size = (await readPublicImageSize(src)) ?? undefined;
 ---
 
 <div class="gallery-photo-card break-inside-avoid mb-3">
@@ -24,7 +29,10 @@ const lqipProps = getLqipProps(src, undefined, true);
     <img
       src={src}
       alt={alt}
-      loading="lazy"
+      width={size?.width}
+      height={size?.height}
+      loading={priority ? "eager" : "lazy"}
+      fetchpriority={priority ? "high" : "auto"}
       decoding="async"
       class="w-full h-auto object-cover opacity-0 transition-all duration-500 ease-out group-hover:scale-105"
     />

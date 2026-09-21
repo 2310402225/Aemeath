@@ -25,6 +25,10 @@ export const siteConfig: SiteConfig = {
 	description:
 		"载尘望星是尘之泪的个人站点，记录 AI 学习笔记、项目复盘与资源推荐，在技术之外保留一点人文视角。",
 
+	// 站点级默认 OG 图：非文章页（首页、归档、标签等）分享时使用的卡片图
+	// 建议 1200×630（1.91:1）。文章页会优先使用 frontmatter 里的 image 字段。
+	ogImage: "/assets/images/og-default.jpg",
+
 	// 站点关键词
 	keywords: [
 		"载尘望星",

@@ -130,9 +130,9 @@ if (isLocalSrcLogo) {
                                             fetchpriority="high"
                                         />
                                     ) : siteConfig.navbar.logo?.type === "image" ? (
-                                        <img src={url(siteConfig.navbar.logo.value)} alt={siteConfig.navbar.logo.alt || siteConfig.title} class="h-7 w-7 mb-1 mr-2 rounded-md bg-white object-contain ring-1 ring-sky-100/80 dark:ring-white/20" fetchpriority="high" />
+                                        <img src={url(siteConfig.navbar.logo.value)} alt={siteConfig.navbar.logo.alt || siteConfig.title} width={siteConfig.navbar.logo.width ?? 32} height={siteConfig.navbar.logo.height ?? 32} class="h-7 w-7 mb-1 mr-2 rounded-md bg-white object-contain ring-1 ring-sky-100/80 dark:ring-white/20" loading="eager" fetchpriority="high" decoding="async" />
                                     ) : siteConfig.navbar.logo?.type === "url" ? (
-                                        <img src={siteConfig.navbar.logo.value} alt={siteConfig.navbar.logo.alt || siteConfig.title} class="h-7 w-7 mb-1 mr-2 rounded-md bg-white object-contain ring-1 ring-sky-100/80 dark:ring-white/20" fetchpriority="high" />
+                                        <img src={siteConfig.navbar.logo.value} alt={siteConfig.navbar.logo.alt || siteConfig.title} width={siteConfig.navbar.logo.width ?? 32} height={siteConfig.navbar.logo.height ?? 32} class="h-7 w-7 mb-1 mr-2 rounded-md bg-white object-contain ring-1 ring-sky-100/80 dark:ring-white/20" loading="eager" fetchpriority="high" decoding="async" />
                                     ) : (
                                         <Icon is:inline name="material-symbols:home-pin-outline" class="text-[1.75rem] mb-1 mr-2" />
                                     )}

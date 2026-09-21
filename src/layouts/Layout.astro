@@ -36,6 +36,10 @@ interface Props {
 	lang?: string;
 	setOGTypeArticle?: boolean;
 	postSlug?: string;
+	/** 显式的 OG 图（相对站点根的路径或绝对 URL），通常是文章封面 */
+	ogImage?: string;
+	/** OG 图的替代文本，缺省时回落到页面标题 */
+	ogImageAlt?: string;
 }
 
 let { title, description, lang, setOGTypeArticle, postSlug } = Astro.props;
@@ -83,10 +87,24 @@ if (title) {
 		: siteConfig.title;
 }
 
+// 摘要回滚统一在此处理：页面自己写的 > 站点描述 > 拼接后的页面标题
+const pageDescription = description || siteConfig.description || pageTitle;
+
+/**
+ * OG 图取值优先级：
+ * 1. satori 自动生成的文章 OG 图（开启 generateOgImages 时）
+ * 2. 调用方显式传入的图（文章页传的是 frontmatter 的封面）
+ * 3. 站点级默认 OG 图，保证首页 / 归档等非文章页也有卡片图
+ */
 let ogImageUrl: string | undefined;
 if (siteConfig.post.generateOgImages && postSlug) {
 	ogImageUrl = new URL(`/og/${postSlug}.png`, Astro.site).toString();
+} else if (Astro.props.ogImage) {
+	ogImageUrl = new URL(Astro.props.ogImage, Astro.site).toString();
+} else if (siteConfig.ogImage) {
+	ogImageUrl = new URL(siteConfig.ogImage, Astro.site).toString();
 }
+const ogImageAlt = Astro.props.ogImageAlt || pageTitle;
 
 const favicons: Favicon[] =
 	siteConfig.favicon.length > 0 ? siteConfig.favicon : defaultFavicons;
@@ -96,9 +114,12 @@ if (!lang) {
 	lang = `${siteConfig.lang}`;
 }
 const siteLang = lang.replace("_", "-");
+// canonical 只认「干净的规范 URL」：固定尾斜杠（与 astro.config 的 trailingSlash: "always" 对齐），
+// 丢掉查询串和锚点，避免把 ?category=xxx 之类的筛选状态当成独立页面去重。
+const canonicalPath = `${Astro.url.pathname.replace(/\/+$/, "")}/`;
 const canonicalUrl = new URL(
-	Astro.url.pathname,
-	siteConfig.site_url,
+	canonicalPath,
+	Astro.site ?? siteConfig.site_url,
 ).toString();
 
 // 使用固定的banner偏移量，position配置用于图片定位
@@ -109,10 +130,7 @@ const canonicalUrl = new URL(
   <head>
     <meta charset="UTF-8" />
     <title>{pageTitle}</title>
-    <meta
-      name="description"
-      content={description || siteConfig.description || pageTitle}
-    />
+    <meta name="description" content={pageDescription} />
     <link rel="canonical" href={canonicalUrl} />
     {
       siteConfig.keywords && siteConfig.keywords.length > 0 && (
@@ -124,11 +142,10 @@ const canonicalUrl = new URL(
     <meta property="og:site_name" content={siteConfig.title} />
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:title" content={pageTitle} />
-    <meta
-      property="og:description"
-      content={description || siteConfig.description || pageTitle}
-    />
+    <meta property="og:description" content={pageDescription} />
+    <meta property="og:locale" content={lang} />
     {ogImageUrl && <meta property="og:image" content={ogImageUrl} />}
+    {ogImageUrl && <meta property="og:image:alt" content={ogImageAlt} />}
     {
       setOGTypeArticle ? (
         <meta property="og:type" content="article" />
@@ -138,12 +155,11 @@ const canonicalUrl = new URL(
     }
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta property="twitter:url" content={canonicalUrl} />
+    <meta name="twitter:url" content={canonicalUrl} />
     <meta name="twitter:title" content={pageTitle} />
-    <meta
-      name="twitter:description"
-      content={description || siteConfig.description || pageTitle}
-    />
+    <meta name="twitter:description" content={pageDescription} />
+    {ogImageUrl && <meta name="twitter:image" content={ogImageUrl} />}
+    {ogImageUrl && <meta name="twitter:image:alt" content={ogImageAlt} />}
 
     <meta name="viewport" content="width=device-width" />
     <meta name="generator" content={Astro.generator} />

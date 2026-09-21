@@ -33,6 +33,8 @@ export type SiteConfig = {
 	site_url: string;
 	description?: string; // 网站描述，用于生成 <meta name="description">
 	keywords?: string[]; // 站点关键词，用于生成 <meta name="keywords">
+	/** 站点级默认 OG 图（相对站点根的路径或绝对 URL），文章页会优先使用自己的封面 */
+	ogImage?: string;
 
 	lang: "en" | "zh_CN" | "zh_TW" | "ja" | "ru";
 
@@ -71,6 +73,9 @@ export type SiteConfig = {
 			type: "icon" | "image" | "url";
 			value: string; // icon名、本地图片路径或网络图片url
 			alt?: string; // 图片alt文本
+			/** 图片固有像素尺寸，用于生成 width/height 属性避免布局抖动 */
+			width?: number;
+			height?: number;
 		};
 		title?: string; // 导航栏标题，如果不设置则使用 title
 		widthFull?: boolean; // 导航栏是否占满屏幕宽度

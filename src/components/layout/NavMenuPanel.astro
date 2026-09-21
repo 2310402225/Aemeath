@@ -2,6 +2,7 @@
 import { Icon } from "astro-icon/components";
 import { siteConfig } from "@/config";
 import type { NavBarLink } from "@/types/config";
+import { readPublicImageSize } from "@/utils/image-utils";
 import { url } from "@/utils/url-utils";
 
 interface Props {
@@ -9,6 +10,9 @@ interface Props {
 }
 
 const processedLinks = Astro.props.links;
+
+const brandLogoSize =
+	(await readPublicImageSize("/favicon/zaichen-avatar-512.png")) ?? undefined;
 
 const normalizePath = (path: string) => {
 	let pathname = path.split(/[?#]/)[0] || "/";
@@ -63,11 +67,14 @@ const getLinkIcon = (item: NavBarLink, fallback: string) =>
 	<aside class="mobile-content" role="dialog" aria-modal="true" aria-label="网站导航" tabindex="-1">
 		<header class="mobile-nav-header">
 			<a class="mobile-nav-brand" href={url("/")} data-mobile-menu-close>
-				<img
-					src={url("/favicon/zaichen-avatar-512.png")}
-					alt=""
-					class="mobile-nav-brand-icon h-7 w-7 rounded-md bg-white object-contain ring-1 ring-sky-100/80 dark:ring-white/20"
-				/>
+			<img
+				src={url("/favicon/zaichen-avatar-512.png")}
+				alt=""
+				aria-hidden="true"
+				width={brandLogoSize?.width}
+				height={brandLogoSize?.height}
+				class="mobile-nav-brand-icon h-7 w-7 rounded-md bg-white object-contain ring-1 ring-sky-100/80 dark:ring-white/20"
+			/>
 				<span>{siteConfig.navbar.title || siteConfig.title}</span>
 			</a>
 			<button class="mobile-nav-close" type="button" aria-label="关闭导航菜单" data-mobile-menu-close>

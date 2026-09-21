@@ -21,7 +21,10 @@ const topTags = [...tags].sort((a, b) => b.count - a.count).slice(0, 10);
 const topMaxCount = topTags.length > 0 ? topTags[0].count : 1;
 ---
 
-<MainGridLayout title={i18n(I18nKey.tags)} description={i18n(I18nKey.allTags)}>
+<MainGridLayout
+  title={i18n(I18nKey.tags)}
+  description={`${i18n(I18nKey.allTags)} · ${tags.length} ${i18n(I18nKey.tagsCount)}，按热度排列`}
+>
     <!-- 页面标题 -->
     <div class="card-base px-8 py-6 mb-4">
         <div class="text-2xl font-bold text-(--primary) mb-2">

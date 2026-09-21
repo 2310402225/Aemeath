@@ -26,6 +26,9 @@ const { Content, headings } = await render(entry);
 const relatedPosts = await getRelatedPosts(entry, 3);
 
 const description = entry.data.description || entry.data.title;
+// 文章封面作为 OG 图（Layout 内部会补成绝对 URL）；"api" 表示随机封面 API，不适合做 OG 图
+const ogImage =
+	entry.data.image && entry.data.image !== "api" ? entry.data.image : undefined;
 const author = entry.data.author || profileConfig.name;
 const topic = entry.data.topic;
 const sourceLink = entry.data.sourceLink || Astro.url.toString();
@@ -40,6 +43,8 @@ const hasNeighbor = Boolean(entry.data.prevSlug || entry.data.nextSlug);
 			lang={siteConfig.lang}
 			setOGTypeArticle
 			postSlug={entry.id}
+			ogImage={ogImage}
+			ogImageAlt={entry.data.title}
 		>
 			<Content />
 		</Layout>
@@ -50,8 +55,11 @@ const hasNeighbor = Boolean(entry.data.prevSlug || entry.data.nextSlug);
 			lang={siteConfig.lang}
 			setOGTypeArticle
 			postSlug={entry.id}
+			ogImage={ogImage}
+			ogImageAlt={entry.data.title}
 			postCategory={entry.data.category || topic}
 			headings={headings}
+			hasPageHeading
 			bannerPostMeta={{
 				title: entry.data.title,
 				published: entry.data.published,
