@@ -16,7 +16,6 @@
 | `FooterConfig.html` | 页脚补充 HTML |
 | `footerConfig.ts` | 页脚注入配置 |
 | `galleryConfig.ts` | 相册列表和布局 |
-| `homePortfolioIntro.ts` | 首页首屏内容 |
 | `licenseConfig.ts` | 文章版权许可 |
 | `navBarConfig.ts` | 导航菜单和链接预设 |
 | `plantumlConfig.ts` | PlantUML 渲染方式 |

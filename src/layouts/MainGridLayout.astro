@@ -9,7 +9,6 @@ import ImageWrapper from "@/components/common/ImageWrapper.astro";
 import FloatingControls from "@/components/controls/FloatingControls.astro";
 import ScrollDownIndicator from "@/components/controls/ScrollDownIndicator.astro";
 import CodeInteractionManager from "@/components/features/CodeInteractionManager.astro";
-import HomePortfolioIntro from "@/components/features/HomePortfolioIntro.astro";
 import HomeWallpaperDecor from "@/components/features/HomeWallpaperDecor.astro";
 import TypewriterText from "@/components/features/TypewriterText.astro";
 import CategoryBar from "@/components/layout/CategoryBar.astro";
@@ -333,27 +332,11 @@ const hasMultipleImages =
 
 <!-- Navbar -->
 <slot slot="head" name="head"></slot>
-{isHomePageCheck && (
-	<script is:inline>
-		(() => {
-			try {
-				if (window.localStorage.getItem("zaichen.home-portfolio-intro-enabled.v1") === "0") {
-					document.documentElement.classList.add("home-portfolio-intro-disabled");
-				} else if (window.sessionStorage.getItem("zaichen.home-portfolio-intro-seen.v1") === "1") {
-					document.documentElement.classList.add("home-portfolio-intro-seen");
-				}
-			} catch {
-				// Storage can be unavailable in a privacy-restricted browser session.
-			}
-		})();
-	</script>
-)}
 <div
     id="top-row"
     class="z-50 pointer-events-none relative transition-all duration-700 mx-auto"
     class:list={[
         stickyNavbar ? "h-18 fixed top-0 left-0 right-0 z-80" : "",
-        isHomePageCheck ? "home-intro-navbar-boot" : "",
         navbarWidthFull ? "" : "w-full xl:w-[92vw] max-w-(--page-width) px-0 md:px-4",
     ]}
 >
@@ -369,8 +352,6 @@ const hasMultipleImages =
 </div>
 
 <!-- Wallpaper - 如果允许切换则始终渲染，否则只渲染当前模式 -->
-<HomePortfolioIntro initialHome={isHomePageCheck} />
-
 {(isWallpaperSwitchable || isBannerMode || isFullscreenMode || isOverlayMode) && (
 <div id="wallpaper-wrapper" class:list={[
 	[

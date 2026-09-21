@@ -289,27 +289,6 @@ const mobileStickerKeys = ["coder", "blonde", "brown-lightning", "blue-witch"];
 			mediaQuery.addEventListener?.("change", applyLayout);
 		};
 
-		const waitForIntroCompletion = (callback) => {
-			const intro = document.getElementById("home-portfolio-intro");
-			if (!intro || intro.classList.contains("is-complete")) {
-				callback();
-				return;
-			}
-
-			let completed = false;
-			const finish = () => {
-				if (completed) return;
-				completed = true;
-				window.removeEventListener("home-portfolio-intro-complete", finish);
-				callback();
-			};
-
-			window.addEventListener("home-portfolio-intro-complete", finish);
-			window.requestAnimationFrame(() => {
-				if (intro.classList.contains("is-complete")) finish();
-			});
-		};
-
 		const revealHomeWallpaperDecor = (decor, replay = false) => {
 			if (!(decor instanceof HTMLElement)) return;
 			const wallpaper = decor.closest("#wallpaper-wrapper");
@@ -356,13 +335,11 @@ const mobileStickerKeys = ["coder", "blonde", "brown-lightning", "blue-witch"];
 			};
 
 			Promise.all(images.map(waitForImage)).then(() => {
-				waitForIntroCompletion(() => {
-					if (!decor.isConnected) return;
+				if (!decor.isConnected) return;
+				window.requestAnimationFrame(() => {
+					wallpaper?.classList.add("home-wallpaper-motion-ready");
 					window.requestAnimationFrame(() => {
-						wallpaper?.classList.add("home-wallpaper-motion-ready");
-						window.requestAnimationFrame(() => {
-							decor.classList.add("is-ready");
-						});
+						decor.classList.add("is-ready");
 					});
 				});
 			});
