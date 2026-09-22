@@ -535,23 +535,6 @@ function tap(i: number, ev: MouseEvent) {
 	}
 	if (launching !== null) return; // 一次只放飞一盏，免得两盏灯的定时器互相踩
 	const n = nodes[i];
-	/**
-	 * ⚠️ 新页必须在「用户手势」里**同步**开出来，这里只开一张空白页拿着句柄，
-	 * 动画演完再给它填地址。
-	 *
-	 * 原实现是等 2.5s 之后才 window.open —— 那会儿已经不在手势上下文里，
-	 * 浏览器按弹窗拦掉（返回 null），于是兜底的 location.href 把**博客自己**
-	 * 一起带走了（神报的 bug：博客所在界面也跟着跳）。
-	 * 预开之后博客这页全程不动，只是那张新页晚 2.5s 才拿到地址。
-	 */
-	const win = window.open("", "_blank");
-	if (win) {
-		// noopener 的等价写法：拿到句柄之后自己把 opener 断掉。
-		// 不能把 "noopener" 写进 features —— 那样 window.open 会返回 null，
-		// 拿不到句柄也就没法事后填地址了。
-		win.opener = null;
-		window.focus(); // 别让新页抢走焦点：这段升起—燃放的动画要在这边演完
-	}
 	launching = i;
 	close();
 	// 燃放对齐 keyframes 的 46%（2.3s × 0.46 ≈ 1.06s），正好在升到最高那口气上
@@ -560,8 +543,19 @@ function tap(i: number, ev: MouseEvent) {
 		if (n) burst(n.x, Math.max(BURST_REACH, fxHead + n.y - size * 1.6));
 	}, 1060);
 	navTimer = window.setTimeout(() => {
-		if (win && !win.closed) win.location.href = url;
-		else location.href = url; // 预开就被拦（弹窗拦截器全关）才退化成当前页跳转
+		/**
+		 * ⚠️ 两个坑，别再踩：
+		 * ① **不能**把 "noopener" 写进 features —— 带 noopener 时 window.open
+		 *    成功也返回 null，会被误判成"被弹窗拦了"，于是兜底的 location.href
+		 *    把博客自己一起带走（神报的"博客也跳"）。
+		 * ② **别**在点击时预开空白页拿句柄 —— 新页会抢走焦点，这段升起—燃放
+		 *    的动画就跑到后台去演了，看着等于"点了立刻跳"（神报的第二次）。
+		 * 这条 2.5s 的 window.open 仍在手势有效期内（Chrome/FF 的临时激活是 5s），
+		 * 所以不会被拦。真被拦（弹窗拦截器全关）就什么都不做 —— 宁可没反应，
+		 * 也别把博客这页跳走。
+		 */
+		const win = window.open(url, "_blank");
+		if (win) win.opener = null;
 		launching = null; // 交给 .lantern 上的 opacity 过渡慢慢淡回来
 	}, 2500);
 }
