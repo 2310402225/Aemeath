@@ -5,15 +5,18 @@ import {
 	LANTERNS,
 	MOON_HINT,
 	MOON_LABEL,
-	MOON_OFFSET,
 	type MoonPhase,
 } from "./lanterns";
 
 let fieldEl: HTMLElement | undefined = $state();
 let fxEl: HTMLCanvasElement | undefined = $state();
+let shadowEl: SVGCircleElement | undefined = $state();
 
 let hoverIndex = $state<number | null>(null);
-let tappedIndex = $state<number | null>(null);
+/** 正在「升起—燃放—消散」的那盏灯；期间它交给 CSS 动画，主循环不再写它的 transform */
+let launching = $state<number | null>(null);
+/** hero 滚过去了没。月亮是 fixed 的，不退场就会浮在正文标题上 */
+let asleep = $state(false);
 let cardX = $state(0);
 let cardY = $state(0);
 let moon = $state<MoonPhase>("new");
@@ -27,6 +30,11 @@ let w = 0;
 let h = 0;
 let size = 68;
 let minDist = 100;
+/** 窄屏（≤700px，与 CSS 断点同一个数）。缓存在 layout 里，免得每帧读 innerWidth */
+let narrowW = false;
+/** hero 底边在文档里的 y（layout 时算一次）。月亮要不要退场就看它 */
+let heroEndDoc = Number.POSITIVE_INFINITY;
+let heroEl: HTMLElement | null = null;
 
 /** 信息卡按顶边钉在场地顶部这条横带上（横向仍跟着灯走） */
 const CARD_TOP = 6;
@@ -36,19 +44,20 @@ const CARD_H = 104;
 /**
  * 场地上沿的留白：卡高 + 半个灯 + 一道缝。只有能悬停的设备才要留 ——
  * 触屏压根不弹卡，留了就是白丢一片湖面。
+ * 窄屏上月亮是锚在湖面上沿的（见 CSS），所以那一档还得再让出一条月盘带。
  */
 function topPad() {
-	return canHover ? CARD_H + size * 0.5 + 14 : size * 0.95;
+	if (canHover) return CARD_H + size * 0.5 + 14;
+	return narrowW ? size * 2.2 : size * 0.95;
 }
 
 let canHover = true;
 let reduce = false;
 let raf = 0;
 let last = 0;
-let lastActivity = 0;
 let layoutPending = true;
-let flashTimer = 0;
-let fullTimer = 0;
+let launchTimer = 0;
+let navTimer = 0;
 
 /* ------------------------------------------------------------ 烟花 */
 
@@ -60,30 +69,75 @@ type Particle = {
 	life: number;
 	max: number;
 	r: number;
-	/** 线的颜色下标（几种暖金，别搞成彩虹） */
+	/** 线的颜色下标 */
 	t: number;
+	/** 这颗粒子所属那发的水平镜面线（水影用）。必须逐粒记 ——
+	    多朵烟花同时在空中的话，共用一个全局值会让先炸的那朵倒影跟着后炸的跳 */
+	oy: number;
 };
 let parts: Particle[] = [];
 let fxRaf = 0;
 let tail = 0;
 let cw = 0;
 let ch = 0;
-let originY = 0;
-let sprite: HTMLCanvasElement | null = null;
+/** 下一朵自动烟花该在什么时候开 */
+let autoAt = 0;
+/** 每个色号一枚预渲染的光点。逐粒现画径向渐变太贵，13 张小图一次做好就够了。
+    ⚠️ 必须逐色一枚 —— 共用一枚暖金的话，不管粒子是什么色，亮头永远是金的，
+    整簇看上去就"是一盘白金色的线"，色号等于白设。 */
+let sprites: (HTMLCanvasElement | null)[] = [];
 
-/** 烟花只有这几种暖金：香槟／足金／琥珀 */
-const TINTS = ["#fff0cd", "#ffdb9b", "#ffc179"];
+/** 烟花色：暖金为主，掺月白与青玉，别成一盘彩虹。存成 [r,g,b] 才能拿去调透明度 */
+const TINTS: [number, number, number][] = [
+	[255, 240, 205], // 暖金
+	[255, 219, 155],
+	[255, 193, 121],
+	[255, 246, 230], // 蜜
+	[255, 224, 168],
+	[255, 184, 119],
+	[234, 242, 255], // 月白
+	[198, 220, 255],
+	[160, 190, 245],
+	[150, 238, 205], // 青玉
+	[112, 214, 176],
+	[255, 178, 214], // 桃
+	[255, 146, 190],
+];
 
-function makeSprite() {
+function rgb(t: [number, number, number], a: number) {
+	return `rgba(${t[0]},${t[1]},${t[2]},${a})`;
+}
+
+/** 暖金 5 成、蜜 3 成、月白 1 成、青玉与桃各半成 */
+function pickTint() {
+	const r = Math.random();
+	if (r < 0.5) return (Math.random() * 3) | 0;
+	if (r < 0.8) return 3 + ((Math.random() * 3) | 0);
+	if (r < 0.9) return 6 + ((Math.random() * 3) | 0);
+	return 9 + ((Math.random() * 4) | 0);
+}
+
+/**
+ * 四种放法，只调参数不改引擎：
+ * [粒子数, 基础初速, 速度抖动, 生命基准, 生命抖动, 角度乱不乱]
+ */
+const FORMS: [number, number, number, number, number, boolean][] = [
+	[70, 92, 30, 0.6, 0.5, false], // 圆环：等角、速度齐，干干净净一圈
+	[52, 54, 16, 1.05, 0.6, true], // 垂柳：慢而寿长，靠重力慢慢垂下来
+	[64, 116, 150, 0.44, 0.34, true], // 乱射：角度与速度全放开
+	[88, 96, 40, 0.66, 0.5, true], // 复色环：内外两层速度，双色交替
+];
+
+function makeSprite(t: [number, number, number]) {
 	const c = document.createElement("canvas");
 	c.width = 64;
 	c.height = 64;
 	const g = c.getContext("2d");
 	if (!g) return null;
 	const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-	grd.addColorStop(0, "rgba(255,244,214,1)");
-	grd.addColorStop(0.32, "rgba(255,216,132,0.62)");
-	grd.addColorStop(1, "rgba(255,190,96,0)");
+	grd.addColorStop(0, rgb(t, 1));
+	grd.addColorStop(0.34, rgb(t, 0.62));
+	grd.addColorStop(1, rgb(t, 0));
 	g.fillStyle = grd;
 	g.fillRect(0, 0, 64, 64);
 	return c;
@@ -130,11 +184,11 @@ function frame() {
 		// 细金线：尾巴长度跟着当前速度走，飞得越快拖得越长
 		const tx = p.x - p.vx * 0.075;
 		const ty = p.y - p.vy * 0.075;
-		// 水面倒影：以爆点那条水平线镜像，亮度压到五分之一
-		const ry = originY * 2 - p.y;
-		const rty = originY * 2 - ty;
+		// 水面倒影：以这发自己的爆点线镜像，亮度压到五分之一
+		const ry = p.oy * 2 - p.y;
+		const rty = p.oy * 2 - ty;
 
-		g.strokeStyle = TINTS[p.t];
+		g.strokeStyle = rgb(TINTS[p.t], 1);
 		g.globalAlpha = a * 0.78;
 		g.lineWidth = 0.9 + k * 1.1;
 		g.beginPath();
@@ -148,12 +202,13 @@ function frame() {
 		g.lineTo(tx, rty);
 		g.stroke();
 
-		if (sprite) {
+		const sp = sprites[p.t];
+		if (sp) {
 			const s = p.r * (0.4 + k * 0.7);
 			g.globalAlpha = a;
-			g.drawImage(sprite, p.x - s, p.y - s, s * 2, s * 2);
+			g.drawImage(sp, p.x - s, p.y - s, s * 2, s * 2);
 			g.globalAlpha = a * 0.14;
-			g.drawImage(sprite, p.x - s, ry - s, s * 2, s * 2);
+			g.drawImage(sp, p.x - s, ry - s, s * 2, s * 2);
 		}
 	}
 	g.globalAlpha = 1;
@@ -170,52 +225,109 @@ function frame() {
 	}
 }
 
-function burst(cx: number, cy: number) {
+/** 放一朵。form 不给就随便挑一种，所以"点击随机烟花"和自动燃放共用同一条路 */
+function burst(
+	cx: number,
+	cy: number,
+	form = (Math.random() * FORMS.length) | 0,
+) {
 	if (reduce) return;
 	if (parts.length === 0 && fxRaf === 0) sizeCanvas();
-	originY = cy;
 	tail = 16;
-	// 细金线那种烟花：线多、点小、初速低一点，散开才像抽出来的丝
-	const count = 76;
+	const [count, spd0, jit, life0, lifeJit, chaos] = FORMS[form];
+	// 一枚弹丸一个主色，少数双色 —— 比"每粒都随机"更像真烟花
+	const t1 = pickTint();
+	const t2 = Math.random() < 0.28 ? pickTint() : t1;
 	for (let i = 0; i < count; i++) {
-		const ang = (i / count) * Math.PI * 2 + Math.random() * 0.3;
-		const spd = 76 + Math.random() * 198;
-		// max 必须等于自己的寿命：写死成 1.1 会让短寿命粒子一出生就只有
+		const ang = chaos
+			? Math.random() * Math.PI * 2
+			: (i / count) * Math.PI * 2 + Math.random() * 0.18;
+		// 复色环：奇数粒子走外圈
+		const ring = form === 3 && i % 2 ? 1.35 : 1;
+		const spd = (spd0 + Math.random() * jit) * ring;
+		// max 必须等于自己的寿命：写死成一个常数会让短寿命粒子一出生就只有
 		// 一半亮度（k = life/max < 1），整簇看着就是"没炸开"
-		const life = 0.62 + Math.random() * 0.7;
+		const life = life0 + Math.random() * lifeJit;
 		parts.push({
 			x: cx,
 			y: cy,
 			vx: Math.cos(ang) * spd,
-			vy: Math.sin(ang) * spd - 26,
+			vy: Math.sin(ang) * spd - (form === 1 ? 8 : 26),
 			life,
 			max: life,
 			r: 1.1 + Math.random() * 1.5,
-			t: Math.random() < 0.24 ? 1 + ((Math.random() * 2) | 0) : 0,
+			t: i % 2 ? t2 : t1,
+			oy: cy,
 		});
 	}
 	if (!fxRaf) fxRaf = requestAnimationFrame(frame);
 }
 
+function autoBurst(now: number) {
+	autoAt = now + 2800 + Math.random() * 3800;
+	// 炸在湖面上空那片：场地自身就压在湖面之上，取它上三分之一
+	burst(cw * (0.12 + Math.random() * 0.76), ch * (0.04 + Math.random() * 0.3));
+}
+
 /* ------------------------------------------------------------ 月相 */
 
-function setMoon(p: MoonPhase) {
-	if (moon === p) return;
-	moon = p;
-	if (flashTimer) clearTimeout(flashTimer);
-	if (fullTimer) clearTimeout(fullTimer);
-	if (p === "full") {
-		fullTimer = window.setTimeout(() => {
-			if (moon !== "full") return;
-			moon = performance.now() - lastActivity > 8000 ? "waning" : "waxing";
-		}, 5200);
+/** 一轮朔望多少秒。太快像在快进，太慢就「看不出在变」 */
+const LUNAR = 52;
+let lum = 0.6;
+
+/**
+ * 月相只用两个量算出来，都从上弦角 θ 推：
+ *   f = 照度（0 朔、1 望）—— 亮多少，真值就是 (1-cosθ)/2
+ *   d = 遮挡圆相对月盘的水平位移（单位＝月盘半径，正右负左）—— 亮的是哪一边
+ *
+ * ⚠️ 别用「让位移走正弦」那套。正弦扫到 -2 又往回收，于是后半程
+ * 「亮面在右、却在变缺」，跟真实月相正好镜像 —— 文案写残月，画面上却是个上弦凸月。
+ * 位移取 d = ±2f，符号由「θ<π 是上弦（亮右），过了 π 是残月（亮左）」定：
+ * 这样位移一路单调扫过去，亮面始终跟着照度一起增减，形状和文案永远不会打架。
+ */
+function paintMoon(now: number) {
+	const th = ((now / 1000 / LUNAR) * Math.PI * 2) % (Math.PI * 2);
+	const f = (1 - Math.cos(th)) / 2;
+	const d = (th < Math.PI ? -1 : 1) * 2 * f;
+	if (shadowEl)
+		shadowEl.style.transform = `translateX(${(d * 20).toFixed(2)}px)`;
+	// ⚠️ 别每帧都写 --lum：13 盏灯的 filter 都会跟着失效重绘。
+	// 阈值卡到 0.015，一轮下来只写几十次，肉眼看不出台阶
+	const next = 0.66 + 0.52 * f;
+	if (Math.abs(next - lum) > 0.015) {
+		lum = next;
+		fieldEl?.style.setProperty("--lum", lum.toFixed(3));
+		// 月亮自己的存在感也跟着照度走：朔月几乎隐进夜色，望月亮得压住半片湖。
+		// 跟着同一个阈值一起写，不多付一次重绘。
+		fieldEl?.style.setProperty("--moonf", f.toFixed(3));
 	}
+	// 标签只用来挑文案和给 CSS 挂钩，粗分四档就够
+	const p: MoonPhase =
+		f > 0.86 ? "full" : f < 0.14 ? "new" : th < Math.PI ? "waxing" : "waning";
+	if (p !== moon) moon = p;
 }
 
-function touch() {
-	lastActivity = performance.now();
-	if (moon === "new" || moon === "waning") setMoon("waxing");
-}
+/**
+ * 月盘上的「粒子」：黄金角撒点天然铺得匀。⚠️ 必须确定值，SSR 与 hydrate 得一致。
+ *
+ * 尺寸是真踩过的坑：月盘只有 20 个 SVG 单位半径，渲染出来约 47px 宽 ——
+ * 单位 ≈ 1.2px。原来把点写在 0.3～0.5 单位上，等于 0.4px，亚像素一律被抗锯齿抹平，
+ * 「粒子月面」在屏幕上根本不存在，月亮只是一块死白。
+ * 现在最细的点也 ≥0.9 单位（≈1.1px），覆盖约四成，明暗两层才看得出颗粒感。
+ */
+const DUST = Array.from({ length: 96 }, (_, i) => {
+	const a = i * 2.399963229728653; // 黄金角
+	const rad = 19.2 * Math.sqrt((i + 0.5) / 96);
+	// 每五粒挑一粒当暗斑（月海）。白点叠在白底上等于没画，必须有暗的才读得出"颗粒"。
+	const dark = i % 5 === 2;
+	return {
+		x: 32 + Math.cos(a) * rad,
+		y: 32 + Math.sin(a) * rad,
+		r: dark ? 1.05 + ((i * 13) % 4) * 0.32 : 0.9 + ((i * 7) % 5) * 0.2,
+		o: dark ? 0.14 + ((i * 3) % 3) * 0.05 : 0.34 + ((i * 11) % 6) * 0.11,
+		fill: dark ? "#8ba0c6" : "#ffffff",
+	};
+});
 
 /* ------------------------------------------------------------ 布局 */
 
@@ -274,9 +386,13 @@ function layout() {
 	if (r.width < 40 || r.height < 40) return;
 	w = r.width;
 	h = r.height;
+	narrowW = window.innerWidth <= 700;
 	size = Math.max(42, Math.min(84, Math.round(w / 15.5)));
 	minDist = size * 1.44;
 	el.style.setProperty("--lantern-size", `${size}px`);
+	// 顺手记下 hero 的底边。读 rect 只在这里做一次，滚动心跳里就只比对 scrollY
+	if (heroEl)
+		heroEndDoc = heroEl.getBoundingClientRect().bottom + window.scrollY;
 	sizeCanvas();
 	// 只有第一次（或灯数变了）才重新铺阵；单纯尺寸变化只把灯收回界内，
 	// 否则用户一拉窗口，满湖的灯就全跳一次位置。
@@ -291,17 +407,17 @@ function tick(now: number) {
 	const dt = Math.min(0.05, (now - last) / 1000 || 0.016);
 	last = now;
 
-	if (now - lastActivity > 8000 && moon !== "waning" && moon !== "new") {
-		if (fullTimer) clearTimeout(fullTimer);
-		moon = "waning";
-	}
+	// 月相自己走：θ 匀速推，照度与遮挡圆位移都由 paintMoon 内部算
+	paintMoon(now);
+	if (now > autoAt) autoBurst(now);
 
 	const t = now / 1000;
 	const frozen = canHover ? hoverIndex : null;
 
 	for (let i = 0; i < nodes.length; i++) {
 		const n = nodes[i];
-		if (i === frozen) {
+		// 起飞的那盏交给 CSS 动画，主循环撒手 —— 否则每帧写的 transform 会跟动画打架
+		if (i === frozen || i === launching) {
 			n.vx = 0;
 			n.vy = 0;
 			continue;
@@ -334,8 +450,8 @@ function tick(now: number) {
 			const push = ((minDist - d) / minDist) * 130 * dt;
 			dx /= d;
 			dy /= d;
-			const ia = i === frozen ? 0 : 1;
-			const ib = j === frozen ? 0 : 1;
+			const ia = i === frozen || i === launching ? 0 : 1;
+			const ib = j === frozen || j === launching ? 0 : 1;
 			a.vx -= dx * push * ia * 2;
 			a.vy -= dy * push * ia * 2;
 			b.vx += dx * push * ib * 2;
@@ -363,7 +479,7 @@ function tick(now: number) {
 			n.vy = -Math.abs(n.vy) * 0.5;
 		}
 		const el = els[i];
-		if (!el) continue;
+		if (!el || i === launching) continue;
 		const bob = Math.sin(t * 0.72 + n.ph * 1.4) * size * 0.045;
 		el.style.transform = `translate3d(${n.x - size / 2}px, ${n.y - size / 2 + bob}px, 0)`;
 	}
@@ -389,24 +505,54 @@ function close() {
 	hoverIndex = null;
 }
 
-function tap(i: number) {
-	touch();
-	setMoon("full");
-	tappedIndex = i;
-	if (flashTimer) clearTimeout(flashTimer);
-	flashTimer = window.setTimeout(() => {
-		if (tappedIndex === i) tappedIndex = null;
-	}, 560);
-	// 烟花要「在花灯正上方炸开」，所以抬到灯顶以上；倒影再以这条线镜像回来
+/** 放走一盏灯：升起 → 半空燃放 → 散进夜里 → 才跳转。整段 2.5 秒 */
+function tap(i: number, ev: MouseEvent) {
+	// 修饰键交给浏览器：那是"后台开一个"的意思，别拦
+	if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+	ev.preventDefault();
+	const url = LANTERNS[i].url;
+	if (reduce) {
+		window.open(url, "_blank", "noopener,noreferrer");
+		return;
+	}
+	if (launching !== null) return; // 一次只放飞一盏，免得两盏灯的定时器互相踩
 	const n = nodes[i];
-	if (n) burst(n.x, Math.max(12, n.y - size * 0.72));
+	launching = i;
+	close();
+	// 燃放对齐 keyframes 的 46%（2.3s × 0.46 ≈ 1.06s），正好在升到最高那口气上
+	launchTimer = window.setTimeout(() => {
+		if (n) burst(n.x, Math.max(12, n.y - size * 1.6));
+	}, 1060);
+	navTimer = window.setTimeout(() => {
+		// ponytail: 延迟打开的窗口 Safari 可能判成弹窗；被挡就退回本页跳转，别让人卡死
+		const win = window.open(url, "_blank", "noopener,noreferrer");
+		if (!win) location.href = url;
+		launching = null; // 交给 .lantern 上的 opacity 过渡慢慢淡回来
+	}, 2500);
+}
+
+/** 点湖面／夜空也来一朵。点灯的话交给 tap，别叠两发 */
+function onDocClick(ev: MouseEvent) {
+	if (reduce || !fxEl) return;
+	const t = ev.target as Element | null;
+	if (t?.closest?.(".lantern, .lantern-card, a, button")) return;
+	const r = fxEl.getBoundingClientRect();
+	if (r.bottom < 60) return; // 画布都滚出视口了，炸了也看不见
+	const x = ev.clientX - r.left;
+	const y = ev.clientY - r.top;
+	const inCanvas = x > 0 && y > 0 && x < r.width && y < r.height;
+	burst(
+		inCanvas ? x : cw * (0.15 + Math.random() * 0.7),
+		inCanvas ? y : ch * (0.1 + Math.random() * 0.45),
+	);
 }
 
 onMount(() => {
 	canHover = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
 	reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-	lastActivity = performance.now();
-	sprite = makeSprite();
+	heroEl = fieldEl?.closest<HTMLElement>(".lantern-hero") ?? null;
+	sprites = TINTS.map(makeSprite);
+	paintMoon(0); // 先把月盘摆到初始月相，降级模式下也要有个像样的样子
 
 	els = Array.from(
 		fieldEl?.querySelectorAll<HTMLElement>("[data-lantern]") ?? [],
@@ -417,13 +563,12 @@ onMount(() => {
 	});
 	if (fieldEl) ro.observe(fieldEl);
 	window.addEventListener("resize", onWin);
-	window.addEventListener("pointermove", touch, { passive: true });
-	window.addEventListener("pointerdown", touch, { passive: true });
-	window.addEventListener("scroll", touch, { passive: true });
+	window.addEventListener("click", onDocClick);
 
 	layout();
 	layoutPending = false;
 	last = performance.now();
+	autoAt = last + 1600;
 
 	if (!reduce) {
 		raf = requestAnimationFrame(tick);
@@ -437,11 +582,9 @@ onMount(() => {
 		cancelAnimationFrame(fxRaf);
 		ro.disconnect();
 		window.removeEventListener("resize", onWin);
-		window.removeEventListener("pointermove", touch);
-		window.removeEventListener("pointerdown", touch);
-		window.removeEventListener("scroll", touch);
-		if (flashTimer) clearTimeout(flashTimer);
-		if (fullTimer) clearTimeout(fullTimer);
+		window.removeEventListener("click", onDocClick);
+		clearTimeout(launchTimer);
+		clearTimeout(navTimer);
 	};
 });
 
@@ -449,21 +592,22 @@ function onWin() {
 	layoutPending = true;
 }
 
-// 元素尺寸变化（字体加载、旋转屏幕）后的补一次布局
+// 元素尺寸变化（字体加载、旋转屏幕）后的补一次布局；顺手看住月亮。
+// 月亮那条放在这里而不是 tick() 里，是因为降级模式（prefers-reduced-motion）压根不跑 tick，
+// 而 fixed 的月亮在降级模式下一样会浮到正文上。
 $effect(() => {
 	if (!fieldEl) return;
 	const id = window.setInterval(() => {
+		asleep = window.scrollY >= heroEndDoc - 140;
 		if (!layoutPending) return;
 		layoutPending = false;
 		layout();
 	}, 240);
 	return () => clearInterval(id);
 });
-
-const moonOffset = $derived(MOON_OFFSET[moon]);
 </script>
 
-<div class="lantern-field" bind:this={fieldEl} data-moon={moon}>
+<div class="lantern-field" bind:this={fieldEl} data-moon={moon} class:is-asleep={asleep}>
 	<canvas class="lantern-fx" bind:this={fxEl} aria-hidden="true"></canvas>
 
 	<!-- 四型灯具只定义一份，13 盏灯靠 <use> 取；倒影取的是同一个形体，关于水线镜射再压扁。
@@ -729,7 +873,7 @@ const moonOffset = $derived(MOON_OFFSET[moon]);
 			data-lantern
 			data-kind={l.kind}
 			class:is-hover={hoverIndex === i}
-			class:is-tapped={tappedIndex === i}
+			class:is-launching={launching === i}
 			style="--glow:{KIND_GLOW[l.kind]};--i:{i}"
 			href={l.url}
 			target="_blank"
@@ -739,7 +883,7 @@ const moonOffset = $derived(MOON_OFFSET[moon]);
 			onmouseleave={close}
 			onfocus={() => open(i)}
 			onblur={close}
-			onclick={() => tap(i)}
+			onclick={(e) => tap(i, e)}
 		>
 			<span class="lantern-pool" aria-hidden="true"></span>
 			<span class="lantern-glow" aria-hidden="true"></span>
@@ -797,14 +941,15 @@ const moonOffset = $derived(MOON_OFFSET[moon]);
 			</defs>
 			<circle class="lantern-moon-rim" cx="32" cy="32" r="20" />
 			<circle class="lantern-moon-lit" cx="32" cy="32" r="20" fill="url(#lantern-moon-lit)" />
+			<!-- 粒子月面：一层细碎的亮点 + 暗斑。整组一起呼吸，不用逐粒动画 -->
+			<g class="lantern-moon-dust" clip-path="url(#lantern-moon-cut)">
+				{#each DUST as d}
+					<circle cx={d.x} cy={d.y} r={d.r} opacity={d.o} fill={d.fill} />
+				{/each}
+			</g>
 			<g clip-path="url(#lantern-moon-cut)">
-				<circle
-					class="lantern-moon-shadow"
-					cx="32"
-					cy="32"
-					r="20"
-					style="transform:translateX({moonOffset * 20}px)"
-				/>
+				<!-- transform 由 paintMoon 每帧直接写，不走响应式状态，也别加 CSS transition -->
+				<circle class="lantern-moon-shadow" bind:this={shadowEl} cx="32" cy="32" r="20" />
 			</g>
 		</svg>
 		<span class="lantern-moon-hint">{MOON_HINT[moon]}</span>
@@ -814,7 +959,8 @@ const moonOffset = $derived(MOON_OFFSET[moon]);
 <style>
 	.lantern-field {
 		--lantern-size: 68px;
-		--lum: 0.8;
+		--lum: 0.66;
+		--moonf: 0;
 		position: absolute;
 		/* 只在湖面之上活动：下界留出底部渐隐带，上界压住正文/图例不与之打架；
 		   矮屏时用 24rem 兜底，免得 52% 落得太高又叠到标题上。 */
@@ -826,18 +972,10 @@ const moonOffset = $derived(MOON_OFFSET[moon]);
 		z-index: 3;
 	}
 
-	/* 月亮越亮，整湖灯越亮。四态各一档，过渡交给 .lantern 上的 filter transition */
-	.lantern-field[data-moon="waxing"] {
-		--lum: 1.02;
-	}
-
-	.lantern-field[data-moon="full"] {
-		--lum: 1.18;
-	}
-
-	.lantern-field[data-moon="waning"] {
-		--lum: 0.68;
-	}
+	/* --lum（灯的整体明暗）与 --moonf（月亮的存在感）都由 paintMoon 直接写到这个元素上：
+	   两个都是连续量，CSS 按四档再分一次够用不了。这里只留预置值供 JS 起来之前用，
+	   过渡交给 .lantern / .lantern-moon 上的 transition。
+	   data-moon 保留是因为它给 CSS 帮不上忙了，但自测要靠它读当前档位。 */
 
 	.lantern-fx {
 		position: absolute;
@@ -868,7 +1006,10 @@ const moonOffset = $derived(MOON_OFFSET[moon]);
 		pointer-events: auto;
 		-webkit-tap-highlight-color: transparent;
 		filter: brightness(var(--lum));
-		transition: filter 1.6s ease;
+		/* opacity 这条是给"放走一盏灯"收尾用的：动画跑完把类摘掉，灯自己淡回来 */
+		transition:
+			filter 1.6s ease,
+			opacity 0.7s ease;
 		will-change: transform;
 	}
 
@@ -1002,8 +1143,59 @@ const moonOffset = $derived(MOON_OFFSET[moon]);
 		filter: brightness(calc(var(--lum) * 1.22));
 	}
 
-	.lantern.is-tapped .lantern-body svg {
-		filter: drop-shadow(0 0 16px rgb(255 216 150 / 0.85)) brightness(1.35);
+	/* 放飞：升起 → 半空燃放 → 散进夜里。升与烧写在 .lantern-body 上（它本来就有自己的
+	   transform，hover 的抬升也是它），淡出写在 .lantern 上，两层各管一件事。
+	   时长 2.3s，跳转排在 2.5s —— 整段不超过三秒。
+	   ⚠️ 期间 tick 里要跳过这盏灯的 transform，否则每帧写的内联值和动画互相盖。 */
+	.lantern.is-launching {
+		animation: lantern-launch-out 2.3s ease-in forwards;
+	}
+
+	.lantern.is-launching .lantern-body {
+		animation: lantern-launch-rise 2.3s cubic-bezier(0.3, 0.62, 0.3, 1) forwards;
+	}
+
+	.lantern.is-launching .lantern-body svg {
+		animation: lantern-launch-burn 2.3s ease-in-out forwards;
+	}
+
+	@keyframes lantern-launch-rise {
+		0% {
+			transform: translateY(0) scale(1);
+		}
+		46% {
+			transform: translateY(-72px) scale(1.06);
+		}
+		100% {
+			transform: translateY(-108px) scale(0.68);
+		}
+	}
+
+	/* 46% 是灯在半空"点着"的那一瞬，跟 tap() 里放烟花的 1060ms 对齐 */
+	@keyframes lantern-launch-burn {
+		0%,
+		28% {
+			filter: drop-shadow(0 0 7px rgb(255 206 140 / 0.4));
+		}
+		46% {
+			filter: drop-shadow(0 0 28px rgb(255 232 178 / 0.95)) brightness(1.6);
+		}
+		100% {
+			filter: drop-shadow(0 0 10px rgb(255 226 170 / 0.22)) brightness(0.78);
+		}
+	}
+
+	@keyframes lantern-launch-out {
+		0%,
+		42% {
+			opacity: 1;
+		}
+		70% {
+			opacity: 0.7;
+		}
+		100% {
+			opacity: 0;
+		}
 	}
 
 	.lantern:focus-visible {
@@ -1083,14 +1275,37 @@ const moonOffset = $derived(MOON_OFFSET[moon]);
 
 	/* ---------------------------------------------------------- 月相 */
 
+	/* 悬在湖面正上空的月亮。定死在视口里（滚动时不跟着跑），水平居中 ——
+	   居中它才在湖面正上方，水面那道光带也才好对着它。 */
 	.lantern-moon {
 		position: fixed;
-		top: clamp(4.6rem, 9vh, 7rem);
-		right: clamp(1rem, 3.4vw, 2.8rem);
-		width: clamp(52px, 6vw, 74px);
+		top: clamp(3.4rem, 7.5vh, 6rem);
+		left: 50%;
+		transform: translateX(-50%);
+		width: clamp(54px, 6vw, 76px);
 		pointer-events: none;
 		z-index: 20;
+		/* 存在感跟着照度连续走（--moonf 由 paintMoon 写）。原来按 data-moon 分四档跳，
+		   于是刚过满月就"啪"地掉到 44% —— 一个不该有的台阶 */
+		opacity: calc(0.6 + 0.4 * var(--moonf, 0));
 		transition: opacity 1.2s ease;
+	}
+
+	/* 微微发出的月光：一圈很大的冷光，跟着月相明暗收放 */
+	.lantern-moon::before {
+		content: "";
+		position: absolute;
+		inset: -130%;
+		border-radius: 50%;
+		background: radial-gradient(
+			circle,
+			rgb(216 232 255 / 0.17) 0%,
+			rgb(186 210 255 / 0.08) 34%,
+			rgb(170 198 250 / 0.03) 56%,
+			transparent 72%
+		);
+		opacity: calc(0.34 + 0.66 * var(--moonf, 0));
+		transition: opacity 1.6s ease;
 	}
 
 	.lantern-moon svg {
@@ -1108,22 +1323,29 @@ const moonOffset = $derived(MOON_OFFSET[moon]);
 	}
 
 	.lantern-moon-lit {
-		filter: drop-shadow(0 0 18px rgb(226 236 255 / 0.42));
+		filter: drop-shadow(0 0 calc(6px + 14px * var(--moonf, 0)) rgb(226 236 255 / 0.42));
 	}
 
-	/* 光晕跟着月相收放：被遮住的月盘不该还亮着一圈 */
-	.lantern-moon[data-phase="new"] .lantern-moon-lit {
-		filter: drop-shadow(0 0 7px rgb(214 230 255 / 0.14));
+	/* 粒子月面：细碎亮点与暗斑铺满月盘，整组慢慢呼吸 —— 逐粒做动画太贵，也没必要。
+	   颜色逐粒写在属性上（亮的白、暗的冷灰蓝），这里只管呼吸 */
+	.lantern-moon-dust {
+		animation: lantern-moon-dust 7.5s ease-in-out infinite;
 	}
 
-	.lantern-moon[data-phase="waning"] .lantern-moon-lit {
-		filter: drop-shadow(0 0 11px rgb(220 234 255 / 0.26));
+	@keyframes lantern-moon-dust {
+		0%,
+		100% {
+			opacity: 0.72;
+		}
+		50% {
+			opacity: 1;
+		}
 	}
 
 	.lantern-moon-shadow {
-		/* 不用纯色盖死：留一丝透光，新月时月盘才看得出是个球，而不是一个洞 */
+		/* 不用纯色盖死：留一丝透光，新月时月盘才看得出是个球，而不是一个洞。
+		   ⚠️ 这里不能加 transition：位移是每帧算的，过渡只会让它追不上 */
 		fill: rgb(8 15 28 / 0.94);
-		transition: transform 1.7s cubic-bezier(0.4, 0.1, 0.3, 1);
 	}
 
 	.lantern-moon-hint {
@@ -1131,24 +1353,20 @@ const moonOffset = $derived(MOON_OFFSET[moon]);
 		   否则窄屏上会被挤成一列竖排单字 */
 		position: absolute;
 		top: 100%;
-		right: 0;
-		margin-top: 0.45rem;
+		left: 50%;
+		transform: translateX(-50%);
+		margin-top: 0.4rem;
 		font-size: 0.58rem;
 		letter-spacing: 0.16em;
 		white-space: nowrap;
 		color: rgb(206 220 244 / 0.38);
 	}
 
-	.lantern-field[data-moon="full"] .lantern-moon {
-		opacity: 1;
-	}
-
-	.lantern-field[data-moon="new"] .lantern-moon {
-		opacity: 0.62;
-	}
-
-	.lantern-field[data-moon="waning"] .lantern-moon {
-		opacity: 0.38;
+	/* hero 滚过去之后月亮必须退场：它是 fixed 的，不退就直接浮在正文标题上
+	   （实测 scrollY≈hero 高度时，月亮正好落在正文第一行）。
+	   淡出交给 .lantern-moon 自己那条 opacity 过渡，别在这里再写 transition。 */
+	.lantern-field.is-asleep .lantern-moon {
+		opacity: 0;
 	}
 
 	/* ---------------------------------------------------------- 窄屏 */
@@ -1165,12 +1383,25 @@ const moonOffset = $derived(MOON_OFFSET[moon]);
 			left: auto;
 			height: min(58svh, 30rem);
 		}
+
+		/* 窄屏上月亮不能再 fixed：这时开场文案就排在文档流最上面，
+		   钉在视口顶的月亮正好压在标题与图例上（实测压住「载尘望星 · 浮游工具集」）。
+		   改成锚在湖面上沿 —— "湖面正上空"本来也是它该在的地方；
+		   顺带它会跟湖一起滚走，不必再靠 is-asleep 退场。
+		   场地上沿的留白同步加高（topPad 里那一档），给月盘和月相文案腾出位置。 */
+		.lantern-moon {
+			position: absolute;
+			top: 0.4rem;
+			width: 46px;
+		}
 	}
 
 	/* ---------------------------------------------------------- 退化 */
 
 	@media (prefers-reduced-motion: reduce) {
-		.lantern {
+		.lantern,
+		.lantern-moon,
+		.lantern-moon::before {
 			transition: none;
 		}
 
@@ -1179,7 +1410,8 @@ const moonOffset = $derived(MOON_OFFSET[moon]);
 		.lantern-ripple::before,
 		.lantern-ripple::after,
 		.lb-mirror,
-		.lantern-moon-shadow {
+		.lantern-moon-shadow,
+		.lantern-moon-dust {
 			transition: none;
 			animation: none;
 		}
@@ -1188,8 +1420,13 @@ const moonOffset = $derived(MOON_OFFSET[moon]);
 			animation: none;
 		}
 
-		.lantern.is-tapped .lantern-body svg {
-			filter: drop-shadow(0 0 12px rgb(255 216 150 / 0.8));
+		/* 降级路径里 tap() 直接开新页，压根不会挂 is-launching —— 这条纯属兜底，
+		   免得日后有人在降级分支补上动画时，灯被钉在半空不回来 */
+		.lantern.is-launching,
+		.lantern.is-launching .lantern-body,
+		.lantern.is-launching .lantern-body svg {
+			animation: none;
+			opacity: 1;
 		}
 	}
 </style>

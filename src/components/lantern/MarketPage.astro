@@ -86,21 +86,25 @@ import {
 		mask-image: linear-gradient(to bottom, #000 0 84%, transparent 100%);
 	}
 
-	/* 墨蓝黑的夜：天顶留一点冷光，靠近水面的地方渗一点灯火的暖 */
+	/* 墨蓝黑的夜：天顶留一点冷光，靠近水面的地方渗一点灯火的暖。
+	   冷光那团钉在正上方 —— 月亮就悬在那儿，天光得从它脚底下散开 */
 	.lantern-night {
 		position: absolute;
 		inset: 0;
 		background:
-			radial-gradient(52% 38% at 78% 7%, rgb(150 176 226 / 0.15) 0%, transparent 70%),
+			radial-gradient(46% 34% at 50% 5%, rgb(158 182 230 / 0.16) 0%, transparent 70%),
 			radial-gradient(70% 26% at 52% 94%, rgb(255 186 104 / 0.05) 0%, transparent 78%),
-			radial-gradient(120% 86% at 74% 4%, #0f1929 0%, #0a1120 42%, #05090f 76%, #020407 100%);
+			radial-gradient(120% 86% at 62% 4%, #0f1929 0%, #0a1120 42%, #05090f 76%, #020407 100%);
 	}
 
-	/* 丁达尔光束：三束斜落的月光，极慢地呼吸 */
+	/* 丁达尔光束：三束斜落的月光，极慢地呼吸。
+	   三束都从月盘（视口水平中线）往下散 —— 光束的顶必须在月亮身上，
+	   不然就成了从别处打来的探照灯。用 margin 拉中线，把 transform 留给旋转。 */
 	.lantern-beam {
 		position: absolute;
 		top: -18%;
 		height: 116%;
+		left: 50%;
 		background: linear-gradient(
 			to bottom,
 			rgb(198 220 255 / 0.1) 0%,
@@ -114,23 +118,23 @@ import {
 	}
 
 	.lantern-beam--a {
-		right: 8%;
 		width: clamp(70px, 9vw, 150px);
-		transform: rotate(11deg);
+		margin-left: calc(clamp(70px, 9vw, 150px) / -2);
+		transform: rotate(2deg);
 	}
 
 	.lantern-beam--b {
-		right: 20%;
 		width: clamp(48px, 6vw, 104px);
-		transform: rotate(6deg);
+		margin-left: calc(clamp(48px, 6vw, 104px) / -2 - 6vw);
+		transform: rotate(-9deg);
 		animation-delay: -9s;
 		opacity: 0.7;
 	}
 
 	.lantern-beam--c {
-		right: 31%;
 		width: clamp(36px, 4.4vw, 78px);
-		transform: rotate(2deg);
+		margin-left: calc(clamp(36px, 4.4vw, 78px) / -2 + 6.5vw);
+		transform: rotate(9deg);
 		animation-delay: -17s;
 		opacity: 0.5;
 	}
@@ -265,13 +269,16 @@ import {
 	}
 
 	/* 月亮在水面拖出的那条波光：正对月亮，随波起伏。
-	   有它，水面才不是一块黑板。 */
+	   有它，水面才不是一块黑板。用 margin 拉中线，把 transform 全留给"摇曳"。
+	   宽度写死成一个变量，好让居中偏移和自身宽度永远同步算。 */
 	.lantern-moonpath {
+		--mp-w: clamp(52px, 6.4vw, 84px);
 		position: absolute;
 		top: 44%;
-		right: clamp(1rem, 3.4vw, 2.8rem);
+		left: 50%;
+		margin-left: calc(var(--mp-w) / -2);
 		bottom: 0;
-		width: clamp(46px, 5.6vw, 68px);
+		width: var(--mp-w);
 		background:
 			repeating-linear-gradient(
 				to bottom,
@@ -290,15 +297,25 @@ import {
 		animation: lantern-moonpath 9s ease-in-out infinite;
 	}
 
+	/* 摇曳：整条光带左右轻摆 + 斜切，像被水波推着走；同时上下伸缩、明暗呼吸。
+	   两个不同频率的晃动叠在一起才有"水"的散乱感，纯正弦会像机器摆钟。 */
 	@keyframes lantern-moonpath {
 		0%,
 		100% {
-			transform: scaleY(1) translateY(0);
-			opacity: 0.56;
+			transform: translateX(-3px) scaleY(1) skewX(1.2deg);
+			opacity: 0.5;
 		}
-		50% {
-			transform: scaleY(1.07) translateY(3px);
-			opacity: 0.78;
+		27% {
+			transform: translateX(3.4px) scaleY(1.05) skewX(-1.6deg);
+			opacity: 0.72;
+		}
+		58% {
+			transform: translateX(-2px) scaleY(1.09) skewX(0.6deg);
+			opacity: 0.84;
+		}
+		79% {
+			transform: translateX(2.6px) scaleY(0.97) skewX(-0.8deg);
+			opacity: 0.62;
 		}
 	}
 

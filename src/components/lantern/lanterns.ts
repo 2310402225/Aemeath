@@ -184,20 +184,8 @@ export function lanternsOf(kind: LanternKind): Lantern[] {
 
 /* ------------------------------------------------------------------ 月相 */
 
+/** 只用来挑文案与给 CSS 挂钩；真实月相是连续的，见 LanternField 的 paintMoon */
 export type MoonPhase = "new" | "waxing" | "full" | "waning";
-
-/**
- * 月相只用一个数字表示：遮挡圆相对本体的水平位移，单位是月盘半径。
- * 0 = 完全重合（新月），-1 = 露出右半（上弦），2 = 完全错开（满月），
- * 1.72 = 只剩左边一钩（残月）。一个数就能让四态连续过渡，
- * 比四张图叠来叠去省事得多。
- */
-export const MOON_OFFSET: Record<MoonPhase, number> = {
-	new: 0,
-	waxing: -1,
-	full: 2,
-	waning: 1.72,
-};
 
 export const MOON_LABEL: Record<MoonPhase, string> = {
 	new: "新月",
