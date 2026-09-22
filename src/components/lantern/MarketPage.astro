@@ -1,0 +1,457 @@
+---
+import LanternField from "./LanternField.svelte";
+// 月下灯市外壳：夜色湖面（纯 CSS 画的）+ 花灯浮游场（Svelte 岛）+ 正文容器。
+//
+// 为什么需要这个 .astro：fullBleed 分支绕开了 MainGridLayout，站点背景装饰会压在
+// 湖面上，而要压掉它们只能用 global 样式 —— Svelte 的 <style> 会被加作用域哈希，
+// 写不了 html:has(...) 这种选择器。正文走 <slot />，排版交给 Tailwind 的 prose。
+import {
+	KIND_GLOW,
+	KIND_LABEL,
+	KIND_ORDER,
+	KIND_SCOPE,
+	KIND_TRAIT,
+} from "./lanterns";
+---
+
+<section class="lantern-hero" id="lantern-page">
+	<div class="lantern-scene" aria-hidden="true">
+		<div class="lantern-night"></div>
+		<div class="lantern-beam lantern-beam--a"></div>
+		<div class="lantern-beam lantern-beam--b"></div>
+		<div class="lantern-beam lantern-beam--c"></div>
+		<div class="lantern-stars"></div>
+		<div class="lantern-water"></div>
+		<div class="lantern-glints"></div>
+		<div class="lantern-moonpath"></div>
+	</div>
+
+	<div class="lantern-intro">
+		<p class="lantern-kicker">载尘望星 · 浮游工具集</p>
+		<h1 class="lantern-h1">月下<span>灯市</span></h1>
+		<p class="lantern-sub">把世间好用的工具，悉数养进夜色湖面</p>
+		<ul class="lantern-legend">
+			{
+				KIND_ORDER.map((k) => (
+					<li style={`--glow:${KIND_GLOW[k]}`}>
+						<span class="lg-head">
+							{KIND_LABEL[k]}
+							<em>{KIND_TRAIT[k]}</em>
+						</span>
+						<span class="lg-scope">{KIND_SCOPE[k]}</span>
+					</li>
+				))
+			}
+		</ul>
+		<p class="lantern-hint">悬停看它的来历，点击把它放走 —— 烟花散尽处，灯就去了它该去的地方。</p>
+	</div>
+
+	<LanternField client:visible />
+
+	<p class="lantern-down" aria-hidden="true">往下滚 · 十三盏灯的来历</p>
+</section>
+
+<article class="lantern-article">
+	<div class="lantern-article-inner prose prose-base dark:prose-invert max-w-none!">
+		<slot />
+	</div>
+</article>
+
+<style is:global>
+	/* 首屏是夜湖，站点的樱花／壁纸／顶部渐变会糊在上面。
+	   用 :has() 把作用域钉在本页（页面里有 #lantern-page 时才生效），
+	   否则这份 global 样式会被打进全站 CSS，在别的页面误伤。 */
+	html:has(#lantern-page) #canvas_sakura,
+	html:has(#lantern-page) welcome-toast,
+	html:has(#lantern-page) #page-background-decoration,
+	html:has(#lantern-page) top-gradient-highlight,
+	html:has(#lantern-page) #wallpaper-wrapper {
+		display: none !important;
+	}
+</style>
+
+<style>
+	.lantern-hero {
+		position: relative;
+		min-height: 100svh;
+		overflow: hidden;
+	}
+
+	/* 场景层整块做一次遮罩：底部渐隐到透明，
+	   于是页面背景（浅色主题是白、深色主题是深）自然露出来，不留硬接缝。 */
+	.lantern-scene {
+		position: absolute;
+		inset: 0;
+		-webkit-mask-image: linear-gradient(to bottom, #000 0 84%, transparent 100%);
+		mask-image: linear-gradient(to bottom, #000 0 84%, transparent 100%);
+	}
+
+	/* 墨蓝黑的夜：天顶留一点冷光，靠近水面的地方渗一点灯火的暖 */
+	.lantern-night {
+		position: absolute;
+		inset: 0;
+		background:
+			radial-gradient(52% 38% at 78% 7%, rgb(150 176 226 / 0.15) 0%, transparent 70%),
+			radial-gradient(70% 26% at 52% 94%, rgb(255 186 104 / 0.05) 0%, transparent 78%),
+			radial-gradient(120% 86% at 74% 4%, #0f1929 0%, #0a1120 42%, #05090f 76%, #020407 100%);
+	}
+
+	/* 丁达尔光束：三束斜落的月光，极慢地呼吸 */
+	.lantern-beam {
+		position: absolute;
+		top: -18%;
+		height: 116%;
+		background: linear-gradient(
+			to bottom,
+			rgb(198 220 255 / 0.1) 0%,
+			rgb(178 206 250 / 0.045) 42%,
+			transparent 82%
+		);
+		filter: blur(30px);
+		mix-blend-mode: screen;
+		transform-origin: top center;
+		animation: lantern-beam 26s ease-in-out infinite;
+	}
+
+	.lantern-beam--a {
+		right: 8%;
+		width: clamp(70px, 9vw, 150px);
+		transform: rotate(11deg);
+	}
+
+	.lantern-beam--b {
+		right: 20%;
+		width: clamp(48px, 6vw, 104px);
+		transform: rotate(6deg);
+		animation-delay: -9s;
+		opacity: 0.7;
+	}
+
+	.lantern-beam--c {
+		right: 31%;
+		width: clamp(36px, 4.4vw, 78px);
+		transform: rotate(2deg);
+		animation-delay: -17s;
+		opacity: 0.5;
+	}
+
+	@keyframes lantern-beam {
+		0%,
+		100% {
+			opacity: 0.72;
+		}
+		50% {
+			opacity: 1;
+		}
+	}
+
+	/* 星光粒子：三层不同疏密的径向点，整体极慢下沉，零 DOM 节点 */
+	.lantern-stars {
+		position: absolute;
+		inset: -20% 0 0 0;
+		background-image:
+			radial-gradient(1.4px 1.4px at 18% 26%, rgb(255 255 255 / 0.6), transparent),
+			radial-gradient(1.2px 1.2px at 62% 12%, rgb(226 238 255 / 0.55), transparent),
+			radial-gradient(1px 1px at 84% 44%, rgb(255 255 255 / 0.45), transparent),
+			radial-gradient(1px 1px at 34% 66%, rgb(214 232 255 / 0.4), transparent);
+		background-size:
+			320px 280px,
+			240px 220px,
+			420px 360px,
+			280px 300px;
+		background-repeat: repeat;
+		animation: lantern-stars 120s linear infinite;
+		opacity: 0.52;
+	}
+
+	@keyframes lantern-stars {
+		from {
+			background-position:
+				0 0,
+				0 0,
+				0 0,
+				0 0;
+		}
+		to {
+			background-position:
+				0 280px,
+				0 220px,
+				0 360px,
+				0 300px;
+		}
+	}
+
+	/* 水面：上部一道月光的水平亮带，下面接细密波纹。
+	   别压成一整块黑 —— 水太黑，湖面就读不出来，只剩几盏灯悬在真空里；
+	   但也不能亮到纸灯浮不住，取中间：底噪 ~14/255。 */
+	.lantern-water {
+		position: absolute;
+		inset: 44% 0 0 0;
+		background:
+			linear-gradient(
+				to bottom,
+				rgb(14 30 56 / 0) 0%,
+				rgb(120 160 220 / 0.08) 9%,
+				rgb(18 36 64 / 0.4) 24%,
+				rgb(9 20 40 / 0.66) 62%,
+				rgb(7 16 34 / 0.74) 100%
+			),
+			repeating-linear-gradient(
+				to bottom,
+				rgb(196 218 255 / 0.07) 0 1px,
+				transparent 1px 14px
+			);
+		/* 整层在顶端渐入：不然那排波纹线会孤零零地浮在夜空中，
+		   水面顶边就成了一道横贯全宽的接缝 */
+		-webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 22%, #000 100%);
+		mask-image: linear-gradient(to bottom, transparent 0%, #000 22%, #000 100%);
+		animation: lantern-water 26s ease-in-out infinite;
+	}
+
+	/* 水面碎光：参考图里湖面是"撒了一层细碎反光"，不是一块黑板。
+	   跟天上那片星光同一招（重复的径向点），但更亮、随波横向漂 ——
+	   天上的星是往下沉的，水上的光要横着走，方向一反才分得出天与水。 */
+	.lantern-glints {
+		position: absolute;
+		inset: 44% 0 0 0;
+		background-image:
+			radial-gradient(2.4px 1.5px at 14% 24%, rgb(255 238 206 / 0.62), transparent),
+			radial-gradient(1.9px 1.2px at 58% 9%, rgb(238 228 255 / 0.5), transparent),
+			radial-gradient(2.6px 1.6px at 84% 38%, rgb(255 228 180 / 0.58), transparent),
+			radial-gradient(1.7px 1.1px at 33% 70%, rgb(226 238 255 / 0.44), transparent),
+			radial-gradient(1.3px 1px at 72% 58%, rgb(255 244 224 / 0.34), transparent);
+		background-size:
+			280px 180px,
+			360px 240px,
+			420px 200px,
+			320px 260px,
+			190px 150px;
+		background-repeat: repeat;
+		animation: lantern-glints 38s linear infinite;
+		opacity: 0.82;
+	}
+
+	@keyframes lantern-glints {
+		from {
+			background-position:
+				0 0,
+				0 0,
+				0 0,
+				0 0,
+				0 0;
+		}
+		to {
+			background-position:
+				280px 0,
+				-360px 0,
+				420px 0,
+				-320px 0,
+				190px 0;
+		}
+	}
+
+	@keyframes lantern-water {
+		0%,
+		100% {
+			background-position:
+				0 0,
+				0 0;
+		}
+		50% {
+			background-position:
+				0 0,
+				0 7px;
+		}
+	}
+
+	/* 月亮在水面拖出的那条波光：正对月亮，随波起伏。
+	   有它，水面才不是一块黑板。 */
+	.lantern-moonpath {
+		position: absolute;
+		top: 44%;
+		right: clamp(1rem, 3.4vw, 2.8rem);
+		bottom: 0;
+		width: clamp(46px, 5.6vw, 68px);
+		background:
+			repeating-linear-gradient(
+				to bottom,
+				rgb(238 246 255 / 0.3) 0 1.5px,
+				transparent 1.5px 11px
+			),
+			linear-gradient(
+				to bottom,
+				rgb(230 242 255 / 0.24) 0%,
+				rgb(214 232 255 / 0.09) 34%,
+				transparent 78%
+			);
+		-webkit-mask-image: radial-gradient(58% 52% at 50% 22%, #000 0%, transparent 78%);
+		mask-image: radial-gradient(58% 52% at 50% 22%, #000 0%, transparent 78%);
+		filter: blur(3px);
+		animation: lantern-moonpath 9s ease-in-out infinite;
+	}
+
+	@keyframes lantern-moonpath {
+		0%,
+		100% {
+			transform: scaleY(1) translateY(0);
+			opacity: 0.56;
+		}
+		50% {
+			transform: scaleY(1.07) translateY(3px);
+			opacity: 0.78;
+		}
+	}
+
+	/* ---------------------------------------------------------- 文案 */
+
+	.lantern-intro {
+		position: relative;
+		z-index: 2;
+		padding: clamp(6.5rem, 17vh, 12rem) clamp(1.4rem, 7vw, 8rem) 0;
+		max-width: min(760px, 100%);
+	}
+
+	.lantern-kicker {
+		margin: 0 0 0.9rem;
+		font-size: 0.68rem;
+		letter-spacing: 0.34em;
+		color: rgb(186 210 248 / 0.5);
+	}
+
+	.lantern-h1 {
+		margin: 0;
+		font-size: clamp(2.2rem, 6.2vw, 3.9rem);
+		line-height: 1.08;
+		font-weight: 600;
+		letter-spacing: 0.14em;
+		color: rgb(240 246 255 / 0.95);
+		text-shadow: 0 0 34px rgb(150 186 244 / 0.16);
+	}
+
+	.lantern-h1 span {
+		color: rgb(220 228 242 / 0.72);
+	}
+
+	.lantern-sub {
+		margin: 1.05rem 0 0;
+		font-size: clamp(0.82rem, 1.5vw, 0.98rem);
+		letter-spacing: 0.08em;
+		color: rgb(198 218 250 / 0.6);
+	}
+
+	.lantern-legend {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.55rem 1.6rem;
+		margin: 2.1rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	/* 图例：一根比头发丝重的竖线定色就够了 —— 之前那个会发光的彩色圆点
+	   是整页最"贴纸"的一处 */
+	.lantern-legend li {
+		display: flex;
+		flex-direction: column;
+		gap: 0.18rem;
+		padding-left: 0.62rem;
+		border-left: 1px solid rgb(var(--glow) / 0.32);
+	}
+
+	.lg-head {
+		display: flex;
+		align-items: center;
+		gap: 0.44rem;
+		font-size: 0.74rem;
+		letter-spacing: 0.06em;
+		color: rgb(226 236 250 / 0.76);
+	}
+
+	.lg-head em {
+		font-style: normal;
+		font-size: 0.62rem;
+		letter-spacing: 0.12em;
+		color: rgb(var(--glow) / 0.46);
+	}
+
+	.lg-scope {
+		font-size: 0.62rem;
+		line-height: 1.55;
+		letter-spacing: 0.02em;
+		color: rgb(176 196 226 / 0.32);
+	}
+
+	.lantern-hint {
+		margin: 1.5rem 0 0;
+		font-size: 0.72rem;
+		line-height: 1.85;
+		letter-spacing: 0.05em;
+		color: rgb(178 198 228 / 0.38);
+	}
+
+	.lantern-down {
+		position: absolute;
+		left: 50%;
+		bottom: clamp(1.1rem, 3vh, 2.2rem);
+		transform: translateX(-50%);
+		margin: 0;
+		font-size: 0.6rem;
+		letter-spacing: 0.28em;
+		color: rgb(178 198 228 / 0.3);
+		z-index: 5;
+		pointer-events: none;
+	}
+
+	/* ---------------------------------------------------------- 正文 */
+
+	.lantern-article {
+		position: relative;
+		z-index: 1;
+	}
+
+	/* 正文容器写在组件模板里（而非 slot 内容），作用域哈希才管得住 */
+	.lantern-article-inner {
+		width: min(760px, calc(100% - 2.5rem));
+		margin: 0 auto;
+		padding: clamp(2.4rem, 6vh, 4.4rem) 0 clamp(4rem, 10vh, 7rem);
+	}
+
+	.lantern-article-inner :global(h2) {
+		margin-top: 2.6em;
+	}
+
+	.lantern-article-inner :global(h2:first-child) {
+		margin-top: 0;
+	}
+
+	/* 断点必须和花灯场地的窄屏断点一致：场地在那里改成了文档流，
+	   滚动提示不跟着回流转，就会掉到灯下面去。 */
+	@media (max-width: 700px) {
+		.lantern-intro {
+			padding: clamp(5.5rem, 15vh, 8rem) 1.25rem 0;
+		}
+
+		.lantern-legend {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 0.5rem;
+		}
+
+		.lantern-down {
+			position: static;
+			transform: none;
+			margin: 0;
+			padding: 0 0 clamp(1.2rem, 4vh, 2rem);
+			text-align: center;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.lantern-beam,
+		.lantern-stars,
+		.lantern-water,
+		.lantern-glints,
+		.lantern-moonpath {
+			animation: none;
+		}
+	}
+</style>

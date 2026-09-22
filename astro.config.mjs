@@ -101,8 +101,9 @@ export default defineConfig({
 			cache: true,
 			preload: true,
 			accessibility: true,
-			// The portfolio and the full-bleed LŪMEN / holo-cards articles are
-			// deliberately full-bleed layouts that do not use the standard
+			// The portfolio and the full-bleed LŪMEN / holo-cards / lantern-market
+			// articles are deliberately full-bleed layouts that do not use the
+			// standard
 			// MainGridLayout Swup containers. Crossing this layout boundary with a
 			// partial DOM swap leaves stale containers/styles behind, so both
 			// directions use a normal document navigation instead. Trailing slashes
@@ -112,7 +113,10 @@ export default defineConfig({
 				const targetPath = normalize(targetUrl.split(/[?#]/)[0]);
 				const currentPath = normalize(window.location.pathname);
 				const isFullBleed = (p) =>
-					p === "/portfolio" || p === "/posts/lumen-index" || p === "/posts/holo-cards";
+					p === "/portfolio" ||
+					p === "/posts/lumen-index" ||
+					p === "/posts/holo-cards" ||
+					p === "/posts/lantern-market";
 				return isFullBleed(targetPath) || isFullBleed(currentPath);
 			},
 			updateHead: true,

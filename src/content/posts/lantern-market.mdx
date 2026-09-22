@@ -1,0 +1,152 @@
+---
+title: "月下灯市 · 浮游工具集"
+published: 2026-09-22
+updated: 2026-09-22
+topic: "工具推荐"
+category: "工具推荐"
+description: "十三件顺手的工具，被养成了夜色湖面上自由游动的发光花灯：小鱼、贝壳、水母、海星各带一种性情，月亮替你标出页面此刻的沉静程度，点一盏灯就有一簇金色烟花。首屏就是那座湖，往下滚是这十三盏灯的来历。"
+image: /assets/images/posts/lantern-market-cover.webp
+fullBleed: true
+draft: false
+lang: zh_CN
+tags:
+  - 工具推荐
+  - AI Skill
+  - 月下灯市
+  - Astro
+  - 交互设计
+---
+
+import MarketPage from "../../components/lantern/MarketPage.astro";
+
+<MarketPage>
+
+> 君子生非异也，善假于物也。——《荀子·劝学》
+
+灯是水里的器，器是手上的灯。十三件工具各有各的脾气，凑在一处，正好是四种活物：有的轻快，有的沉稳，有的通透，有的立得住。我把它们一并放进这片湖，月亮挂在右上角，替你看管这份安静。
+
+于是有了这一页：**十三盏灯在湖面上自己游动、彼此让路，悬停停下来说一句来历，点一下炸开一簇金色烟花，烟花散尽它就去了该去的地方。** 首屏那座湖里没有一张图片——湖、月、光束、波纹、烟花，全是当场画出来的。
+
+## 一、小鱼花灯 · 轻快灵动
+
+游得最快、最不肯停的一类。适合那些**要即时响应**的工具：一句话下去，立刻动手，不多问。
+
+### superpowers · 代码自律班长
+
+- 链接：[github.com/obra/superpowers](https://github.com/obra/superpowers)
+
+它管的不是"写得多漂亮"，而是**不让你跳步**。动笔之前先逼你把思路摊开，写完自动跑测试、读报错、自己回头修，直到整条闭环合上。人手写代码最容易塌的地方——想了就写、写完不验——它一根一根钉住。适合接手陌生模块、或者修那种"看起来改了其实没改对"的 bug。
+
+### hermes-agent · 越用越懂你的搭子
+
+- 链接：[github.com/NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)
+
+大部分工具的默认值是出厂设定，它偏要**跟着你改**：你反复强调的偏好、你习惯的收尾方式，会被它记下来，下一次不必重新交代。用得越久越顺手，代价是前期要肯花几轮把话说清楚——像带一个新人，头两周烦，之后省。
+
+### ponytail · 拒绝废话代码侠
+
+- 链接：[github.com/DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail)
+
+它治的是**过度设计**：能一行写完的不铺五十行，不会为"以后可能要"提前造抽象层，删代码比加代码积极。做到这一点的前提是它得先把问题读透，否则小改动会落在错的地方——所以它同时要求"先读懂，再偷懒"。适合清理越写越厚的旧仓库。
+
+### i-have-adhd · 高效直出模式
+
+- 链接：[github.com/ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd)
+
+不碰代码，只改**输出格式**：首行直接给可执行动作，多步骤强制短列表，删掉开场寒暄和结尾祝福，长任务每轮标一次【已完成 / 待完成】。它的八条规则一句话讲完就是——把阅读成本压到最低。输入 `stop adhd mode` 才会退出该模式。
+
+## 二、贝壳花灯 · 沉稳开合
+
+一开一合，形状定了就不再变。留给**规范、模板、工程化**这一类：它们不追求快，追求每次结果都一样。
+
+### mattpocock/skills · 大佬私藏工具箱
+
+- 链接：[github.com/mattpocock/skills](https://github.com/mattpocock/skills)
+
+不是一套流程，是**一抽屉工具**：需求澄清、写 PRD、拆 issue、TDD、排错、代码评审各是一个独立 skill，用到哪个拿哪个，不插手你其余的活法。它跟"全家桶式方法论"是两种哲学——前者让你保有自己的节奏，代价是你得自己知道什么时候该伸手。
+
+### anthropics/skills · 官方原版说明书
+
+- 链接：[github.com/anthropics/skills](https://github.com/anthropics/skills)
+
+Anthropic 官方的 Agent Skill 范例集。它最大的用处不是拿来直接用，而是**当尺子量**：一个 skill 该写多细、什么时候拆分、什么该交给模型判断——看原版怎么写，比自己琢磨快得多。想自己动手写 skill，先读它。
+
+### Xtab · 浏览器效率新标签页
+
+- 链接：[xtab.app](https://xtab.app/)
+
+把浏览器新标签页换成一块工作台：书签、待办、快捷入口收在一屏里。它解决的是最日常的那点摩擦——每天几十次打开新标签页，每次都从空白开始，一年下来是笔不小的损耗。顺眼、不乱、不开会员也能用。
+
+## 三、水母花灯 · 通透柔和
+
+不争不抢，触须细长，能牵住很长的一段。对应**AI 记忆、学术写作与长周期**的事情：见效慢，但一旦挂上，就一直在那儿。
+
+### ECC · AI 全能打工仔
+
+- 链接：[github.com/affaan-m/ECC](https://github.com/affaan-m/ECC)
+
+内置记忆系统、用户习惯记录与安全校验三个模块。它不是单点工具，更像给 AI 助手加装的**底盘**：记忆管"记得住"，习惯管"像你"，安全校验管"别乱来"。适合把 AI 当长期搭子用的人——只当搜索框用，装了也是浪费。
+
+### ui-ux-pro-max · 页面颜值救星
+
+- 链接：[github.com/nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)
+
+内置风格库、配色方案与字体搭配，能按产品类型给出一整套设计建议，再回头校验布局与样式。它治的是**"功能都对，就是难看"**——配色、层级、间距这些说不清道理的地方，让规则库替你兜底。本站的深色与低饱和，也是照这套思路反复调出来的。
+
+### 千笔AI · 学术写作辅助
+
+- 链接：[qianbi.ai](https://qianbi.ai/)
+
+面向学生的学术工具：文献整理、论文润色、毕设思路辅助。它的定位很清楚——**帮你把想法说清楚**，而不是替你产生想法。开题卡住、文献堆成一团、文字干巴巴，它都能搭把手；结论与数据本身，仍然得你自己站得住。
+
+## 四、海星花灯 · 稳定立体
+
+五只角牢牢撑在湖底。留给**架构解析、复盘、旧项目梳理**：面对一坨看不懂的东西，先站稳，再动手。
+
+### karpathy skills · AI 翻车避雷手册
+
+- 链接：[github.com/multica-ai/andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills)
+
+把四条原则写进 AI 的默认姿势：**先想清楚、简单优先、只改该改的地方、用成功标准驱动执行**。它不是增强模型的能力，而是约束模型的冲动——别替你假设、别过度抽象、别顺手重构你没让它碰的代码。AI 写代码翻车，十次里有八次不是不会，是太急。
+
+### gstack · 单人创业特种兵
+
+- 链接：[github.com/garrytan/gstack](https://github.com/garrytan/gstack)
+
+把 AI 拆成一整队**专业角色**：产品定方向、设计控体验、工程保质量、QA 兜底，各自有明确的职责与产出，串成一条从想到发的流水线。它赌的是"分工"比"万能助手"更稳，适合一个人扛完整个产品的人——因为怕的从来不是写不出代码，是没人替你检查。
+
+### graphify · 祖传代码翻译官
+
+- 链接：[github.com/safishamsi/graphify](https://github.com/safishamsi/graphify)
+
+把代码、文档、图表一起读进去，建成一张**可查询的关系图谱**：谁调用谁、改这里会牵动什么、为什么当初这么设计。它回答的是 grep 回答不了的问题——grep 只能告诉你字符串在哪出现。接手祖传项目、做重构评估、给老板画架构图，它一次就能省下半天。
+
+## 几句提醒
+
+十三盏灯都指向站外，理由都在各自仓库里，我只做索引，不做背书。**第三方 skill 装进本机，等于让一个 AI 拿到你仓库的读写权限**——装之前翻一眼源码，确认它要什么权限、连哪些地址、许可证怎么写；涉及账号与密钥的工具，先想清楚值不值。链接为收录时核对，仓库改名或迁址请以官方为准。
+
+点击花灯的默认动作是新标签页打开，所以别在只装了半个心思的时候点它——这一页的烟花只有一簇，散完就散了。
+
+---
+
+**入夜之后，湖面替你收藏所有锋芒与星光。**
+
+<details>
+<summary>附录：若想要位图版素材（AI 绘图提示词）</summary>
+
+这一页的湖、月、灯、烟花都是当场画出来的，不加载任何图片——首屏因此只多几百字节。哪天想把它们换成真图，照下面的提示词出，**务必是透明背景 PNG、单一图层、无底色无边框**，否则贴到深蓝湖面上会露黑边。
+
+1. **月相四态（新月 / 上弦月 / 满月 / 残月）**：`transparent background PNG, a soft pale-blue moon disc, four phases, thin luminous rim, no background, no shadow box, low-saturation cyber-Chinese style, minimal tech`
+2. **金色细碎月光烟花粒子组**：`transparent background PNG, a small cluster of fine golden firework sparks, soft glow, elongated trails, moonlit gold, no background, particle sheet`
+3. **小鱼花灯**：`transparent background PNG, glowing paper lantern shaped like a slim carp, translucent cyan-gold membrane, thin luminous outlines, no background, minimal Chinese cyber-folk style`
+4. **贝壳花灯**：`transparent background PNG, glowing lantern shaped like a scallop shell, subtle ribs, calm golden-white light, no background, minimal`
+5. **水母花灯**：`transparent background PNG, glowing lantern shaped like a jellyfish, translucent violet dome with long trailing tentacles, no background, minimal`
+6. **海星花灯**：`transparent background PNG, glowing lantern shaped like a five-armed starfish, warm coral-gold light, stable and solid form, no background, minimal`
+7. **水面涟漪波纹**：`transparent background PNG, a thin expanding concentric ripple ring on water, faint blue-white line, no background`
+8. **玻璃拟态信息卡模板**：`transparent background PNG, frosted glass card, moonlit white inner glow, rounded corners, no fill, no background`
+9. **月光丁达尔光束**：`transparent background PNG, a soft volumetric moonlight shaft, faint blue-white, vertical, diffused edges, no background`
+
+出完统一压成 webp（有 alpha）再放进 `public/assets/`，并记得重跑 LQIP 生成脚本。
+
+</details>
+</MarketPage>
