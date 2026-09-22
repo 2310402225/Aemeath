@@ -80,6 +80,19 @@ let fxRaf = 0;
 let tail = 0;
 let cw = 0;
 let ch = 0;
+/**
+ * 画布比场地多出来的那一截（向上探进夜空的那段，见 CSS 里 .lantern-fx 的 top）。
+ * ⚠️ 场地的坐标（nodes 里的 y）是**相对场地**的，画布的坐标是**相对画布**的，
+ * 两者差着这一截 —— 把灯的位置换算成爆点时必须加上它，否则烟花会整体往上偏。
+ * 由 sizeCanvas() 从实测尺寸算出来，不跟 CSS 里的 clamp 重复维护。
+ */
+let fxHead = 0;
+/**
+ * 一朵烟花向上能炸多远（px）。乱射那档最快的粒子约 265px/s、寿命约 1.16s，
+ * 扣掉空气阻力与重力后实测约 180，取 200 留余量。
+ * ⚠️ 爆点离画布上沿不能比这个近，否则花瓣会被上沿切平（神报的那个 bug）。
+ */
+const BURST_REACH = 200;
 /** 下一朵自动烟花该在什么时候开 */
 let autoAt = 0;
 /** 每个色号一枚预渲染的光点。逐粒现画径向渐变太贵，13 张小图一次做好就够了。
@@ -150,6 +163,8 @@ function sizeCanvas() {
 	const dpr = Math.min(window.devicePixelRatio || 1, 2);
 	cw = r.width;
 	ch = r.height;
+	// 画布向上多探出来的那段（=场地之外的高度）。爆点换算与安全余量都要用它
+	fxHead = Math.max(0, ch - h);
 	c.width = Math.max(1, Math.round(cw * dpr));
 	c.height = Math.max(1, Math.round(ch * dpr));
 	const g = c.getContext("2d");
@@ -265,8 +280,11 @@ function burst(
 
 function autoBurst(now: number) {
 	autoAt = now + 2800 + Math.random() * 3800;
-	// 炸在湖面上空那片：场地自身就压在湖面之上，取它上三分之一
-	burst(cw * (0.12 + Math.random() * 0.76), ch * (0.04 + Math.random() * 0.3));
+	// 炸在湖面上空那片：场地自己就压在湖面之上，取它纵深的上三分之一。
+	// ⚠️ 两处换算别忘：① 场地的 y 加上 fxHead 才是画布的 y；
+	// ② 离画布上沿至少留一个 BURST_REACH，否则上半朵会被切平。
+	const want = fxHead + h * (0.08 + Math.random() * 0.32);
+	burst(cw * (0.12 + Math.random() * 0.76), Math.max(want, BURST_REACH));
 }
 
 /* ------------------------------------------------------------ 月相 */
@@ -517,16 +535,33 @@ function tap(i: number, ev: MouseEvent) {
 	}
 	if (launching !== null) return; // 一次只放飞一盏，免得两盏灯的定时器互相踩
 	const n = nodes[i];
+	/**
+	 * ⚠️ 新页必须在「用户手势」里**同步**开出来，这里只开一张空白页拿着句柄，
+	 * 动画演完再给它填地址。
+	 *
+	 * 原实现是等 2.5s 之后才 window.open —— 那会儿已经不在手势上下文里，
+	 * 浏览器按弹窗拦掉（返回 null），于是兜底的 location.href 把**博客自己**
+	 * 一起带走了（神报的 bug：博客所在界面也跟着跳）。
+	 * 预开之后博客这页全程不动，只是那张新页晚 2.5s 才拿到地址。
+	 */
+	const win = window.open("", "_blank");
+	if (win) {
+		// noopener 的等价写法：拿到句柄之后自己把 opener 断掉。
+		// 不能把 "noopener" 写进 features —— 那样 window.open 会返回 null，
+		// 拿不到句柄也就没法事后填地址了。
+		win.opener = null;
+		window.focus(); // 别让新页抢走焦点：这段升起—燃放的动画要在这边演完
+	}
 	launching = i;
 	close();
 	// 燃放对齐 keyframes 的 46%（2.3s × 0.46 ≈ 1.06s），正好在升到最高那口气上
 	launchTimer = window.setTimeout(() => {
-		if (n) burst(n.x, Math.max(12, n.y - size * 1.6));
+		// 同样要加 fxHead 换成画布坐标，并留够爆开的余量
+		if (n) burst(n.x, Math.max(BURST_REACH, fxHead + n.y - size * 1.6));
 	}, 1060);
 	navTimer = window.setTimeout(() => {
-		// ponytail: 延迟打开的窗口 Safari 可能判成弹窗；被挡就退回本页跳转，别让人卡死
-		const win = window.open(url, "_blank", "noopener,noreferrer");
-		if (!win) location.href = url;
+		if (win && !win.closed) win.location.href = url;
+		else location.href = url; // 预开就被拦（弹窗拦截器全关）才退化成当前页跳转
 		launching = null; // 交给 .lantern 上的 opacity 过渡慢慢淡回来
 	}, 2500);
 }
@@ -543,7 +578,11 @@ function onDocClick(ev: MouseEvent) {
 	const inCanvas = x > 0 && y > 0 && x < r.width && y < r.height;
 	burst(
 		inCanvas ? x : cw * (0.15 + Math.random() * 0.7),
-		inCanvas ? y : ch * (0.1 + Math.random() * 0.45),
+		// 竖向也要留够爆开的余量：点在画布很靠上的地方（天际线附近）时往下让一让，
+		// 否则上半朵还是会被上沿切平 —— 宁可炸得比手指低一点，也别炸出个平顶
+		inCanvas
+			? Math.max(y, BURST_REACH)
+			: Math.max(fxHead + h * (0.1 + Math.random() * 0.45), BURST_REACH),
 	);
 }
 
@@ -970,6 +1009,9 @@ $effect(() => {
 		left: 0;
 		pointer-events: none;
 		z-index: 3;
+		/* 烟花画布向上探进夜空的高度 —— 给花瓣爆开留的余量，见 .lantern-fx。
+		   写成变量是因为 top 和 height 两处都要用它，函数式写法会漂。 */
+		--fx-head: clamp(6rem, 20vh, 11rem);
 	}
 
 	/* --lum（灯的整体明暗）与 --moonf（月亮的存在感）都由 paintMoon 直接写到这个元素上：
@@ -979,9 +1021,17 @@ $effect(() => {
 
 	.lantern-fx {
 		position: absolute;
-		inset: 0;
+		/* ⚠️ 画布必须比场地「高出一截」（向上探进夜空），这段余量是给烟花爆开用的：
+		   爆点上方没有余量的话，花瓣会被画布上沿一刀切平 —— 上半朵烟花直接消失。
+		   JS 侧由 fxHead（= 画布高 - 场地高）读出这段，爆点换算与安全余量都用它。 */
+		top: calc(-1 * var(--fx-head));
+		left: 0;
+		/* ⚠️ canvas 是**替换元素**：尺寸写 auto 时它会用固有尺寸 300×150，
+		   而绝对定位下 bottom:0 会被直接忽略（过渡约束时 bottom 让位）——
+		   高度只有 150px、宽度只有 300px，烟花全挤到左上角去。
+		   所以宽度和高度都必须显式给，不能用 left/right/top/bottom 去撑。 */
 		width: 100%;
-		height: 100%;
+		height: calc(100% + var(--fx-head));
 		pointer-events: none;
 		z-index: 4;
 	}
