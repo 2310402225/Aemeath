@@ -31,8 +31,19 @@ export const DEFAULT_SYMMETRY_COUNT = 6; // 原站默认 6 份
 export const MIN_SYMMETRY_COUNT = 2;
 export const MAX_SYMMETRY_COUNT = 12;
 
-/** 螺旋模式每复制一份就往里收一点。0.94 是「看得出来、又不打结」的值 */
-const SPIRAL_FALLOFF = 0.94;
+/**
+ * 螺旋模式收到最里面那份，半径还剩多少。
+ *
+ * ⚠️ 以前是「每份固定 ×0.94」—— 写着「看得出来、又不打结」，实测两头都没做到：
+ * 六份的收束总共只有 0.73，相邻两份半径差 6%，而线本身就有 3~7px 宽，
+ * 于是六份**叠成一条毛边**。屏幕上看到的是一笔被描了六遍（重影 + 台阶 + 断口），
+ * 不是螺旋。收束幅度必须**明显大于笔画自身的宽度**，份与份才分得开。
+ *
+ * 而且它得随份数走：写死比例的话，12 份会一路收到 0.86^11 ≈ 8%，
+ * 中心糊成一个疙瘩。给「最里那份落在 1/4 处」这个**端点**，步长自己算出来 ——
+ * 换份数不用回来改常数。
+ */
+const SPIRAL_INNER = 0.25;
 
 /** 单根丝缕的基准透明度；原站在 0.15~0.25 之间，取中 */
 export const STROKE_ALPHA = 0.2;
@@ -64,7 +75,8 @@ export function copyCount(mode: SymmetryMode, count: number): number {
  *
  * - none   ：只有一份，原样
  * - mirror ：每份都成对出现 —— 一份原样、一份水平镜像（m=-1），再整体按份数均分旋转
- * - spiral ：每份均分旋转，同时半径按 k^i 往中心收，于是线条向内收敛成螺旋
+ * - spiral ：每份均分旋转，半径同时按步长往中心收，线条向内收敛成螺旋。
+ *            步长由 SPIRAL_INNER 反推：第 0 份在原半径、第 count-1 份落在 1/4 处。
  */
 export function copyTransform(
 	mode: SymmetryMode,
@@ -80,9 +92,11 @@ export function copyTransform(
 			m: i % 2 === 0 ? 1 : -1,
 		};
 	}
+	// 只有一份时 steps 会是 0 —— 那会让 i/steps 变成 NaN，整条线一个点都画不出来
+	const steps = Math.max(1, count - 1);
 	return {
 		a: (i * Math.PI * 2) / count,
-		k: SPIRAL_FALLOFF ** i,
+		k: SPIRAL_INNER ** (i / steps),
 		m: 1,
 	};
 }
