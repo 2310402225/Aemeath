@@ -1,0 +1,734 @@
+---
+// 丝缕四面体外壳：五个场景（枢纽 + A/B/C 画布 + D 壁纸）全在一个页面里，正文走 <slot />。
+//
+// 为什么需要这个 .astro（和月下灯市同一个理由）：fullBleed 分支绕开 MainGridLayout，
+// 站点的樱花／壁纸／顶部渐变会糊在画面上，要压掉它们只能用 global 样式 ——
+// 而 <style is:global> 必须用 :has(#silk-page) 钉住作用域，否则会被打进全站 CSS 误伤别的页面。
+//
+// 场景切换、绘画引擎都在 ./silk-scenes.ts 里，这里只搭台子、写样式、挂载。
+---
+
+<section class="silk-stage" id="silk-stage">
+	<!-- 场景层整块做一次底部遮罩：底部渐隐到透明，页面背景自然露出来，不留横贯全宽的硬接缝。
+	     HUD 在遮罩外面，不跟着变淡。 -->
+	<div class="silk-scene">
+		<canvas id="silk-ambient" class="silk-layer" aria-hidden="true"></canvas>
+
+		<!-- 枢纽：一整颗由发光粒子构成的正四面体 -->
+		<div class="silk-hub-stage" id="silk-hub-stage">
+			<canvas id="silk-hub-canvas" class="silk-layer"></canvas>
+			<div class="silk-intro" id="silk-intro">
+				<p class="silk-kicker">载尘望星 · 交互生成艺术</p>
+				<h1 class="silk-h1">丝缕<span>四面体</span></h1>
+				<p class="silk-sub">Silk-Tetrahedron</p>
+				<p class="silk-hubhint">拖动旋转，看它的四个面 · 点一面进去 · 或掷右下角的骰子</p>
+			</div>
+		</div>
+
+		<!-- A / B / C 画布：几何与对称完全共用，只换渲染层 -->
+		<div class="silk-paint-stage" id="silk-paint-stage" hidden>
+			<canvas id="silk-paint-canvas" class="silk-layer"></canvas>
+			<div class="silk-hint" id="silk-hint">
+				<p class="silk-hint-title">丝</p>
+				<p class="silk-hint-sub">交互生成艺术</p>
+				<p class="silk-hint-keys">
+					<span>空格</span>从头再织
+					<span>Z</span>退回一笔
+				</p>
+				<p class="silk-hint-line">试试别的颜色，别的对称</p>
+				<p class="silk-hint-call">去吧，织奇之人，扬丝作浪者</p>
+			</div>
+		</div>
+
+		<!-- D 面：整张壁纸被拆成一片光粒（WebGL）。这一面没有画笔，只有扰动 -->
+		<div class="silk-wall-stage" id="silk-wall-stage" hidden>
+			<canvas id="silk-wall-canvas" class="silk-layer"></canvas>
+			<p class="silk-wall-hint" id="silk-wall-hint">
+				你可以扰动这些光粒，但它们终将回到自己的位置。
+			</p>
+		</div>
+	</div>
+
+	<!-- 返回箭头（每个子场景都有，枢纽上没有） -->
+	<button type="button" class="silk-back" id="silk-back" hidden aria-label="返回丝缕四面体枢纽">
+		<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+			<path
+				d="M15 5 L8 12 L15 19"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.6"
+				stroke-linecap="round"
+				stroke-linejoin="round"></path>
+		</svg>
+	</button>
+	<p class="silk-title" id="silk-scene-title" hidden></p>
+
+	<!-- 出处标注：只在三张画布上出现，底部中央 -->
+	<p class="silk-credit" id="silk-credit" hidden>Recreated from the original WeaveSilk · Canvas 2D</p>
+
+	<!-- 骰子：本身也是由粒子聚成的（每个点是一小簇圆点），和四面体同一个视觉语言 -->
+	<button type="button" class="silk-dice" id="silk-dice" aria-label="掷骰子，随机进入一个面">
+		<svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true">
+			<g class="silk-dice-pips">
+				<circle cx="20" cy="20" r="6.5" /><circle cx="20" cy="20" r="2.4" />
+				<circle cx="44" cy="20" r="6.5" /><circle cx="44" cy="20" r="2.4" />
+				<circle cx="20" cy="44" r="6.5" /><circle cx="20" cy="44" r="2.4" />
+				<circle cx="32" cy="32" r="6.5" /><circle cx="32" cy="32" r="2.4" />
+				<circle cx="44" cy="44" r="6.5" /><circle cx="44" cy="44" r="2.4" />
+			</g>
+		</svg>
+	</button>
+
+	<!-- 绘画工具面板：只在 A/B/C 出现 -->
+	<div class="silk-panel" id="silk-panel" hidden>
+		<div class="silk-palette" id="silk-palette" role="group" aria-label="颜色（把一个色块拖到另一个上可以混色）"></div>
+		<label class="silk-field">
+			<span class="silk-field-label">对称</span>
+			<select id="silk-sym" aria-label="对称方式"></select>
+		</label>
+		<label class="silk-field">
+			<span class="silk-field-label">份数</span>
+			<input id="silk-count" type="range" aria-label="对称份数" />
+		</label>
+		<label class="silk-field" id="silk-glitch-row" hidden>
+			<span class="silk-field-label">故障</span>
+			<input id="silk-glitch" type="range" min="0" max="100" value="35" aria-label="故障偏移强度" />
+		</label>
+		<button type="button" class="silk-icon-btn" id="silk-sound" aria-pressed="true" aria-label="音效开关">
+			<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+				<path
+					d="M4 9h3l5-4v14l-5-4H4z"
+					fill="currentColor"></path>
+				<path
+					d="M16 8.5a5 5 0 0 1 0 7"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"></path>
+			</svg>
+		</button>
+		<button type="button" class="silk-icon-btn" id="silk-save" aria-label="保存为 PNG">
+			<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+				<path
+					d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.6"
+					stroke-linecap="round"
+					stroke-linejoin="round"></path>
+			</svg>
+		</button>
+	</div>
+
+	<!-- 换场景时压一层，避免看到画面切换的瞬间 -->
+	<div class="silk-fade" id="silk-fade" aria-hidden="true"></div>
+
+	<!-- 键盘／读屏用户的入口：视觉上藏起来，但不影响上面的艺术性 -->
+	<nav class="sr-only" aria-label="四面体的四个面">
+		<a href="#a">A 面 · 原版 Silk 丝缕</a>
+		<a href="#b">B 面 · Pixel-Silk 像素</a>
+		<a href="#c">C 面 · Cyber-Silk 赛博</a>
+		<a href="#d">D 面 · 归境 粒子壁纸</a>
+	</nav>
+</section>
+
+<article class="silk-article">
+	<div class="silk-article-inner prose prose-base dark:prose-invert max-w-none!">
+		<slot />
+	</div>
+</article>
+
+<script>
+	import { createSilkApp, type SilkApp } from "./silk-scenes";
+
+	// swup 做客户端导航时，本页可能是换内容进来而不是整页加载 ——
+	// 模块只会执行一次，所以挂载写成幂等的，并且在内容被换掉前把上一个实例拆干净。
+	let app: SilkApp | null = null;
+
+	function boot() {
+		const root = document.getElementById("silk-page") ?? document.getElementById("silk-stage");
+		if (!root || app) return;
+		app = createSilkApp(root as HTMLElement);
+	}
+
+	function teardown() {
+		app?.destroy();
+		app = null;
+	}
+
+	boot();
+	document.addEventListener("swup:contentReplaced", boot);
+	document.addEventListener("swup:page:view", boot);
+	document.addEventListener("swup:willReplaceContent", teardown);
+</script>
+
+<style is:global>
+	/* 首屏是自己的深色画布，站点的樱花／壁纸／顶部渐变／欢迎条会糊在上面。
+	     用 :has() 钉住作用域（页面里有 #silk-stage 时才生效），否则这份 global 样式
+	     会被打进全站 CSS，在别的页面误伤。 */
+	html:has(#silk-stage) #canvas_sakura,
+	html:has(#silk-stage) welcome-toast,
+	html:has(#silk-stage) #page-background-decoration,
+	html:has(#silk-stage) top-gradient-highlight,
+	html:has(#silk-stage) #wallpaper-wrapper {
+		display: none !important;
+	}
+</style>
+
+<style>
+	.silk-stage {
+		position: relative;
+		height: 100svh;
+		min-height: 34rem;
+		overflow: hidden;
+		/* 底色必须和场景层的遮罩（下面 .silk-scene 那条）用同一条曲线渐隐到透明，
+		   否则底部会露出一条硬接缝 —— 浅色场景在白页上会看到一道黑边。
+		   渐隐之后露出来的是页面自己的底色，明暗主题都不用管。 */
+		background: linear-gradient(to bottom, #07070d 0 90%, transparent 100%);
+		/* 深底上的文字统一走这两个变量，浅色场景只改变量值 */
+		--silk-fg: rgb(232 238 255 / 0.92);
+		--silk-fg-dim: rgb(190 204 240 / 0.55);
+		--silk-fg-faint: rgb(176 192 232 / 0.34);
+		--silk-panel-bg: rgb(10 12 24 / 0.42);
+		--silk-panel-line: rgb(150 176 240 / 0.16);
+		color: var(--silk-fg);
+	}
+
+	.silk-stage.is-light {
+		background: linear-gradient(to bottom, #fff 0 90%, transparent 100%);
+		--silk-fg: rgb(28 28 34 / 0.82);
+		--silk-fg-dim: rgb(52 52 64 / 0.55);
+		--silk-fg-faint: rgb(60 60 72 / 0.4);
+		--silk-panel-bg: rgb(255 255 255 / 0.6);
+		--silk-panel-line: rgb(0 0 0 / 0.1);
+	}
+
+	/* 场景层整块渐隐到透明，页面背景（浅色主题是白）自然露出来 */
+	.silk-scene {
+		position: absolute;
+		inset: 0;
+		-webkit-mask-image: linear-gradient(to bottom, #000 0 90%, transparent 100%);
+		mask-image: linear-gradient(to bottom, #000 0 90%, transparent 100%);
+	}
+
+	.silk-layer {
+		position: absolute;
+		inset: 0;
+		display: block;
+		width: 100%;
+		height: 100%;
+		/* 触摸拖拽要用来作画／旋转，不能留给页面滚动 */
+		touch-action: none;
+	}
+
+	#silk-ambient {
+		opacity: 0.5;
+	}
+
+	.silk-hub-stage,
+	.silk-paint-stage,
+	.silk-wall-stage {
+		position: absolute;
+		inset: 0;
+	}
+
+	/* 画布本身是**透明**的，底色来自这里 —— 因为 "lighter" 混合在不透明白底上
+	   会把颜色一路加到白、什么都画不出来。原站也是"透明画布 + 页面白底"。 */
+	.silk-paint-stage {
+		background: #0a0a12;
+	}
+
+	.silk-stage.is-light .silk-paint-stage {
+		background: #fff;
+	}
+
+	/* C 面的暗网格背景（spec 里的"可选"）：纯 CSS 贴一层，零 JS、撤销也擦不掉它 */
+	.silk-stage[data-kind="cyber"] .silk-paint-stage {
+		background-image:
+			linear-gradient(rgb(120 200 255 / 0.055) 1px, transparent 1px),
+			linear-gradient(90deg, rgb(120 200 255 / 0.055) 1px, transparent 1px);
+		background-size: 34px 34px;
+	}
+
+	/* ---------------------------------------------------------- 枢纽文案 */
+
+	.silk-intro {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: clamp(4.5rem, 13vh, 8.5rem);
+		text-align: center;
+		pointer-events: none;
+	}
+
+	.silk-kicker {
+		margin: 0 0 0.85rem;
+		font-size: 0.68rem;
+		letter-spacing: 0.34em;
+		color: var(--silk-fg-faint);
+	}
+
+	.silk-h1 {
+		margin: 0;
+		font-size: clamp(2rem, 5.4vw, 3.4rem);
+		line-height: 1.1;
+		font-weight: 600;
+		letter-spacing: 0.16em;
+		color: var(--silk-fg);
+		text-shadow: 0 0 40px rgb(140 176 255 / 0.18);
+	}
+
+	.silk-h1 span {
+		color: var(--silk-fg-dim);
+	}
+
+	.silk-sub {
+		margin: 0.7rem 0 0;
+		font-size: 0.72rem;
+		letter-spacing: 0.3em;
+		color: var(--silk-fg-faint);
+	}
+
+	.silk-hubhint {
+		margin: 1.5rem 0 0;
+		font-size: 0.72rem;
+		letter-spacing: 0.06em;
+		color: var(--silk-fg-faint);
+	}
+
+	/* ---------------------------------------------------------- 画布引导文字 */
+
+	.silk-hint {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 42%;
+		transform: translateY(-50%);
+		text-align: center;
+		pointer-events: none;
+		transition: opacity 1.4s ease;
+	}
+
+	/* 第一次拖拽作画之后就淡出，不再出现 */
+	.silk-hint.is-gone {
+		opacity: 0;
+	}
+
+	.silk-hint p {
+		margin: 0;
+		font-weight: 300;
+		letter-spacing: 0.08em;
+		color: var(--silk-fg-dim);
+	}
+
+	.silk-hint-title {
+		font-size: clamp(2.4rem, 6vw, 3.6rem);
+		letter-spacing: 0.5em !important;
+		text-indent: 0.5em;
+		color: var(--silk-fg) !important;
+	}
+
+	.silk-hint-sub {
+		margin-top: 0.5rem !important;
+		font-size: 0.86rem;
+		letter-spacing: 0.24em !important;
+	}
+
+	.silk-hint-keys {
+		margin-top: 2.4rem !important;
+		font-size: 0.8rem;
+		line-height: 2.1;
+	}
+
+	.silk-hint-keys span {
+		display: inline-block;
+		min-width: 3.4em;
+		margin-right: 0.7em;
+		padding: 0.05em 0.5em;
+		border: 1px solid var(--silk-panel-line);
+		border-radius: 0.35em;
+		font-size: 0.9em;
+		color: var(--silk-fg);
+	}
+
+	.silk-hint-line {
+		margin-top: 1.8rem !important;
+		font-size: 0.8rem;
+	}
+
+	.silk-hint-call {
+		margin-top: 1.1rem !important;
+		font-size: 0.86rem;
+		letter-spacing: 0.16em !important;
+		color: var(--silk-fg) !important;
+	}
+
+	/* ---------------------------------------------------------- D 面文案 */
+
+	/* 位置必须留在遮罩还够实的地方（场景层在 90% 处才开始淡出），
+	   压在 bottom:0 附近会被遮罩一起抹掉，什么都看不见。 */
+	.silk-wall-hint {
+		position: absolute;
+		left: 50%;
+		bottom: clamp(4rem, 11vh, 7rem);
+		transform: translateX(-50%);
+		z-index: 5;
+		margin: 0;
+		max-width: min(88%, 32rem);
+		text-align: center;
+		font-size: 0.76rem;
+		font-weight: 300;
+		letter-spacing: 0.16em;
+		line-height: 2;
+		color: var(--silk-fg-dim);
+		text-shadow: 0 0 20px rgb(0 0 0 / 0.9);
+		pointer-events: none;
+	}
+
+	/* ---------------------------------------------------------- 返回 / 骰子 */
+
+	.silk-back {
+		position: absolute;
+		left: clamp(0.9rem, 3vw, 1.8rem);
+		top: clamp(0.9rem, 3vh, 1.8rem);
+		z-index: 6;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 46px;
+		height: 46px;
+		border: 1px solid var(--silk-panel-line);
+		border-radius: 999px;
+		background: var(--silk-panel-bg);
+		-webkit-backdrop-filter: blur(10px);
+		backdrop-filter: blur(10px);
+		color: var(--silk-fg);
+		cursor: pointer;
+		transition:
+			transform 220ms ease,
+			border-color 220ms ease;
+	}
+
+	.silk-back:hover {
+		transform: translateX(-3px);
+		border-color: rgb(150 176 240 / 0.4);
+	}
+
+	.silk-title {
+		position: absolute;
+		left: clamp(3.6rem, 8vw, 4.6rem);
+		top: clamp(0.9rem, 3vh, 1.8rem);
+		z-index: 6;
+		display: flex;
+		align-items: center;
+		height: 46px;
+		margin: 0;
+		font-size: 0.72rem;
+		letter-spacing: 0.22em;
+		color: var(--silk-fg-faint);
+		pointer-events: none;
+	}
+
+	.silk-dice {
+		position: absolute;
+		right: clamp(1rem, 3.5vw, 2.2rem);
+		bottom: clamp(1rem, 3.5vh, 2.2rem);
+		z-index: 6;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 62px;
+		height: 62px;
+		border: 1px solid var(--silk-panel-line);
+		border-radius: 18px;
+		background: var(--silk-panel-bg);
+		-webkit-backdrop-filter: blur(10px);
+		backdrop-filter: blur(10px);
+		color: rgb(186 214 255 / 0.9);
+		cursor: pointer;
+		transition:
+			border-color 220ms ease,
+			transform 220ms ease;
+	}
+
+	.silk-dice:hover {
+		border-color: rgb(150 176 240 / 0.45);
+		transform: translateY(-2px);
+	}
+
+	/* 骰子由粒子聚成：外圈是光晕、内芯是亮点，缓慢呼吸 */
+	.silk-dice-pips circle:nth-child(odd) {
+		fill: currentColor;
+		opacity: 0.28;
+		filter: blur(1.6px);
+	}
+
+	.silk-dice-pips circle:nth-child(even) {
+		fill: rgb(240 248 255 / 0.95);
+	}
+
+	.silk-dice-pips {
+		animation: silk-dice-breathe 3.6s ease-in-out infinite;
+		transform-origin: 32px 32px;
+	}
+
+	.silk-dice.is-rolling .silk-dice-pips {
+		animation:
+			silk-dice-breathe 3.6s ease-in-out infinite,
+			silk-dice-roll 1.7s cubic-bezier(0.2, 0.9, 0.1, 1) 1;
+	}
+
+	@keyframes silk-dice-breathe {
+		0%,
+		100% {
+			opacity: 0.78;
+		}
+		50% {
+			opacity: 1;
+		}
+	}
+
+	@keyframes silk-dice-roll {
+		from {
+			transform: rotate(0deg) scale(1);
+		}
+		55% {
+			transform: rotate(300deg) scale(1.16);
+		}
+		to {
+			transform: rotate(360deg) scale(1);
+		}
+	}
+
+	/* ---------------------------------------------------------- 工具面板 */
+
+	.silk-panel {
+		position: absolute;
+		right: clamp(1rem, 3.5vw, 2.2rem);
+		bottom: clamp(1rem, 3.5vh, 2.2rem);
+		z-index: 6;
+		display: flex;
+		align-items: center;
+		gap: 0.85rem;
+		padding: 0.55rem 0.9rem;
+		border: 1px solid var(--silk-panel-line);
+		border-radius: 999px;
+		background: var(--silk-panel-bg);
+		-webkit-backdrop-filter: blur(12px);
+		backdrop-filter: blur(12px);
+	}
+
+	.silk-palette {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	.silk-swatch {
+		--h: 0;
+		width: 26px;
+		height: 26px;
+		padding: 0;
+		border: 1px solid rgb(255 255 255 / 0.28);
+		border-radius: 999px;
+		background: hsl(var(--h) 88% 62%);
+		cursor: pointer;
+		transition:
+			transform 200ms ease,
+			box-shadow 200ms ease;
+	}
+
+	.silk-stage.is-light .silk-swatch {
+		border-color: rgb(0 0 0 / 0.14);
+	}
+
+	.silk-swatch:hover {
+		transform: scale(1.12);
+	}
+
+	.silk-swatch.is-active {
+		transform: scale(1.2);
+		box-shadow: 0 0 0 2px rgb(255 255 255 / 0.7);
+	}
+
+	.silk-stage.is-light .silk-swatch.is-active {
+		box-shadow: 0 0 0 2px rgb(0 0 0 / 0.5);
+	}
+
+	.silk-swatch.is-drag {
+		transform: scale(1.3);
+		opacity: 0.72;
+	}
+
+	.silk-swatch.is-mixed {
+		animation: silk-mix 420ms ease;
+	}
+
+	@keyframes silk-mix {
+		50% {
+			transform: scale(1.5);
+		}
+	}
+
+	.silk-field {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		font-size: 0.68rem;
+		letter-spacing: 0.1em;
+		color: var(--silk-fg-dim);
+		white-space: nowrap;
+	}
+
+	.silk-field-label {
+		user-select: none;
+	}
+
+	.silk-field select {
+		padding: 0.25rem 0.4rem;
+		border: 1px solid var(--silk-panel-line);
+		border-radius: 0.5rem;
+		background: transparent;
+		color: var(--silk-fg);
+		font-size: 0.68rem;
+	}
+
+	.silk-field select option {
+		color: #111;
+	}
+
+	.silk-field input[type="range"] {
+		width: 78px;
+		accent-color: hsl(210 90% 62%);
+	}
+
+	.silk-icon-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 34px;
+		height: 34px;
+		padding: 0;
+		border: 1px solid var(--silk-panel-line);
+		border-radius: 999px;
+		background: transparent;
+		color: var(--silk-fg);
+		cursor: pointer;
+		transition: opacity 200ms ease;
+	}
+
+	.silk-icon-btn.is-off {
+		opacity: 0.38;
+	}
+
+	/* 焦点的可见性不许省 —— 键盘用户靠它 */
+	.silk-back:focus-visible,
+	.silk-dice:focus-visible,
+	.silk-swatch:focus-visible,
+	.silk-icon-btn:focus-visible,
+	.silk-field select:focus-visible,
+	.silk-field input:focus-visible {
+		outline: 2px solid rgb(120 190 255 / 0.9);
+		outline-offset: 2px;
+	}
+
+	/* ---------------------------------------------------------- 换场遮罩 */
+
+	.silk-fade {
+		position: absolute;
+		inset: 0;
+		z-index: 8;
+		background: #07070d;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity 250ms ease;
+	}
+
+	.silk-fade.is-light {
+		background: #ffffff;
+	}
+
+	.silk-fade.is-on {
+		opacity: 1;
+	}
+
+	/* ---------------------------------------------------------- 底部标注 + 正文 */
+
+	/* 出处标注在遮罩外面、压在页面底色上，所以它的配色要跟**页面主题**走，
+	   不能跟场景的深浅走 —— C 面是深色场景，浅色页下用浅色字就彻底看不见了。 */
+	.silk-credit {
+		position: absolute;
+		left: 50%;
+		bottom: 0.7rem;
+		transform: translateX(-50%);
+		z-index: 6;
+		margin: 0;
+		font-size: 0.58rem;
+		letter-spacing: 0.04em;
+		color: rgb(96 102 122 / 0.62);
+		pointer-events: none;
+		white-space: nowrap;
+	}
+
+	:global(html.dark) .silk-credit {
+		color: rgb(178 190 218 / 0.42);
+	}
+
+	.silk-article {
+		position: relative;
+		z-index: 1;
+	}
+
+	/* 正文容器写在组件模板里（而不是 slot 内容），作用域哈希才管得住 */
+	.silk-article-inner {
+		width: min(760px, calc(100% - 2.5rem));
+		margin: 0 auto;
+		padding: clamp(2.4rem, 6vh, 4.4rem) 0 clamp(4rem, 10vh, 7rem);
+	}
+
+	.silk-article-inner :global(h2) {
+		margin-top: 2.6em;
+	}
+
+	.silk-article-inner :global(h2:first-child) {
+		margin-top: 0;
+	}
+
+	/* ---------------------------------------------------------- 窄屏 */
+
+	@media (max-width: 760px) {
+		.silk-panel {
+			left: 0.9rem;
+			right: 0.9rem;
+			bottom: 0.9rem;
+			justify-content: center;
+			flex-wrap: wrap;
+			gap: 0.6rem 0.8rem;
+			border-radius: 1.2rem;
+			padding: 0.7rem 0.9rem;
+		}
+
+		.silk-dice {
+			right: 0.9rem;
+			bottom: 0.9rem;
+			width: 56px;
+			height: 56px;
+		}
+
+		.silk-field input[type="range"] {
+			width: 64px;
+		}
+	}
+
+	/* 尊重系统的"减少动态效果" */
+	@media (prefers-reduced-motion: reduce) {
+		.silk-dice-pips,
+		.silk-dice.is-rolling .silk-dice-pips {
+			animation: none;
+		}
+
+		.silk-hint {
+			transition: opacity 200ms ease;
+		}
+	}
+</style>
