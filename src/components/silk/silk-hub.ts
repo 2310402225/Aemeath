@@ -75,7 +75,10 @@ function buildFaces(): FaceFrame[] {
 			.normalize();
 		// 外法线：一定背着原点
 		if (normal.dot(center) < 0) normal.negate();
-		const u = new THREE.Vector3().subVectors(a, center).normalize();
+		// 字形的朝向基准：拿**世界 +Y 在面内的投影**当字的上方，水平方向取它的正交补。
+		// ⚠️ 不要拿「指向三角形某个顶点」当基准 —— 那样四个面各歪一个角度
+		// （正对顶点轴时能歪到 40°），四个字谁也认不出来。
+		const u = new THREE.Vector3().crossVectors(AXIS_Y, normal).normalize();
 		const v = new THREE.Vector3().crossVectors(normal, u).normalize();
 		return { center, normal, u, v, tint: FACE_TINT[FACE_ORDER[f]] };
 	});
@@ -83,8 +86,10 @@ function buildFaces(): FaceFrame[] {
 
 const FACES = buildFaces();
 
-/** 字形在面上的缩放：±1 的字形坐标乘它。留了边距，别顶到三条棱 */
-const GLYPH_SCALE = 0.6;
+/** 字形在面上的缩放：±1 的字形坐标乘它。
+ *  面三角形的内切圆半径是 0.471（外接球半径 1 时），字形本身约占 ±0.97，
+ *  所以这里必须 ≤0.47，否则字会溢出到相邻的面上、四面的字糊成一团。 */
+const GLYPH_SCALE = 0.44;
 
 const VERT_SRC = /* glsl */ `
 	uniform float uTime;
@@ -190,6 +195,15 @@ export function createHub(canvas: HTMLCanvasElement, opts: HubOptions): Hub {
 	const group = new THREE.Group();
 	scene.add(group);
 
+	// 起始姿态：让 v0 大致朝向镜头、但**稍微偏一点**。
+	// 不转的话是「正对一条棱」的视角 —— 只看得到两个面、轮廓是个正方形，
+	// 读起来像一片色斑而不是一颗四面体；完全正对顶点轴又太对称、像枚徽章。
+	const HOME_Q = new THREE.Quaternion().setFromUnitVectors(
+		VERTS[0].clone().normalize(),
+		new THREE.Vector3(0.3, 0.44, 1).normalize(),
+	);
+	group.quaternion.copy(HOME_Q);
+
 	// 构图用的确定性伪随机：每次刷新长得一样，diff 才有意义
 	const rnd = mulberry32(20260924);
 
@@ -239,7 +253,7 @@ export function createHub(canvas: HTMLCanvasElement, opts: HubOptions): Hub {
 				.addScaledVector(c, 1 - s - t);
 			// 往内收一点，点云才有「壳」的厚度，而不是一层纸
 			p.addScaledVector(fr.normal, -0.03 - rnd() * 0.05);
-			push(p, fr.tint, 0.0075, f, fr.normal, 0.34);
+			push(p, fr.tint, 0.011, f, fr.normal, 0.29);
 		}
 
 		// 字形：面上的标识（绢 / 格 / 霓 / 归），比面色亮，浮在面外一点
@@ -250,7 +264,7 @@ export function createHub(canvas: HTMLCanvasElement, opts: HubOptions): Hub {
 				.addScaledVector(fr.u, glyph[i] * GLYPH_SCALE)
 				.addScaledVector(fr.v, glyph[i + 1] * GLYPH_SCALE)
 				.addScaledVector(fr.normal, 0.035);
-			push(p, fr.tint, 0.0155, f, fr.normal, 1.15);
+			push(p, fr.tint, 0.019, f, fr.normal, 1.0);
 		}
 	}
 
@@ -263,7 +277,7 @@ export function createHub(canvas: HTMLCanvasElement, opts: HubOptions): Hub {
 			for (let k = 0; k < 150; k++) {
 				const p = new THREE.Vector3().lerpVectors(a, b, k / 149);
 				p.addScaledVector(n, (rnd() - 0.5) * 0.02);
-				push(p, [1, 1, 1], 0.0085, -1, n, 0.92);
+				push(p, [1, 1, 1], 0.013, -1, n, 0.8);
 			}
 		}
 	}
@@ -276,7 +290,7 @@ export function createHub(canvas: HTMLCanvasElement, opts: HubOptions): Hub {
 			p.x += (rnd() - 0.5) * 0.06;
 			p.y += (rnd() - 0.5) * 0.06;
 			p.z += (rnd() - 0.5) * 0.06;
-			push(p, [1, 1, 1], 0.0105, -1, n, 1.25);
+			push(p, [1, 1, 1], 0.016, -1, n, 1.05);
 		}
 	}
 
@@ -288,7 +302,7 @@ export function createHub(canvas: HTMLCanvasElement, opts: HubOptions): Hub {
 			rnd() * 2 - 1,
 		).normalize();
 		const p = dir.clone().multiplyScalar(R * (1.25 + rnd() * 1.5));
-		push(p, [0.62, 0.7, 0.95], 0.006, -1, dir, 0.3);
+		push(p, [0.62, 0.7, 0.95], 0.008, -1, dir, 0.24);
 	}
 
 	const geo = new THREE.BufferGeometry();
@@ -594,6 +608,7 @@ export function createHub(canvas: HTMLCanvasElement, opts: HubOptions): Hub {
 		reset() {
 			flying = false;
 			camera.position.copy(REST);
+			group.quaternion.copy(HOME_Q);
 			active = -1;
 			uniforms.uActive.value = -1;
 			velX = velY = 0;

@@ -151,15 +151,22 @@ function segmentsOf(pts: number[], n: number) {
 /**
  * 把一笔画到 ctx 上。
  *
- * @param onlyLast true = 只画最新一段（作画中的增量渲染）；false = 整笔重画（撤销）
+ * @param only `false` = 整笔重画（撤销）；`true` = 只画最新一段；
+ *             传**数字** = 只画第 i 段（作画中补画刚完整的那一段，见下）
  * @param glitch   C 面的「故障偏移」力度 0~1，其余风格忽略
+ *
+ * ⚠️ 作画中的增量渲染**必须只画「已经完整」的段**。第 i 段的两端是
+ * 中点(P[i-1],P[i]) 和 中点(P[i],P[i+1])，也就是说它要等 P[i+1] 到位才算定形；
+ * 新点一到就画它，只能拿 P[i] 当终点凑合 —— 那样每一段都少画后半截，
+ * 采样稀疏（手快）时线是断的，一切面或一撤销又「补全」回来。
+ * 所以约定：新点 P[k] 到达时补画第 k-1 段，最后一段在抬手时画。
  */
 export function paintStroke(
 	ctx: CanvasRenderingContext2D,
 	stroke: Stroke,
 	cx: number,
 	cy: number,
-	onlyLast: boolean,
+	only: boolean | number = false,
 	kind: PaintKind = "silk",
 	glitch = 0,
 ): void {
@@ -168,7 +175,11 @@ export function paintStroke(
 
 	const total = copyCount(stroke.mode, stroke.count);
 	const seg = segmentsOf(stroke.pts, n);
-	const from = onlyLast ? n - 1 : 1;
+	const single = typeof only === "number" ? only : -1;
+	// 指定单段时必须落在 [1, n-1]：0 号段没有「上一个点」，越界会把 NaN 端点送进曲线
+	if (single !== -1 && (single < 1 || single >= n)) return;
+	const from = single !== -1 ? single : only === true ? n - 1 : 1;
+	const to = single !== -1 ? single + 1 : n;
 
 	ctx.save();
 	// 相加混合：单根很淡，重叠处自己堆出辉光
@@ -189,16 +200,42 @@ export function paintStroke(
 		);
 		ctx.fillStyle = ctx.strokeStyle;
 
-		for (let i = from; i < n; i++) {
+		for (let i = from; i < to; i++) {
 			const w = stroke.widths[i] ?? stroke.widths[n - 1] ?? 2;
 
 			if (kind === "pixel") {
-				// 像素风：一个点 → 一个硬方块，并且对齐到自身尺寸的网格上，才有 8bit 的颗粒感
+				// 像素风：沿**曲线**按 g 的间隔撒硬方块，并吸附到 g 的网格上，才有 8bit 颗粒感。
+				//
+				// ⚠️ 不能「一个采样点一个方块」：采样点之间隔着几十像素（手快时更远），
+				// 那样画出来是一串断点，不是一条像素线 —— 实测整幅画面只剩稀稀拉拉几颗豆子。
+				// 网格吸附在**局部坐标**里做，各份拷贝因此共用同一套网格，只是被旋转开。
 				const g = Math.max(2, Math.round(w * 1.9));
-				const x = Math.round((stroke.pts[i * 2] - cx) / g) * g;
-				const y = Math.round((stroke.pts[i * 2 + 1] - cy) / g) * g;
-				applyCopy(x, y, t, _p0);
-				ctx.fillRect(_p0[0] + cx - g / 2, _p0[1] + cy - g / 2, g, g);
+				const sg = seg.at(i);
+				const ax = sg[0] - cx;
+				const ay = sg[1] - cy;
+				const bx = sg[2] - cx;
+				const by = sg[3] - cy;
+				const ex = sg[4] - cx;
+				const ey = sg[5] - cy;
+				// 用控制多边形的长度估弧长，够定步数了；上限兜住极端的手速
+				const len = Math.hypot(bx - ax, by - ay) + Math.hypot(ex - bx, ey - by);
+				const steps = Math.max(1, Math.min(24, Math.ceil(len / g)));
+				for (let k = 0; k <= steps; k++) {
+					const tt = k / steps;
+					const u = 1 - tt;
+					const qx = u * u * ax + 2 * u * tt * bx + tt * tt * ex;
+					const qy = u * u * ay + 2 * u * tt * by + tt * tt * ey;
+					applyCopy(Math.round(qx / g) * g, Math.round(qy / g) * g, t, _p0);
+					// ⚠️ 落位后再对齐一次屏幕像素：镜像/螺旋会把方块转到小数坐标上，
+					// 那样每条边都被抗锯齿抹一道，就不是「硬边方块」了
+					// （自测的 soft 一栏能看出来：对齐前 0.42，对齐后接近 0）。
+					ctx.fillRect(
+						Math.round(_p0[0] + cx - g / 2),
+						Math.round(_p0[1] + cy - g / 2),
+						g,
+						g,
+					);
+				}
 				continue;
 			}
 

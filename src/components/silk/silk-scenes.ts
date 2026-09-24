@@ -82,7 +82,11 @@ function q<T extends Element>(root: ParentNode, sel: string): T {
 
 export type SilkApp = { destroy: () => void };
 
-export function createSilkApp(root: HTMLElement): SilkApp {
+// ⚠️ root 必须是**整个 document**，不能传 #silk-stage 元素本身。
+// 下面所有 q() 都是全页 id 查询，而 querySelector **只搜后代、不搜自己** ——
+// 传元素进来的话第一句 q(root, "#silk-stage") 就返回 null 并抛错，
+// 整个应用在构造函数的第 4 行死掉，页面上只剩写死在 HTML 里的文案和骰子。
+export function createSilkApp(root: ParentNode): SilkApp {
 	// ------------------------------------------------------------------ DOM
 	const stageEl = q<HTMLElement>(root, "#silk-stage");
 	const hubStage = q<HTMLElement>(root, "#silk-hub-stage");
@@ -398,8 +402,17 @@ function createPaint(deps: PaintDeps) {
 		current.pts.push(p.x, p.y);
 		current.widths.push(widthForSpeed(speed));
 		const { cx, cy } = center();
-		// 增量渲染：只画新进来的这一段
-		paintStroke(ctx, current, cx, cy, true, kind, glitch());
+		// 增量渲染：补画刚刚定形的那一段（第 k-1 段要等 P[k] 到位才算完整）。
+		// 用它的下标调 paintStroke —— 别改回「画最新一段」，那样每段都少后半截。
+		paintStroke(
+			ctx,
+			current,
+			cx,
+			cy,
+			current.pts.length / 2 - 2,
+			kind,
+			glitch(),
+		);
 		audio.paint(speed, current.hue);
 	}
 
@@ -411,7 +424,12 @@ function createPaint(deps: PaintDeps) {
 		} catch {
 			// 指针没了，忽略
 		}
-		if (current && current.pts.length >= 4) history.push(current);
+		// 抬手时补上最后一段：增量渲染一直留着它没画
+		if (current && current.pts.length >= 4) {
+			const { cx, cy } = center();
+			paintStroke(ctx, current, cx, cy, true, kind, glitch());
+			history.push(current);
+		}
 		current = null;
 	}
 
@@ -611,7 +629,7 @@ function createAmbient(canvas: HTMLCanvasElement) {
 				pts: [w / 2 + Math.cos(a0) * w * 0.44, h / 2 + Math.sin(a0) * h * 0.44],
 				widths: [34],
 				hue: randomHue(),
-				alpha: 0.05,
+				alpha: 0.04,
 				mode: "mirror",
 				count: 5,
 				hueStep: 12,

@@ -3,7 +3,7 @@
 //
 // 为什么需要这个 .astro（和月下灯市同一个理由）：fullBleed 分支绕开 MainGridLayout，
 // 站点的樱花／壁纸／顶部渐变会糊在画面上，要压掉它们只能用 global 样式 ——
-// 而 <style is:global> 必须用 :has(#silk-page) 钉住作用域，否则会被打进全站 CSS 误伤别的页面。
+// 而 <style is:global> 必须用 :has(#silk-stage) 钉住作用域，否则会被打进全站 CSS 误伤别的页面。
 //
 // 场景切换、绘画引擎都在 ./silk-scenes.ts 里，这里只搭台子、写样式、挂载。
 ---
@@ -146,9 +146,10 @@
 	let app: SilkApp | null = null;
 
 	function boot() {
-		const root = document.getElementById("silk-page") ?? document.getElementById("silk-stage");
-		if (!root || app) return;
-		app = createSilkApp(root as HTMLElement);
+		// 挂载根传 document（不是 #silk-stage 元素 —— 见 silk-scenes.ts 顶部的说明）。
+		// 这里只做一次「本页确实有这个组件」的存在性判断，顺便让 swup 换页后重挂。
+		if (app || !document.getElementById("silk-stage")) return;
+		app = createSilkApp(document);
 	}
 
 	function teardown() {
@@ -221,8 +222,11 @@
 		touch-action: none;
 	}
 
+	/* 枢纽底纹是背景，不能跟四面体抢戏：它是几十像素宽的加色笔画，
+	   在透明画布上一帧叠一帧，很容易积成一道道横扫全屏的亮带。
+	   0.34 是「看得出在流动、又不喧宾夺主」的值（0.5 会明显盖过粒子）。 */
 	#silk-ambient {
-		opacity: 0.5;
+		opacity: 0.34;
 	}
 
 	.silk-hub-stage,
