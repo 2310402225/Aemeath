@@ -15,17 +15,24 @@
 
 import { createHub, FACE_ORDER, type FaceKey } from "./silk-hub";
 import {
+	aimPen,
+	createPen,
 	DEFAULT_SYMMETRY_COUNT,
+	ERASE_ALPHA,
+	framePen,
 	MAX_SYMMETRY_COUNT,
 	MIN_SYMMETRY_COUNT,
 	type PaintKind,
+	type Pen,
 	paintStroke,
+	penAlive,
+	penFade,
 	randomHue,
+	STROKE_ALPHA,
 	type Stroke,
 	SYMMETRY_LABEL,
 	SYMMETRY_ORDER,
 	type SymmetryMode,
-	widthForSpeed,
 } from "./silk-symmetry";
 import { createWall } from "./silk-wall";
 
@@ -74,12 +81,6 @@ const SCENES: Record<
 };
 
 const FADE_MS = 250;
-
-/** 橡皮的线宽倍数：比画粗一档，擦起来才不用来回蹭 */
-const ERASE_WIDTH = 2.6;
-/** 橡皮一遍擦掉的比例。给 1 会「擦过即净」，但半透明叠出来的丝缕是软的，
- *  一遍抹平会留下生硬的缺口 —— 0.85 留一点余地，来回两下才彻底干净 */
-const ERASE_ALPHA = 0.85;
 
 function q<T extends Element>(root: ParentNode, sel: string): T {
 	const el = root.querySelector(sel);
@@ -345,11 +346,10 @@ function createPaint(deps: PaintDeps) {
 	// （早先给每面各存一份，结果同一个动作在三面出三种画，那就不是换皮、是三个软件了。）
 	const history: Stroke[] = [];
 	let kind: PaintKind = "silk";
-	let current: Stroke | null = null;
-	let drawing = false;
-	let lastX = 0;
-	let lastY = 0;
-	let lastT = 0;
+	/** 正在长的那一笔，和它那条链。抬手之后链还会自己走半秒，走完才落进 history */
+	let live: Stroke | null = null;
+	let pen: Pen | null = null;
+	let raf = 0;
 	let started = false;
 	let erasing = false;
 	let hue = randomHue();
@@ -358,17 +358,14 @@ function createPaint(deps: PaintDeps) {
 		return Number(deps.glitchEl.value) / 100;
 	}
 
-	/** 一笔的线宽：橡皮比画粗一档 */
-	function widthOf(erase: boolean, speed: number): number {
-		return widthForSpeed(speed) * (erase ? ERASE_WIDTH : 1);
-	}
-
 	function resize() {
 		const r = deps.stage.getBoundingClientRect();
 		const dpr = Math.min(window.devicePixelRatio || 1, 2);
 		canvas.width = Math.max(1, Math.round(r.width * dpr));
 		canvas.height = Math.max(1, Math.round(r.height * dpr));
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		// 重绘会把画布整个清掉 —— 正在长的那一笔会跟着没。先让它收笔落进历史。
+		finish();
 		redrawAll();
 	}
 
@@ -382,18 +379,92 @@ function createPaint(deps: PaintDeps) {
 		return { x: e.clientX - r.left, y: e.clientY - r.top };
 	}
 
+	/**
+	 * 收笔：把正在长的这一笔落进历史。
+	 *
+	 * 两个入口 —— 抬手之后链自己走完寿命（正常），以及「画到一半被 resize / 清空 /
+	 * 又落一笔打断」（防御）。两处都必须走它：不然那一笔既不在历史里、也没人再管它，
+	 * 撤销会去拿上一笔，看着像没反应。
+	 */
+	function finish() {
+		if (live && pen) {
+			// `live.snaps` **就是** pen.snaps 那个数组（故意共享，见 begin）；
+			// 这里不复制，直接把它交出去 —— pen 随即置空，没人再往里写。
+			// 只点了一下、一帧都没活到的那种「一笔」没有任何墨（每张快照只有 1 个点、
+			// 画不出线段），别占历史。
+			if (live.snaps.some((s) => s.length >= 4)) history.push(live);
+		}
+		live = null;
+		pen = null;
+	}
+
+	/**
+	 * 一帧：跑 STEPS_PER_FRAME 个子步，**每个子步之后**把刚定形的那一张快照补到画布上。
+	 *
+	 * 为什么不是「跑完一帧再画一遍」：丝缕的通透感与那层细密的丝理来自同一片地方
+	 * 被叠了几百遍、而每一遍只差约 1 像素。一帧只画一遍的话线是断的、还发灰；
+	 * 画成「每粒子自己的轨迹」则会在按住不动时冻住（见 `Pen.snaps` 那段）。
+	 */
+	function step() {
+		const p = pen;
+		const s = live;
+		if (!p || !s) {
+			raf = 0;
+			return;
+		}
+		// 场景被切走了就撒手。不判这一下的话，人已经走了笔还在一直生新粒子，
+		// 这条 rAF 永远停不下来（pointerup 在隐藏的页面上不一定还会来）。
+		if (deps.stage.hidden) p.held = false;
+
+		const { cx, cy } = center();
+		framePen(p, cx, cy, () => {
+			paintStroke(ctx, s, cx, cy, {
+				only: s.snaps.length - 1,
+				kind,
+				glitch: glitch(),
+				// 抬手之后最新那颗粒子的寿命一路往下走 → 整条链跟着淡出
+				fade: penFade(p),
+			});
+		});
+
+		if (p.held) {
+			// 笔尖这一帧跑了多远 —— 只喂给音效，让声音跟着手的快慢走
+			const th = p.snaps[p.snaps.length - 1];
+			const n = th ? th.length : 0;
+			audio.paint(
+				n >= 4
+					? Math.hypot(th[n - 2] - th[n - 4], th[n - 1] - th[n - 3]) * 5
+					: 0,
+				hue,
+			);
+		}
+
+		if (penAlive(p) > 0) raf = requestAnimationFrame(step);
+		else {
+			raf = 0;
+			finish();
+		}
+	}
+
+	function run() {
+		if (!raf) raf = requestAnimationFrame(step);
+	}
+
 	function begin(e: PointerEvent) {
 		audio.resume();
 		const p = pos(e);
-		drawing = true;
-		lastX = p.x;
-		lastY = p.y;
-		lastT = performance.now();
-		current = {
-			pts: [p.x, p.y],
-			widths: [widthOf(erasing, 0)],
+		// 上一笔还没走完（手快连点）就让它先收笔，别把两条链搅在一起
+		finish();
+		const fresh = createPen(p.x, p.y);
+		pen = fresh;
+		live = {
+			// ⚠️ 这里**故意是同一个数组对象**：笔每子步 push 一张快照进 pen.snaps，
+			// 而作画中要画的正是它（`only` 渲染）。收笔时 finish() 直接把它交给历史，
+			// pen 随即置空，两边不再共享任何东西。
+			// 给 `[]` 的话画面上会一片空白 —— 画的是空数组，谁也没往里面写。
+			snaps: fresh.snaps,
 			hue,
-			alpha: erasing ? ERASE_ALPHA : 0.2,
+			alpha: erasing ? ERASE_ALPHA : STROKE_ALPHA,
 			erase: erasing,
 			mode: deps.symEl.value as SymmetryMode,
 			count: Number(deps.countEl.value),
@@ -409,71 +480,49 @@ function createPaint(deps: PaintDeps) {
 			started = true;
 			deps.onFirstStroke();
 		}
+		run();
 	}
 
+	// ⚠️ 指针事件**只负责告诉笔「笔尖现在在哪」**，它自己一个点都不画。
+	// 画多快、往哪拐、停不停，全是那条链自己的事 —— 「长按会自己抖动作画」
+	// 和「拖得快会甩出优雅的长弧」都出在这儿。
 	function move(e: PointerEvent) {
-		if (!drawing || !current) return;
+		if (!pen?.held) return;
 		const p = pos(e);
-		const dx = p.x - lastX;
-		const dy = p.y - lastY;
-		const dist = Math.hypot(dx, dy);
-		// 降采样：离上一个采样点太近就丢掉，省掉一堆无意义的点
-		if (dist < 2.4) return;
-		const now = performance.now();
-		const speed = (dist / Math.max(1, now - lastT)) * 16;
-		lastX = p.x;
-		lastY = p.y;
-		lastT = now;
-		current.pts.push(p.x, p.y);
-		current.widths.push(widthOf(current.erase === true, speed));
-		const { cx, cy } = center();
-		// 增量渲染：补画刚刚定形的那一段（第 k-1 段要等 P[k] 到位才算完整）。
-		// 用它的下标调 paintStroke —— 别改回「画最新一段」，那样每段都少后半截。
-		paintStroke(
-			ctx,
-			current,
-			cx,
-			cy,
-			current.pts.length / 2 - 2,
-			kind,
-			glitch(),
-		);
-		audio.paint(speed, current.erase ? 0 : current.hue);
+		aimPen(pen, p.x, p.y);
 	}
 
 	function end(e: PointerEvent) {
-		if (!drawing) return;
-		drawing = false;
+		// 不再生新粒子，但链上那些还活着，会自己把这一笔走完再交卷
+		if (pen) pen.held = false;
 		try {
 			canvas.releasePointerCapture(e.pointerId);
 		} catch {
 			// 指针没了，忽略
 		}
-		// 抬手时补上最后一段：增量渲染一直留着它没画
-		if (current && current.pts.length >= 4) {
-			const { cx, cy } = center();
-			paintStroke(ctx, current, cx, cy, true, kind, glitch());
-			history.push(current);
-		}
-		current = null;
 	}
 
-	/** 撤销 = 清空 + 全量重绘剩下的笔画。跟增量绘制共用同一套几何，画面才不会走样 */
+	/** 撤销 = 清空 + 全量重绘剩下的笔画。跟作画共用同一批线段，画面才不会走样 */
 	function redrawAll() {
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 		const { cx, cy } = center();
-		for (const s of history) paintStroke(ctx, s, cx, cy, false, kind, glitch());
+		for (const s of history)
+			paintStroke(ctx, s, cx, cy, { kind, glitch: glitch() });
 	}
 
 	function clear() {
+		finish();
 		history.length = 0;
-		current = null;
-		drawing = false;
+		// 已经排出去的那一帧先撤掉：不然它可能已经拿到了「刚被丢掉的那一笔」
+		cancelAnimationFrame(raf);
+		raf = 0;
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 		audio.tick();
 	}
 
 	function undo() {
+		// 正在长的那一笔先落地，否则撤销会去拿上一笔，看着像没反应
+		finish();
 		if (!history.length) return;
 		history.pop();
 		redrawAll();
@@ -598,6 +647,9 @@ function createPaint(deps: PaintDeps) {
 		undo,
 		savePng,
 		dispose() {
+			// ⚠️ 一定要真的 cancel：留着的话人已经走了它还在 60fps 空转
+			cancelAnimationFrame(raf);
+			raf = 0;
 			ro.disconnect();
 			canvas.removeEventListener("pointerdown", begin);
 			canvas.removeEventListener("pointermove", move);
@@ -653,15 +705,17 @@ function createAmbient(canvas: HTMLCanvasElement) {
 
 		// 一笔画够长就换一笔（换色相），从外圈起笔往中心绕
 		if (!stroke || drawn > 150) {
-			const a0 = phase * 0.7;
 			stroke = {
-				pts: [w / 2 + Math.cos(a0) * w * 0.44, h / 2 + Math.sin(a0) * h * 0.44],
-				widths: [34],
+				// 底纹不走那条「笔」的链 —— 它的笔迹是几条低频正弦叠出来的。
+				// 用「每帧一张**两点**快照」表达：一张快照就是一段，
+				// 正好对上原来「只有一个点在增长、只画最后一段」的语义。
+				snaps: [],
 				hue: randomHue(),
 				alpha: 0.04,
 				mode: "mirror",
 				count: 5,
 				hueStep: 12,
+				width: 34,
 			};
 			drawn = 0;
 		}
@@ -669,16 +723,21 @@ function createAmbient(canvas: HTMLCanvasElement) {
 		const t = phase;
 		const r = w * (0.16 + 0.28 * (0.5 + 0.5 * Math.sin(t * 0.23)));
 		const ang = t * 0.42;
-		stroke.pts.push(
+		const nx =
 			w / 2 +
-				Math.cos(ang) * r +
-				Math.sin(t * 0.61) * w * 0.06 +
-				Math.cos(t * 0.31) * w * 0.03,
-			h / 2 + Math.sin(ang * 0.9) * r * 0.62 + Math.cos(t * 0.53) * h * 0.07,
-		);
-		stroke.widths.push(30 + Math.sin(t * 0.4) * 10);
+			Math.cos(ang) * r +
+			Math.sin(t * 0.61) * w * 0.06 +
+			Math.cos(t * 0.31) * w * 0.03;
+		const ny =
+			h / 2 + Math.sin(ang * 0.9) * r * 0.62 + Math.cos(t * 0.53) * h * 0.07;
+		const prev = stroke.snaps[stroke.snaps.length - 1];
+		stroke.snaps.push([prev ? prev[2] : nx, prev ? prev[3] : ny, nx, ny]);
+		// 线宽慢慢呼吸，帷幕才不像一根橡皮筋
+		stroke.width = 30 + Math.sin(t * 0.4) * 10;
 		drawn++;
-		paintStroke(ctx, stroke, w / 2, h / 2, true, "silk", 0);
+		paintStroke(ctx, stroke, w / 2, h / 2, {
+			only: stroke.snaps.length - 1,
+		});
 
 		// 慢慢擦淡：加色画布只能靠 destination-out 减 alpha 才能"退"回去
 		if (drawn % 6 === 0) {
