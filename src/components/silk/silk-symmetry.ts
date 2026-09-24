@@ -113,6 +113,15 @@ export type Stroke = {
 	count: number;
 	/** 逐份拷贝的色相步进 —— 各份颜色层层推进，同一个图形才有彩虹般的层次 */
 	hueStep: number;
+	/**
+	 * 橡皮：这一笔是**擦**不是画。
+	 *
+	 * 擦除做成「一种笔画」而不是「一条单独的擦除图层的理由」：历史栈里
+	 * 画与擦按发生顺序混在一起，全量重绘（撤销走的就是它）逐条回放，
+	 * 于是「擦掉的区域」天然正确、撤销一步也天然正确 —— 不用为擦除
+	 * 另写一套状态，也就没有「撤销之后擦痕复活」这类 bug。
+	 */
+	erase?: boolean;
 };
 
 const _p0: number[] = [0, 0];
@@ -155,6 +164,8 @@ function segmentsOf(pts: number[], n: number) {
  *             传**数字** = 只画第 i 段（作画中补画刚完整的那一段，见下）
  * @param glitch   C 面的「故障偏移」力度 0~1，其余风格忽略
  *
+ * `stroke.erase` 为真时这一笔是橡皮（destination-out），见 Stroke.erase 的说明。
+ *
  * ⚠️ 作画中的增量渲染**必须只画「已经完整」的段**。第 i 段的两端是
  * 中点(P[i-1],P[i]) 和 中点(P[i],P[i+1])，也就是说它要等 P[i+1] 到位才算定形；
  * 新点一到就画它，只能拿 P[i] 当终点凑合 —— 那样每一段都少画后半截，
@@ -173,6 +184,10 @@ export function paintStroke(
 	const n = stroke.pts.length / 2;
 	if (n < 2) return;
 
+	// 擦除一律按丝缕那档来画：像素风的硬方块、赛博的虚线/故障抖动留在画布上
+	// 都会变成一粒一粒擦不干净的花斑。擦痕要连续、要能一次到位。
+	const k: PaintKind = stroke.erase ? "silk" : kind;
+
 	const total = copyCount(stroke.mode, stroke.count);
 	const seg = segmentsOf(stroke.pts, n);
 	const single = typeof only === "number" ? only : -1;
@@ -182,28 +197,34 @@ export function paintStroke(
 	const to = single !== -1 ? single + 1 : n;
 
 	ctx.save();
-	// 相加混合：单根很淡，重叠处自己堆出辉光
-	ctx.globalCompositeOperation = "lighter";
-	ctx.lineCap = kind === "pixel" ? "butt" : "round";
+	// 相加混合：单根很淡，重叠处自己堆出辉光。
+	// 橡皮反过来走 destination-out：按源的 alpha 把画布上已有的 alpha 减掉。
+	// 对称、平滑几何、逐份拷贝全部复用同一条路径 —— 擦出来的形状必然和画出来的
+	// 形状是同一套，不会出现「这边擦掉了、镜像那份还在」。
+	ctx.globalCompositeOperation = stroke.erase ? "destination-out" : "lighter";
+	ctx.lineCap = k === "pixel" ? "butt" : "round";
 	ctx.lineJoin = "round";
 	// 赛博风带扫描线纹理：把线画成细密的虚线，本身就是一层「扫描条纹」
-	if (kind === "cyber") ctx.setLineDash([2, 3]);
+	if (k === "cyber") ctx.setLineDash([2, 3]);
 
 	for (let c = 0; c < total; c++) {
 		const t = copyTransform(stroke.mode, stroke.count, c);
-		// 各份拷贝的色相依次推进，图形才有层次
-		ctx.strokeStyle = hsla(
-			norm360(stroke.hue + c * stroke.hueStep),
-			SAT,
-			LIGHT,
-			stroke.alpha,
-		);
+		// 各份拷贝的色相依次推进，图形才有层次。
+		// 擦除不看颜色（destination-out 只用 alpha），所有拷贝都用同一个值。
+		ctx.strokeStyle = stroke.erase
+			? `rgba(0, 0, 0, ${stroke.alpha})`
+			: hsla(
+					norm360(stroke.hue + c * stroke.hueStep),
+					SAT,
+					LIGHT,
+					stroke.alpha,
+				);
 		ctx.fillStyle = ctx.strokeStyle;
 
 		for (let i = from; i < to; i++) {
 			const w = stroke.widths[i] ?? stroke.widths[n - 1] ?? 2;
 
-			if (kind === "pixel") {
+			if (k === "pixel") {
 				// 像素风：沿**曲线**按 g 的间隔撒硬方块，并吸附到 g 的网格上，才有 8bit 颗粒感。
 				//
 				// ⚠️ 不能「一个采样点一个方块」：采样点之间隔着几十像素（手快时更远），
@@ -239,7 +260,7 @@ export function paintStroke(
 				continue;
 			}
 
-			if (kind === "cyber") {
+			if (k === "cyber") {
 				ctx.lineWidth = w * 1.15;
 				ctx.globalAlpha = 1;
 			} else {
@@ -247,7 +268,7 @@ export function paintStroke(
 				ctx.globalAlpha = 1;
 			}
 
-			if (kind === "cyber" && glitch > 0) {
+			if (k === "cyber" && glitch > 0) {
 				// 故障偏移：每个点随机撕开一点，力度由滑块给
 				ctx.setLineDash([2, 3 + glitch * 6]);
 			}
@@ -261,7 +282,7 @@ export function paintStroke(
 
 			let jx = 0;
 			let jy = 0;
-			if (kind === "cyber" && glitch > 0) {
+			if (k === "cyber" && glitch > 0) {
 				jx = (Math.random() - 0.5) * glitch * 26;
 				jy = (Math.random() - 0.5) * glitch * 26;
 			}

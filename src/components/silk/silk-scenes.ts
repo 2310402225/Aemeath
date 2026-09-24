@@ -10,7 +10,8 @@
 //   #silk-paint-stage / #silk-paint-canvas / #silk-hint / #silk-scene-title
 //   #silk-wall-stage / #silk-wall-canvas / #silk-wall-hint
 //   #silk-back / #silk-dice / #silk-panel / #silk-palette / #silk-sym
-//   #silk-count / #silk-glitch / #silk-glitch-row / #silk-sound / #silk-save / #silk-fade
+//   #silk-count / #silk-glitch / #silk-glitch-row / #silk-erase / #silk-clear
+//   #silk-sound / #silk-save / #silk-fade
 
 import { createHub, FACE_ORDER, type FaceKey } from "./silk-hub";
 import {
@@ -74,6 +75,12 @@ const SCENES: Record<
 
 const FADE_MS = 250;
 
+/** 橡皮的线宽倍数：比画粗一档，擦起来才不用来回蹭 */
+const ERASE_WIDTH = 2.6;
+/** 橡皮一遍擦掉的比例。给 1 会「擦过即净」，但半透明叠出来的丝缕是软的，
+ *  一遍抹平会留下生硬的缺口 —— 0.85 留一点余地，来回两下才彻底干净 */
+const ERASE_ALPHA = 0.85;
+
 function q<T extends Element>(root: ParentNode, sel: string): T {
 	const el = root.querySelector(sel);
 	if (!el) throw new Error(`丝缕四面体：找不到 ${sel}`);
@@ -105,6 +112,8 @@ export function createSilkApp(root: ParentNode): SilkApp {
 	const countEl = q<HTMLInputElement>(root, "#silk-count");
 	const glitchRow = q<HTMLElement>(root, "#silk-glitch-row");
 	const glitchEl = q<HTMLInputElement>(root, "#silk-glitch");
+	const eraseEl = q<HTMLButtonElement>(root, "#silk-erase");
+	const clearEl = q<HTMLButtonElement>(root, "#silk-clear");
 	const soundEl = q<HTMLButtonElement>(root, "#silk-sound");
 	const saveEl = q<HTMLButtonElement>(root, "#silk-save");
 	const diceEl = q<HTMLButtonElement>(root, "#silk-dice");
@@ -256,6 +265,15 @@ export function createSilkApp(root: ParentNode): SilkApp {
 	});
 	backEl.addEventListener("click", backToHub);
 	saveEl.addEventListener("click", () => paint.savePng());
+	// 橡皮是开关：按下进入擦除，再按回到画笔。aria-pressed 让读屏也知道当前是哪个
+	eraseEl.addEventListener("click", () => {
+		const on = eraseEl.getAttribute("aria-pressed") !== "true";
+		eraseEl.setAttribute("aria-pressed", String(on));
+		eraseEl.classList.toggle("is-active", on);
+		paint.setErase(on);
+		audio.tick();
+	});
+	clearEl.addEventListener("click", () => paint.clear());
 	soundEl.addEventListener("click", () => {
 		const on = audio.toggle();
 		soundEl.setAttribute("aria-pressed", String(on));
@@ -333,10 +351,16 @@ function createPaint(deps: PaintDeps) {
 	let lastY = 0;
 	let lastT = 0;
 	let started = false;
+	let erasing = false;
 	let hue = randomHue();
 
 	function glitch(): number {
 		return Number(deps.glitchEl.value) / 100;
+	}
+
+	/** 一笔的线宽：橡皮比画粗一档 */
+	function widthOf(erase: boolean, speed: number): number {
+		return widthForSpeed(speed) * (erase ? ERASE_WIDTH : 1);
 	}
 
 	function resize() {
@@ -367,9 +391,10 @@ function createPaint(deps: PaintDeps) {
 		lastT = performance.now();
 		current = {
 			pts: [p.x, p.y],
-			widths: [widthForSpeed(0)],
+			widths: [widthOf(erasing, 0)],
 			hue,
-			alpha: 0.2,
+			alpha: erasing ? ERASE_ALPHA : 0.2,
+			erase: erasing,
 			mode: deps.symEl.value as SymmetryMode,
 			count: Number(deps.countEl.value),
 			// 逐份拷贝错开一点色相，同一个图形才有层次
@@ -400,7 +425,7 @@ function createPaint(deps: PaintDeps) {
 		lastY = p.y;
 		lastT = now;
 		current.pts.push(p.x, p.y);
-		current.widths.push(widthForSpeed(speed));
+		current.widths.push(widthOf(current.erase === true, speed));
 		const { cx, cy } = center();
 		// 增量渲染：补画刚刚定形的那一段（第 k-1 段要等 P[k] 到位才算完整）。
 		// 用它的下标调 paintStroke —— 别改回「画最新一段」，那样每段都少后半截。
@@ -413,7 +438,7 @@ function createPaint(deps: PaintDeps) {
 			kind,
 			glitch(),
 		);
-		audio.paint(speed, current.hue);
+		audio.paint(speed, current.erase ? 0 : current.hue);
 	}
 
 	function end(e: PointerEvent) {
@@ -563,6 +588,10 @@ function createPaint(deps: PaintDeps) {
 		set kind(k: PaintKind) {
 			kind = k;
 			redrawAll();
+		},
+		/** 橡皮开关。换场景不清除 —— 三张画布共用同一个引擎，工具状态跟着走才连贯 */
+		setErase(on: boolean) {
+			erasing = on;
 		},
 		resize,
 		clear,

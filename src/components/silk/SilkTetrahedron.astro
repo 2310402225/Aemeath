@@ -94,7 +94,37 @@
 			<span class="silk-field-label">故障</span>
 			<input id="silk-glitch" type="range" min="0" max="100" value="35" aria-label="故障偏移强度" />
 		</label>
-		<button type="button" class="silk-icon-btn" id="silk-sound" aria-pressed="true" aria-label="音效开关">
+		<span class="silk-sep" aria-hidden="true"></span>
+		<button type="button" class="silk-icon-btn" id="silk-erase" aria-pressed="false" aria-label="橡皮擦" title="橡皮擦">
+			<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+				<path
+					d="m7 21-4.3-4.3a1.9 1.9 0 0 1 0-2.7l9.4-9.4a1.9 1.9 0 0 1 2.7 0l5.6 5.6a1.9 1.9 0 0 1 0 2.7L12.5 21"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.6"
+					stroke-linecap="round"
+					stroke-linejoin="round"></path>
+				<path
+					d="M5 11.4 14.6 21M22 21H7"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.6"
+					stroke-linecap="round"
+					stroke-linejoin="round"></path>
+			</svg>
+		</button>
+		<button type="button" class="silk-icon-btn" id="silk-clear" aria-label="清空画面" title="清空画面">
+			<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+				<path
+					d="M4 6h16M9.5 6V4.2h5V6M6.4 6l.9 13.1a1.2 1.2 0 0 0 1.2 1.1h7a1.2 1.2 0 0 0 1.2-1.1L17.6 6M10.2 10.5v6M13.8 10.5v6"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.6"
+					stroke-linecap="round"
+					stroke-linejoin="round"></path>
+			</svg>
+		</button>
+		<button type="button" class="silk-icon-btn" id="silk-sound" aria-pressed="true" aria-label="音效开关" title="音效开关">
 			<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
 				<path
 					d="M4 9h3l5-4v14l-5-4H4z"
@@ -107,7 +137,7 @@
 					stroke-linecap="round"></path>
 			</svg>
 		</button>
-		<button type="button" class="silk-icon-btn" id="silk-save" aria-label="保存为 PNG">
+		<button type="button" class="silk-icon-btn" id="silk-save" aria-label="保存为 PNG" title="保存为 PNG">
 			<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
 				<path
 					d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"
@@ -618,11 +648,36 @@
 		background: transparent;
 		color: var(--silk-fg);
 		cursor: pointer;
-		transition: opacity 200ms ease;
+		transition:
+			opacity 200ms ease,
+			background 200ms ease,
+			border-color 200ms ease;
 	}
 
 	.silk-icon-btn.is-off {
 		opacity: 0.38;
+	}
+
+	/* 橡皮是**模态**开关：开着的时候落笔是在擦而不是在画，状态必须在余光里
+	   就能看见，所以给它一个颜色（只有一个按钮会亮，不至于跟别的混淆）。
+	   用暖色而不是红：这里不危险，只是「当前工具不是画笔」。 */
+	.silk-icon-btn.is-active {
+		border-color: rgb(255 178 116 / 0.62);
+		background: rgb(255 178 116 / 0.2);
+		color: rgb(255 226 196 / 0.96);
+	}
+
+	.silk-stage.is-light .silk-icon-btn.is-active {
+		border-color: rgb(206 112 32 / 0.6);
+		background: rgb(255 168 96 / 0.24);
+		color: rgb(126 62 6 / 0.92);
+	}
+
+	/* 工具组（橡皮 / 清空）与开关组（声音 / 保存）之间画一道竖线，一眼分得开 */
+	.silk-sep {
+		width: 1px;
+		height: 20px;
+		background: var(--silk-panel-line);
 	}
 
 	/* 焦点的可见性不许省 —— 键盘用户靠它 */
@@ -699,6 +754,19 @@
 	}
 
 	/* ---------------------------------------------------------- 窄屏 */
+
+	/* 图标按钮补齐触达尺寸：面板里现在有四个小图标按钮挨在一起，
+	   34px 在手指下极易点到隔壁那一个 */
+	@media (pointer: coarse) {
+		.silk-icon-btn {
+			width: 44px;
+			height: 44px;
+		}
+
+		.silk-sep {
+			height: 26px;
+		}
+	}
 
 	@media (max-width: 760px) {
 		.silk-panel {
