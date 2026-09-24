@@ -26,11 +26,20 @@ const WALL_SRC = `${import.meta.env.BASE_URL}assets/images/silk/wallpaper.webp`;
 
 /** 采样宽度。素材就是 960 宽，再往上加只是白吃解码内存，粒子不会变多（预算是固定的） */
 const SAMPLE_W = 960;
-/** 粒子预算：鼠标给足，触摸设备砍掉（小屏粒子大会糊成一团） */
-const BUDGET_FINE = 42000;
-const BUDGET_COARSE = 16000;
-/** 亮度地板取到分位数 55%，即只有最亮的 45% 像素有资格当粒子 */
-const DENSITY = 0.45;
+/**
+ * 粒子预算：鼠标给足，触摸设备砍掉（小屏粒子大会糊成一团）。
+ *
+ * ⚠️ 这个数字是**画面清晰度的唯一杠杆**，加采样分辨率没用：
+ *   有效分辨率 ≈ 采样宽 × √(粒子数 / 入选像素数)，与源图分辨率无关 ——
+ *   把 SAMPLE_W 从 960 提到 1920、预算不动，点间距按 1/√ 走，两边刚好抵消。
+ *   想更清只有加粒子。代价是每帧一趟 O(n) 的弹簧积分，76k 实测还留得住帧率。
+ */
+const BUDGET_FINE = 76000;
+const BUDGET_COARSE = 26000;
+/** 亮度地板取到分位数 45%，即只有最亮的 55% 像素有资格当粒子。
+ *  再往下调一点能多收一层暗部结构（壁纸的暗蓝布料），但入选像素一多，
+ *  同样的预算被摊薄、亮部反而变稀 —— 0.55 是两边都还看得过去的值 */
+const DENSITY = 0.55;
 /** 梯度最高的 6% 算轮廓；轮廓最多吃掉这么多预算 */
 const EDGE_TOP = 0.06;
 const EDGE_SHARE = 0.34;
@@ -39,9 +48,31 @@ const EDGE_SHARE = 0.34;
 const K = [46, 30, 15];
 const DAMP = [6.4, 5.4, 3.2];
 
-/** 点尺寸（世界单位；1 单位 = 图高） */
-const SIZE_MIN = 0.0034;
-const SIZE_SPAN = 0.0034;
+/**
+ * 点尺寸（世界单位；1 单位 = 图高）。
+ *
+ * ⚠️ 不能小。片元着色器用 gl_PointCoord 的软圆盘衰减，直径只有 2~3 设备像素时
+ * 整个点落在圆盘外圈 —— 四个角被切掉、中心那点峰值也没了，屏幕上就是一片压不亮的
+ * 灰雾（这也是「看不清」最隐蔽的一个成因：不是粒子不够，是每个粒子都没亮起来）。
+ * 直径要 ≥4 设备像素，软圆盘才真正是个圆盘。
+ */
+const SIZE_MIN = 0.0058;
+const SIZE_SPAN = 0.0056;
+/** 轮廓点再大一号，线条才立得起来 */
+const SIZE_EDGE = 0.0018;
+
+/** gl_PointSize 的钳制区间，单位是 **CSS 像素**（measure 里乘 dpr 再传进去） */
+const PIX_MIN = 1;
+const PIX_MAX = 7;
+
+/**
+ * 提亮倍数。壁纸是暗调的（中位亮度 0.19），直接把像素颜色加色叠上去，
+ * 一半以上的粒子贡献不到 0.05 —— 静置的画面几乎全黑，正是「看不清」的主因。
+ *
+ * 取法：把入选像素的**中位亮度**拉到 EXPOSURE。这样换一张整体偏亮或偏暗的图
+ * 都不用回来改数字，跟本文件里「阈值一律走分位数」是同一套思路。
+ */
+const EXPOSURE = 0.95;
 
 /** 悬停排斥 / 拖拽尾迹 / 冲击波 / 长按塌散 */
 const HOVER_R = 0.11;
@@ -248,7 +279,7 @@ export function createWall(canvas: HTMLCanvasElement): Wall {
 			tier[idx] = isOutline ? 0 : isBody && L >= median ? 1 : 2;
 			tierAttr[idx] = tier[idx];
 			// 轮廓给大一号，线条才立得起来
-			size[idx] = SIZE_MIN + SIZE_SPAN * L + (isOutline ? 0.001 : 0);
+			size[idx] = SIZE_MIN + SIZE_SPAN * L + (isOutline ? SIZE_EDGE : 0);
 			idx++;
 		};
 		for (let k = 0; k < oPick.length; k++) fill(oIdx[oPick[k]], true, false);
@@ -273,6 +304,10 @@ export function createWall(canvas: HTMLCanvasElement): Wall {
 			uniforms: {
 				uTime: { value: 0 },
 				uPointScale: { value: 400 },
+				// 自动曝光：把入选像素的中位亮度提到 EXPOSURE。median 为 0（几乎全黑）时兜底
+				uGain: { value: EXPOSURE / Math.max(0.06, median) },
+				uPixMin: { value: PIX_MIN },
+				uPixMax: { value: PIX_MAX },
 			},
 			vertexShader: VERT,
 			fragmentShader: FRAG,
@@ -320,9 +355,15 @@ export function createWall(canvas: HTMLCanvasElement): Wall {
 			renderer.setSize(w, h, false);
 		}
 		// 世界单位 → 设备像素。点尺寸全靠它，漏了这步粒子会小到看不见
-		if (mat)
-			mat.uniforms.uPointScale.value =
-				(h * Math.min(window.devicePixelRatio || 1, 2)) / (2 * hh);
+		const dpr = Math.min(window.devicePixelRatio || 1, 2);
+		if (mat) {
+			mat.uniforms.uPointScale.value = (h * dpr) / (2 * hh);
+			// ⚠️ 钳制值也得乘 dpr。写死「1~9」的话那是**设备**像素：dpr=2 的屏上
+			// 点的 CSS 直径只有 dpr=1 的一半，同一份参数在视网膜屏上明显更稀更暗，
+			// 而 dpr=1 时上限根本碰不到 —— 这个不一致极难在开发机上发现。
+			mat.uniforms.uPixMin.value = PIX_MIN * dpr;
+			mat.uniforms.uPixMax.value = PIX_MAX * dpr;
+		}
 		if (ready) renderFrame();
 	}
 
@@ -630,18 +671,23 @@ attribute float aTier;
 attribute float aLit;
 uniform float uTime;
 uniform float uPointScale;
+uniform float uGain;
+uniform float uPixMin;
+uniform float uPixMax;
 varying vec3 vColor;
 varying float vAlpha;
 
 void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  // 只有明暗呼吸，不动位置 —— 「终将回到自己的位置」得是字面意义上的真话
-  float shimmer = 0.78 + 0.22 * sin(uTime * 1.7 + aSeed * 6.2831853);
+  // 只有明暗呼吸，不动位置 —— 「终将回到自己的位置」得是字面意义上的真话。
+  // 幅度压到 0.12：0.22 的全场闪烁会把丝缕的边缘搅成噪点，读起来更"不清晰"
+  float shimmer = 0.88 + 0.12 * sin(uTime * 1.7 + aSeed * 6.2831853);
   // 上限 1.5：冲击波和长按会把 aLit 叠到 1 以上，不封顶就会糊成一片白
   float L = clamp(aLit, 0.0, 1.5);
-  gl_PointSize = clamp(aSize * uPointScale * (1.0 + 0.85 * L), 1.0, 9.0);
+  gl_PointSize = clamp(aSize * uPointScale * (1.0 + 0.85 * L), uPixMin, uPixMax);
   vec3 c = mix(aColor, vec3(1.0), min(0.75, L * 0.75));
-  vColor = c * (1.0 + 2.2 * L) * shimmer;
+  // uGain 是自动曝光（见 build 里的 median）：暗调壁纸直接叠像素颜色等于全黑
+  vColor = c * uGain * (1.0 + 2.2 * L) * shimmer;
   // 三档亮度：轮廓最亮，暗部最暗
   vAlpha = (1.0 - aTier * 0.3) * (0.30 + 0.34 * L) * shimmer;
 }
