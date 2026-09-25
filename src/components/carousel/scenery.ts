@@ -7,7 +7,14 @@
 // 这是这一页的「认出来」时刻：它不是随机飘的背景装饰，是你自己转到那儿才看见的。
 // 全部用 path 画，零位图。
 
-import { type Couplings, inkRgba, PAPER, PAPER_EDGE } from "./couplings";
+import {
+	type Couplings,
+	dprCap,
+	inkRgba,
+	lampRgba,
+	PAPER,
+	PAPER_EDGE,
+} from "./couplings";
 
 /** 三件旧物：显像管电视 / 游戏手柄 / 发条铁皮蛙。与灯片的对应关系见 lantern-ring.ts。 */
 export const RELICS = ["crt", "pad", "frog"] as const;
@@ -220,6 +227,8 @@ export function createScenery(
 	let dirty = true;
 	/** 剪影还在动的时候需要一个低频重绘（雪花屏在闪、发条在转），静置时归零。 */
 	let activity = 0;
+	/** 上一次画纸时用的倒流档位：光池的暖度跟着它走，变一档才重画一次纸。 */
+	let lastBucket = -1;
 
 	const items: Silhouette[] = [
 		{
@@ -259,7 +268,7 @@ export function createScenery(
 
 	function resize() {
 		const rect = canvas.getBoundingClientRect();
-		dpr = Math.min(2, window.devicePixelRatio || 1);
+		dpr = dprCap();
 		w = Math.max(1, Math.round(rect.width));
 		h = Math.max(1, Math.round(rect.height));
 		canvas.width = Math.round(w * dpr);
@@ -324,6 +333,19 @@ export function createScenery(
 			ctx.arc(sx, sy, sr, 0, Math.PI * 2);
 			ctx.fill();
 		}
+
+		// 灯照在纸上：走马灯就在钟心那一带，纸被它烘出一片暖。这是全页最大的一块
+		// 暖色，也是「灯是真的亮着」的凭据 —— 少了它，那六道条纹就像画上去的。
+		// 位置与半径必须与 clock 的钟心一致（两张画布同为 .tc-scene 的子元素，坐标系相同）。
+		const lx = w / 2;
+		const ly = h * 0.6;
+		const lr = Math.min(w * 0.42, h * 0.33) * 1.75;
+		const pool = ctx.createRadialGradient(lx, ly, 0, lx, ly, lr);
+		pool.addColorStop(0, lampRgba(c, 0.22));
+		pool.addColorStop(0.45, lampRgba(c, 0.1));
+		pool.addColorStop(1, lampRgba(c, 0));
+		ctx.fillStyle = pool;
+		ctx.fillRect(0, 0, w, h);
 	}
 
 	/** 剪影：淡墨块。用三层递增的透明度假出「墨在纸里洇开」的软边。
@@ -348,11 +370,27 @@ export function createScenery(
 				it.draw(ctx, s, it.phase);
 				ctx.restore();
 			}
+			// 被灯照到的那一件，边上会有一线暖光 —— 不然「亮起来」只是变浓了一点墨
+			if (it.glow > 0.02) {
+				ctx.save();
+				ctx.globalAlpha = 0.06 * it.glow;
+				ctx.fillStyle = lampRgba(c, 1);
+				ctx.strokeStyle = lampRgba(c, 1);
+				it.draw(ctx, s, it.phase);
+				ctx.restore();
+			}
 			ctx.restore();
 		}
 	}
 
 	function frame(dt: number) {
+		// 光池的暖度跟着倒流档位走。整趟拨针最多重画七次纸 —— 纸纹是这一层最贵的活，
+		// 不能每帧跟着 rewind 连轴转。
+		const bucket = Math.round(c.rewind * 6);
+		if (bucket !== lastBucket) {
+			lastBucket = bucket;
+			dirty = true;
+		}
 		// 呼吸 & 衰减：亮起来的旧物按自己的目标值收敛，收到位之后就不再重绘
 		let moving = false;
 		for (const it of items) {

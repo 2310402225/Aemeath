@@ -15,11 +15,14 @@ import { fitSize, HALO_SCALE, paintText, type WriterOptions } from "./brush";
 import {
 	type Couplings,
 	clamp,
+	dprCap,
 	goldRgba,
 	inkRgba,
+	lampRgba,
 	lerp,
 	PAPER,
 	smoothstep,
+	woodRgba,
 } from "./couplings";
 
 /** PAPER 是 CSS 串（"#f5f0e6"），要和色就得拆成分量。别把两个地方的颜色写两遍。 */
@@ -94,8 +97,29 @@ const TEXT_FILL_W = INK_INSET / HALO_SCALE;
 const TEXT_FILL_H = INK_INSET / HALO_SCALE;
 /** 自己转一圈要多久（秒） */
 const LAP_SECONDS = 72;
+/** 光影条纹从灯心往外能照到几个 R。
+ *  0.95 正好停在最外那道钟圈（R）里侧：光纹照到钟圈外面，就变成一圈扫过的扇叶了。 */
+const STREAK_REACH = 0.95;
 /** 长按多久算「收藏」（触屏没有右键，这是替代手势） */
 export const HOLD_TO_COLLECT = 1.5;
+/** 灯片木框的粗细（相对灯片短边）。走马灯是木头架的，灯片不该浮在空气里。 */
+const FRAME_RATIO = 0.05;
+/** 木框贴在纸边上，所以它往纸外多占这么多 —— 判定命中时要把它算进去，
+ *  否则「点得到框、选不中灯片」。 */
+function frameOut(pw: number, ph: number): number {
+	return Math.min(pw, ph) * FRAME_RATIO;
+}
+
+/**
+ * 「推开纸窗」那一下的鼓胀。
+ *
+ * 几何仍旧走 smoothstep（`expandedBox` 也走它，两者的终值必须都是 1，
+ * 否则自测里「字进得去框」的断言会跟着浮动），只在**画的这一侧**中段鼓 3.5%：
+ * 纸窗被推开时先涨一下再回正，那点回正就是「纸」的手感，不是弹簧玩具。
+ */
+function pushOpen(ease: number): number {
+	return 1 + 0.035 * Math.sin(Math.PI * clamp(ease, 0, 1));
+}
 
 export type Ring = {
 	resize: () => void;
@@ -126,6 +150,8 @@ export type Ring = {
 	} | null;
 	collected: () => boolean[];
 	markCollected: (slot: number) => void;
+	/** 收藏得手的那一下：从那张灯片炸开一圈金尘 + 一圈金色涟漪 */
+	burst: (slot: number) => void;
 	/** 每张灯片现在的几何（位置、框、字号）—— 给页内自测断言「字进得去框」。 */
 	slots: () => {
 		slot: number;
@@ -134,6 +160,8 @@ export type Ring = {
 		pw: number;
 		ph: number;
 		size: number;
+		/** 木框往外占多少 —— 断言「框不碰题名」时要用 */
+		frame: number;
 	}[];
 };
 
@@ -174,12 +202,14 @@ export function createRing(
 		r: number;
 	}[] = [];
 	const cache = new Map<string, HTMLCanvasElement>();
+	/** 收藏得手时从灯片炸开的一圈金涟漪。 */
+	const pulses: { x: number; y: number; life: number; r: number }[] = [];
 
 	const PANEL_CACHE_LIMIT = 64;
 
 	function resize() {
 		const rect = canvas.getBoundingClientRect();
-		dpr = Math.min(2, window.devicePixelRatio || 1);
+		dpr = dprCap();
 		w = Math.max(1, Math.round(rect.width));
 		h = Math.max(1, Math.round(rect.height));
 		canvas.width = Math.round(w * dpr);
@@ -215,7 +245,8 @@ export function createRing(
 		};
 	}
 
-	/** 灯罩纸：上暖下淡、中间比边缘亮（灯在里面），加两道错开的淡墨边。
+	/** 灯罩纸：上暖下淡、中间比边缘亮（灯在里面），外套一圈木框，
+	 *  里衬一道隔扇内框与几根纸纤维，最外是两道错开的淡墨边。
 	 *
 	 *  `keep` = 这张灯片还剩多少「实」：远灯小一分淡一分、有灯展开时其余退到后面。
 	 *
@@ -236,27 +267,79 @@ export function createRing(
 			`rgb(${Math.round(lerp(PAPER_RGB[0], r, keep))} ${Math.round(
 				lerp(PAPER_RGB[1], gg, keep),
 			)} ${Math.round(lerp(PAPER_RGB[2], b, keep))})`;
+		const rad = Math.min(pw, ph) * 0.14;
+		// 木框压在纸边上：描边中心落在纸边界上，纸再画上来盖掉里侧的一半，
+		// 留下的就是刚好贴在纸外的一圈框（不与纸留缝、也不吃掉纸里那一块）。
+		const out = frameOut(pw, ph);
+		g.strokeStyle = woodRgba(c, 0.5 * keep);
+		g.lineWidth = out;
+		g.beginPath();
+		g.roundRect(-out / 2, -out / 2, pw + out, ph + out, rad + out / 2);
+		g.stroke();
+
 		const grad = g.createLinearGradient(0, 0, 0, ph);
-		grad.addColorStop(0, paper(252, 248, 238));
-		grad.addColorStop(0.55, paper(248, 242, 228));
-		grad.addColorStop(1, paper(240, 232, 214));
+		// 灯罩纸比页面那种宣纸更暖一档：它是被灯从里面照着的，
+		// 和「外面的纸」同一个白，灯就白点了（这页的纸本来就接近白，光只能靠暖度说话）。
+		grad.addColorStop(0, paper(255, 250, 232));
+		grad.addColorStop(0.55, paper(252, 243, 220));
+		grad.addColorStop(1, paper(244, 230, 200));
 		g.fillStyle = grad;
 		g.beginPath();
-		g.roundRect(0, 0, pw, ph, Math.min(pw, ph) * 0.14);
+		g.roundRect(0, 0, pw, ph, rad);
 		g.fill();
+
+		// 纸纤维：灯罩纸也是纸。三根不起眼的横丝，够让人觉得它是「一张」东西
+		g.save();
+		g.beginPath();
+		g.roundRect(0, 0, pw, ph, rad);
+		g.clip();
+		g.strokeStyle = `rgb(180 168 146 / ${0.16 * keep})`;
+		g.lineWidth = Math.max(0.5, ph * 0.0035);
+		for (const [i, ky] of [0.22, 0.53, 0.79].entries()) {
+			const y = ph * ky;
+			g.beginPath();
+			g.moveTo(0, y);
+			g.quadraticCurveTo(
+				pw * (0.3 + i * 0.12),
+				y + ph * 0.035,
+				pw,
+				y - ph * 0.012,
+			);
+			g.stroke();
+		}
+		g.restore();
+
+		// 隔扇内框：双细线，离纸边一圈。题名最多占到 68%，不会碰到它。
+		const inset = Math.min(pw, ph) * 0.075;
+		g.strokeStyle = woodRgba(c, 0.3 * keep);
+		g.lineWidth = Math.max(0.5, Math.min(pw, ph) * 0.008);
+		g.beginPath();
+		g.roundRect(inset, inset, pw - inset * 2, ph - inset * 2, rad * 0.62);
+		g.stroke();
+		// 四角各一道短角饰：中式隔扇的角花，比一整圈花格安静得多
+		g.lineCap = "round";
+		for (const [sx, sy] of [
+			[1, 1],
+			[-1, 1],
+			[1, -1],
+			[-1, -1],
+		]) {
+			const ax = sx > 0 ? inset : pw - inset;
+			const ay = sy > 0 ? inset : ph - inset;
+			const len = Math.min(pw, ph) * 0.1;
+			g.beginPath();
+			g.moveTo(ax + sx * len, ay);
+			g.lineTo(ax, ay);
+			g.lineTo(ax, ay + sy * len);
+			g.stroke();
+		}
 
 		// 淡墨边：两条错开一点点的细线，比一条干净的线更像手画的
 		for (const off of [0, hair * 1.2]) {
 			g.strokeStyle = inkRgba(c, (off === 0 ? 0.34 : 0.12) * keep);
 			g.lineWidth = hair;
 			g.beginPath();
-			g.roundRect(
-				off,
-				off,
-				pw - off * 2,
-				ph - off * 2,
-				Math.min(pw, ph) * 0.14,
-			);
+			g.roundRect(off, off, pw - off * 2, ph - off * 2, rad);
 			g.stroke();
 		}
 	}
@@ -303,7 +386,93 @@ export function createRing(
 		return { x: cx, y: cy - R * 0.06, w: ew, h: eh, size };
 	}
 
+	/**
+	 * 灯里漏出来的光。**只画一件事**：从六道缝里往外投的光影。
+	 *
+	 *  灯心那团亮不归这一层 —— 它是钟层「灯壁」留出来的那块白（clock.ts 的 drawFace）。
+	 *  这一层在钟层**上面**，在这儿再堆一层加色只会把针和刻度一起洗白。
+	 *
+	 *  ⚠️ 六个光斑打在**灯片之间的缝**上（`st.a + π/SLOTS`），不是打在灯片自己的角度上。
+	 *  第一版画在灯片上，结果那六张纸是不透明的、正好把条纹整段盖住 ——
+	 *  从外面只看得到「条纹确实在转」，看不到条纹本身。光本来也就是从缝里漏出来的。
+	 *
+	 *  ⚠️ 这层加色**要落在暗带上才看得见**。它是往纸色上加暖黄，而暖黄
+	 *  (255,230,176) 的亮度其实**低于**纸 (240,234,222) —— 在没压暗的灯心里画，
+	 *  算出来是「更暗」而不是「更亮」，白费。灯壁那一环压下去之后，光纹才有东西可加。
+	 *
+	 *  亮度一律走 `lampRgba`：越往回拨越暖越暗，这一层自己不用知道时间。
+	 */
+	function drawLightField() {
+		const R = radius();
+		const { x: cx, y: cy } = center();
+		const dim = 1 - 0.5 * expand;
+
+		// 灯心的那团亮**不在这里画** —— 它是钟层的「灯壁」留出来的那块白
+		// （见 clock.ts 的 drawFace）。这一层在钟层**上面**，在这里再堆一层加色
+		// 只会把针和刻度洗白一遍。这一层只负责一件钟层画不了的事：
+		// 光**从六道缝里漏出来**。缝在两张灯片中间，也就是比灯片自己的角度再转半个格。
+		//
+		// ⚠️ 光带**不许从灯心起笔**。第一版梯度从 0 就开始加色，六条带子从圆心射出去 ——
+		// 画面上是一圈辐条，整只钟读成一只木轮子。真灯的光也不是从轴上漏的，
+		// 是从**灯片那一段缝**里漏的。所以 0.4 之前一律透明，峰值落在 0.72（约 0.68R），
+		// 正好是灯片所在的那一圈。
+		//
+		// ⚠️ 一条光柱**两侧不能是硬边**。canvas 的扇形只会在两侧切出两条直线，
+		// 六道一起画出来就是一把扇子／一条孔雀尾 —— 是图案，不是光。
+		// 光柱的边缘要化开，所以每条画两层：宽而淡、窄而浓，叠起来两侧就成了一道坡。
+		// （一层就想要柔边只能上 `ctx.filter`，那要每帧把整幅模糊一遍，不值。）
+		//
+		// ⚠️ 但**不能摊太开**。第一版用三层、最外那层半宽 0.078rad，六道一起糊上去
+		// 把整只灯盘洗成一层奶雾，赭晕的对比全被吃掉 —— 那不是「亮」，是「霾」。
+		const r1 = R * STREAK_REACH;
+		// [宽度倍数, 浓度倍数]：由外到内
+		const shafts = [
+			[1, 0.24],
+			[0.55, 0.34],
+		] as const;
+		for (let i = 0; i < SLOTS; i++) {
+			const a = slotState(i).a + Math.PI / SLOTS;
+			const near = (Math.cos(a - Math.PI) + 1) / 2;
+			const bright = (0.35 + 0.65 * near) * dim * 0.75;
+			const half = 0.042 + 0.022 * near;
+			for (const [wk, wa] of shafts) {
+				const g = ctx.createLinearGradient(
+					cx,
+					cy,
+					cx + Math.sin(a) * r1,
+					cy - Math.cos(a) * r1,
+				);
+				g.addColorStop(0, lampRgba(c, 0));
+				g.addColorStop(0.4, lampRgba(c, 0));
+				g.addColorStop(0.72, lampRgba(c, wa * bright));
+				g.addColorStop(1, lampRgba(c, 0));
+				ctx.fillStyle = g;
+				ctx.beginPath();
+				ctx.moveTo(cx, cy);
+				// 画布的角度从 +x 轴起算，而这一页的 a 是「12 点为 0、顺时针为正」，
+				// 方向向量是 (sin a, −cos a)，换算过去就是 a − π/2。
+				const h = half * wk;
+				ctx.arc(cx, cy, r1, a - Math.PI / 2 - h, a - Math.PI / 2 + h);
+				ctx.closePath();
+				ctx.fill();
+			}
+		}
+	}
+
+	/** 收藏得手的那一圈金涟漪。 */
+	function drawPulses() {
+		for (const p of pulses) {
+			const k = 1 - p.life;
+			ctx.strokeStyle = goldRgba(0.5 * p.life * p.life);
+			ctx.lineWidth = Math.max(1, 6 * p.life * (p.r / 120));
+			ctx.beginPath();
+			ctx.arc(p.x, p.y, p.r * (0.35 + k * 1.25), 0, Math.PI * 2);
+			ctx.stroke();
+		}
+	}
+
 	function drawPanels() {
+		const ease = smoothstep(expand);
 		for (let i = 0; i < SLOTS; i++) {
 			const st = slotState(i);
 			const isExpanded = expandSlot === i && expand > 0.001;
@@ -316,16 +485,18 @@ export function createRing(
 			let tilt = st.tilt;
 			if (isExpanded) {
 				const e = expandedRect();
-				const ease = smoothstep(expand);
+				// 几何走 smoothstep、鼓胀走 pushOpen：终值都是 1，所以落位之后
+				// 与 expandedBox 完全对得上（写字那一下才不会错位）。
+				const k = pushOpen(ease);
 				x = st.x + (e.x - st.x) * ease;
 				y = st.y + (e.y - st.y) * ease;
-				pw = st.pw + (e.w - st.pw) * ease;
-				ph = st.ph + (e.h - st.ph) * ease;
+				pw = st.pw + (e.w * k - st.pw) * ease;
+				ph = st.ph + (e.h * k - st.ph) * ease;
 				alpha = Math.max(st.alpha, 0.94);
 				tilt = st.tilt * (1 - ease);
 			} else if (expandSlot >= 0) {
 				// 有一张展开了，其余的退到后面去
-				alpha *= 1 - 0.62 * smoothstep(expand);
+				alpha *= 1 - 0.62 * ease;
 			}
 			// 字号由**这张题名自己的行列数**定，而不是一个固定比值 ——
 			// 2 字一列和 4 字一列的题名共用同一个比值时，必有一张是空的或撑破的。
@@ -337,30 +508,52 @@ export function createRing(
 				90,
 			);
 
-			// 灯片的暖光晕：悬停或被选中时更亮，像灯捻被挑了一下
+			// 灯片的暖光晕：悬停或被选中时更亮，像灯捻被挑了一下。
+			// 展开的那张另加一层「涌出来的光」—— 纸窗推开，灯里的光一下就出来了。
+			//
+			// ⚠️ 半径必须**小于**灯片间距的一半（灯片间距 = 环周 2πR/6 ≈ 1.05R，
+			// 六片的光晕半径一旦超过 0.52R 就会互相咬住、把整圈填成一片亮，
+			// 那六道缝里的光影就再也看不出来了 —— 之前 1.25×灯片宽正是这个毛病。
 			const lit = i === hoverSlot || isExpanded;
+			const spill = isExpanded ? ease : 0;
 			if (lit || st.near > 0.35) {
-				const glow = ctx.createRadialGradient(x, y, 0, x, y, pw * 1.25);
-				const a = (lit ? 0.3 : 0.12) * st.near * (1 - c.rewind * 0.4);
-				glow.addColorStop(0, `rgb(255 236 190 / ${a})`);
-				glow.addColorStop(1, "rgb(255 236 190 / 0)");
+				const rr = pw * (isExpanded ? 1.5 : 0.9);
+				const glow = ctx.createRadialGradient(x, y, 0, x, y, rr);
+				glow.addColorStop(
+					0,
+					lampRgba(c, (lit ? 0.44 : 0.17) * st.near + spill * 0.34),
+				);
+				glow.addColorStop(
+					0.55,
+					lampRgba(c, (lit ? 0.19 : 0.06) * st.near + spill * 0.16),
+				);
+				glow.addColorStop(1, lampRgba(c, 0));
 				ctx.fillStyle = glow;
 				ctx.beginPath();
-				ctx.arc(x, y, pw * 1.25, 0, Math.PI * 2);
+				ctx.arc(x, y, rr, 0, Math.PI * 2);
 				ctx.fill();
 			}
 
 			const art = panelArt(i, pw, ph, textSize);
+			const out = frameOut(pw, ph);
 			ctx.save();
 			ctx.globalAlpha = alpha;
 			ctx.translate(x, y);
 			ctx.rotate(tilt);
-			if (collected[i]) {
-				// 收藏过的灯片在角上多一道金边
-				ctx.strokeStyle = goldRgba(0.4);
-				ctx.lineWidth = 1.2;
+			if (collected[i] || spill > 0.01) {
+				// 收藏过的灯片在角上多一道金边；展开的那张同样镶一道，
+				// 于是「开着的那扇窗」和「收下的那张」用的是同一个记号。
+				const pad = out + (spill > 0.01 ? 3 : 5);
+				ctx.strokeStyle = goldRgba(0.4 * Math.max(collected[i] ? 1 : 0, spill));
+				ctx.lineWidth = Math.max(1, out * 0.14);
 				ctx.beginPath();
-				ctx.roundRect(-pw / 2 - 5, -ph / 2 - 5, pw + 10, ph + 10, 10);
+				ctx.roundRect(
+					-pw / 2 - pad,
+					-ph / 2 - pad,
+					pw + pad * 2,
+					ph + pad * 2,
+					out + pad,
+				);
 				ctx.stroke();
 			}
 			// 灯罩纸：展没展开都先画（展开的灯片就是同一张灯片放大了，单独写一套白底
@@ -402,10 +595,10 @@ export function createRing(
 	function frame(dt: number) {
 		// 展开动画：走到位才让写字开始
 		if (Math.abs(expand - expandTarget) > 0.0005)
-			expand += (expandTarget - expand) * Math.min(1, dt * 5.5);
+			expand += (expandTarget - expand) * Math.min(1, dt * 6.5);
 		else expand = expandTarget;
 
-		// 转：拖拽时向目标阻尼收敛；悬停减速；按住冻结
+		// 转：拖拽时向目标阻尼收敛；悬停减速；按住冻结；静思模式下彻底停住
 		const frozen = pressed || expand > 0.35;
 		if (targetRot != null) {
 			rot += (targetRot - rot) * Math.min(1, dt * 7);
@@ -413,12 +606,14 @@ export function createRing(
 			const speedMul =
 				(hoverSlot >= 0 ? 0.22 : 1) *
 				clamp(c.speed, 0.25, 3) *
-				(1 - 0.5 * c.rewind);
+				(1 - 0.5 * c.rewind) *
+				(1 - c.still);
 			rot += ((Math.PI * 2) / LAP_SECONDS) * dt * speedMul;
 		}
 
-		// 金尘：只有环在动、且还没被褪色压住的时候才逸散
-		const want = !frozen && c.rewind < 0.75;
+		// 金尘 / 时光粒子：环在动、且还没被褪色压住的时候才逸散。
+		// 这是全页唯一一套粒子 —— 再做第二套只是白花两份预算。
+		const want = !frozen && c.rewind < 0.75 && c.still < 0.5;
 		if (want && Math.random() < dt * 6) {
 			const a = rot + Math.random() * Math.PI * 2;
 			const { x: cx, y: cy } = center();
@@ -426,9 +621,9 @@ export function createRing(
 			dust.push({
 				x: cx + Math.sin(a) * ringR,
 				y: cy - Math.cos(a) * ringR,
-				vx: (Math.random() - 0.5) * 8,
-				vy: -6 - Math.random() * 10,
-				life: 1.6 + Math.random() * 1.6,
+				vx: (Math.random() - 0.5) * 12,
+				vy: -6 - Math.random() * 12,
+				life: 2.4 + Math.random() * 2,
 				r: 0.6 + Math.random() * 1.1,
 			});
 		}
@@ -443,10 +638,16 @@ export function createRing(
 			p.y += p.vy * dt;
 			p.vy -= dt * 3; // 微微上浮，像被灯的热气托着
 		}
-		if (dust.length > 160) dust.splice(0, dust.length - 160);
+		if (dust.length > 90) dust.splice(0, dust.length - 90);
+		for (let i = pulses.length - 1; i >= 0; i--) {
+			pulses[i].life -= dt * 1.5;
+			if (pulses[i].life <= 0) pulses.splice(i, 1);
+		}
 
 		ctx.clearRect(0, 0, w, h);
+		drawLightField();
 		drawPanels();
+		drawPulses();
 		drawDust();
 	}
 
@@ -460,8 +661,10 @@ export function createRing(
 			Math.round(((((turns - rot / (Math.PI * 2)) % 1) + 1) % 1) * SLOTS) %
 			SLOTS;
 		const st = slotState(slot);
-		const padX = st.pw / 2 + 8;
-		const padY = st.ph / 2 + 10;
+		// 木框也算这张灯片的一部分：点得到框，就该选得中它
+		const out = frameOut(st.pw, st.ph);
+		const padX = st.pw / 2 + out + 8;
+		const padY = st.ph / 2 + out + 10;
 		if (Math.abs(x - st.x) <= padX && Math.abs(y - st.y) <= padY) return slot;
 		return -1;
 	}
@@ -487,6 +690,12 @@ export function createRing(
 			const { x: cx, y: cy } = center();
 			const a = Math.atan2(x - cx, -(y - cy));
 			targetRot = dragStartRot + (a - dragStartAngle);
+			// 每格顿一下：离某一格只差一成的时候往回拉掉大半，松手总停在灯片正中。
+			// 与拨针的齿感同一套做法 —— 一页里两种「格」不该是两种手感。
+			const step = (Math.PI * 2) / SLOTS;
+			const near = Math.round(targetRot / step) * step;
+			const off = targetRot - near;
+			if (Math.abs(off) < step * 0.1) targetRot = near + off * 0.32;
 		},
 		endDrag() {
 			dragging = false;
@@ -525,6 +734,22 @@ export function createRing(
 		markCollected(slot) {
 			collected[slot] = true;
 		},
+		burst(slot) {
+			const st = slotState(slot);
+			pulses.push({ x: st.x, y: st.y, life: 1, r: Math.max(st.pw, st.ph) });
+			for (let i = 0; i < 16; i++) {
+				const a = Math.random() * Math.PI * 2;
+				const v = 30 + Math.random() * 90;
+				dust.push({
+					x: st.x,
+					y: st.y,
+					vx: Math.cos(a) * v,
+					vy: Math.sin(a) * v - 24,
+					life: 1.1 + Math.random() * 1.1,
+					r: 0.8 + Math.random() * 1.6,
+				});
+			}
+		},
 		slots() {
 			return Array.from({ length: SLOTS }, (_, i) => {
 				const st = slotState(i);
@@ -539,6 +764,7 @@ export function createRing(
 						st.pw * TEXT_FILL_W,
 						st.ph * TEXT_FILL_H,
 					),
+					frame: frameOut(st.pw, st.ph),
 				};
 			});
 		},

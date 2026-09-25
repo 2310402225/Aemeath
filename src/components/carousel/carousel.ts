@@ -11,8 +11,9 @@
 //   按在**灯片**上 1.5 秒 → 收藏（触屏没有右键，这是替代手势）
 //   按在**钟面上**/旧物上 2.5 秒 → 点亮旧物（要求几乎没有位移，否则算拖动）
 
-import { createBrush, LINES } from "./brush";
-import { createClock, tickAt } from "./clock";
+import { blip, setSound } from "./audio";
+import { createBrush, LINES, type WriterOptions } from "./brush";
+import { createClock, TICK_COUNT, tickAt } from "./clock";
 import {
 	type Couplings,
 	clamp,
@@ -64,6 +65,9 @@ export function createCarouselApp(): CarouselApp {
 	const caption = q<HTMLElement>("tc-caption");
 	const capNote = q<HTMLElement>("tc-caption-note");
 	const capLatin = q<HTMLElement>("tc-caption-latin");
+	const helpToggle = q<HTMLButtonElement>("tc-help-toggle");
+	const helpBox = q<HTMLElement>("tc-help");
+	const soundBox = q<HTMLInputElement>("tc-sound");
 
 	const c: Couplings = {
 		rewind: 0,
@@ -72,6 +76,9 @@ export function createCarouselApp(): CarouselApp {
 		wind: 0,
 		focus: 0,
 		clock: 0,
+		still: 0,
+		hint: 1,
+		allCollected: false,
 		calm: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
 	};
 
@@ -97,7 +104,14 @@ export function createCarouselApp(): CarouselApp {
 	let last = performance.now();
 	let destroyed = false;
 	let used = false;
+	let hidden = false;
 	let lastReadout = "";
+	/** 已经落了几句旧话（只数「在空处点一下」写出来的，不含灯片题名）。 */
+	let linesWritten = 0;
+	/** 静思模式的目标值：写满六句题记就进，复位就出。 */
+	let stillTarget = 0;
+	/** 拨针上一次落在第几格，用来在过格的那一帧出声。 */
+	let lastTickIdx = 0;
 
 	/** 指针按下的那一笔的状态 */
 	let active: {
@@ -115,6 +129,42 @@ export function createCarouselApp(): CarouselApp {
 		if (used) return;
 		used = true;
 		intro?.classList.add("is-gone");
+	}
+
+	/** 落笔微震：纸被笔尖按了一下。
+	 *
+	 *  加在**整层墨**上而不是某一个字上 —— 抖的是纸，不是字；一行 CSS 都不用写，
+	 *  用 Web Animations 也不会在元素上留一个 transform（那个会跟着 hover 打架）。
+	 */
+	function tap() {
+		if (c.calm) return;
+		ink.animate(
+			[
+				{ transform: "translateY(0)" },
+				{ transform: "translateY(1.6px)" },
+				{ transform: "translateY(-0.7px)" },
+				{ transform: "translateY(0)" },
+			],
+			{ duration: 240, easing: "ease-out" },
+		);
+	}
+
+	/** 写一句。三处落笔走同一个入口，于是「微震 + 那一声轻响」不会漏掉某一路。 */
+	function writeLine(text: string, x: number, y: number, opt: WriterOptions) {
+		brush.write(text, x, y, opt);
+		tap();
+		blip(300, 46, 0.03);
+	}
+
+	/** 在空处落一句旧话（语录池里随机取）。写满六句就进静思模式。 */
+	function writeRandomLine(x: number, y: number, size: number, alpha: number) {
+		writeLine(LINES[Math.floor(Math.random() * LINES.length)], x, y, {
+			size,
+			mode: "h",
+			alpha,
+		});
+		linesWritten++;
+		if (linesWritten >= LINES.length) stillTarget = 1;
 	}
 
 	// ---------------------------------------------------------------- 灯片与收藏
@@ -144,13 +194,14 @@ export function createCarouselApp(): CarouselApp {
 			brush.clear();
 			showCaption(slot);
 			expandedRelic = PANELS[slot].relic;
+			blip(420, 68, 0.035);
 			// 落位之后才写字：飞在半路上的灯片上写字会跟着一起飘
 			window.setTimeout(
 				() => {
 					if (destroyed || ring.expanded() !== slot) return;
 					const box = ring.expandedBox();
 					if (!box) return;
-					brush.write(PANELS[slot].title, box.x, box.y, {
+					writeLine(PANELS[slot].title, box.x, box.y, {
 						size: box.size,
 						mode: "v",
 						alpha: 0.94,
@@ -172,6 +223,8 @@ export function createCarouselApp(): CarouselApp {
 		ring.markCollected(slot);
 		// 收藏 → 在对应刻度上落一颗金点。六张灯片、十二个刻度，正好一格隔一格。
 		clock.dropMark(slot * 2, "gold", slot);
+		ring.burst(slot);
+		blip(760, 90, 0.05);
 		markUsed();
 	}
 
@@ -208,14 +261,19 @@ export function createCarouselApp(): CarouselApp {
 	}
 
 	function updateReadout() {
-		const text = `${eraWord(c)} · ${speedWord(c)}`;
+		const quiet = c.still > 0.5;
+		const text = quiet ? "静思" : `${eraWord(c)} · ${speedWord(c)}`;
 		const n = ring.collected().filter(Boolean).length;
 		const key = `${text}|${n}`;
 		if (key === lastReadout) return;
 		lastReadout = key;
 		if (readTime) readTime.textContent = text;
 		if (readCount)
-			readCount.textContent = n ? `收藏 ${n} / ${PANELS.length}` : "未收藏";
+			readCount.textContent = n
+				? `收藏 ${n} / ${PANELS.length}`
+				: quiet
+					? "六句已落"
+					: "未收藏";
 	}
 
 	// ---------------------------------------------------------------- 主循环
@@ -223,9 +281,20 @@ export function createCarouselApp(): CarouselApp {
 	function frame(now: number) {
 		if (destroyed) return;
 		raf = requestAnimationFrame(frame);
+		// 标签页被切走时别算：这几帧的 dt 是几分钟，一回来整页会跳一下；
+		// 而 rAF 在后台本来就该停，这一句是给「切回来第一帧」垫的。
+		if (hidden) {
+			last = now;
+			return;
+		}
 		const dt = Math.min(0.05, (now - last) / 1000);
 		last = now;
 		c.clock += dt;
+
+		// 引导与静思都是「慢慢过去」的量，不瞬间切换：
+		// 第一次动手之后指针就不再晃；写满六句则整页一点点静下来。
+		c.hint = used ? Math.max(0, c.hint - dt * 1.2) : 1;
+		c.still += (stillTarget - c.still) * Math.min(1, dt * 0.7);
 
 		// 长按到点了就办事。⚠️ 判据是「按下到现在」，不是「最后一次移动到现在」——
 		// 按着不动的人本来就不会有新的 move 事件。
@@ -241,6 +310,14 @@ export function createCarouselApp(): CarouselApp {
 			}
 		}
 
+		// 拨针过格的一声：齿感要听得见才算齿感（音效关着的时候这里什么都不做）
+		const step = (Math.PI * 2) / TICK_COUNT;
+		const tickIdx = Math.round(clock.sweep() / step);
+		if (tickIdx !== lastTickIdx) {
+			if (c.dragging) blip(620, 34, 0.035);
+			lastTickIdx = tickIdx;
+		}
+
 		// 针被拨回「此刻」时，三件旧物一起亮一下 —— 此刻它们都还在
 		const before = c.rewind;
 		// 展开进度要在 clock.frame 之前写进去：针与刻度据它退到后面
@@ -249,6 +326,7 @@ export function createCarouselApp(): CarouselApp {
 		if (before > 0.02 && c.rewind <= 0.02) {
 			for (let i = 0; i < 3; i++) litUntil[i] = now + 1800;
 		}
+		c.allCollected = ring.collected().filter(Boolean).length >= PANELS.length;
 
 		updateRelics();
 		ring.frame(dt);
@@ -265,6 +343,13 @@ export function createCarouselApp(): CarouselApp {
 	}
 
 	function onDown(e: PointerEvent) {
+		// 舞台上的按钮、链接、说明面板都盖在画布之上。落在它们身上的那一下不能再当成
+		// 「在空处点了一下」—— 从前点一次「回到此刻」，右下角会凭空多出一行谁也没要的字
+		// （按钮的 click 照旧生效，只是不再顺手写一句）。
+		const hitUi = (e.target as HTMLElement | null)?.closest(
+			"button, a, input, label, select, .tc-help",
+		);
+		if (hitUi) return;
 		const { x, y } = local(e);
 		pointers.set(e.pointerId, { x, y });
 		downAt.set(e.pointerId, performance.now());
@@ -366,20 +451,10 @@ export function createCarouselApp(): CarouselApp {
 						// 展开状态下点空白 = 收起（钟内那圈也是「空白」）
 						openPanel(ring.expanded());
 					} else if (a.part === "blank") {
-						const line = LINES[Math.floor(Math.random() * LINES.length)];
-						brush.write(line, x, y, {
-							size: clamp(clock.radius() * 0.105, 22, 46),
-							mode: "h",
-							alpha: 0.9,
-						});
+						writeRandomLine(x, y, clamp(clock.radius() * 0.105, 22, 46), 0.9);
 					} else {
 						// 点在钟内那片空地上也写字：别让用户去猜哪块空地才算数
-						const line = LINES[Math.floor(Math.random() * LINES.length)];
-						brush.write(line, x, y, {
-							size: clamp(clock.radius() * 0.09, 20, 40),
-							mode: "h",
-							alpha: 0.86,
-						});
+						writeRandomLine(x, y, clamp(clock.radius() * 0.09, 20, 40), 0.86);
 					}
 				}
 			}
@@ -394,6 +469,12 @@ export function createCarouselApp(): CarouselApp {
 	}
 
 	function onContext(e: MouseEvent) {
+		if (
+			(e.target as HTMLElement | null)?.closest(
+				"button, a, input, label, select",
+			)
+		)
+			return;
 		const { x, y } = local(e);
 		const slot = ring.hit(x, y);
 		if (slot >= 0) {
@@ -408,12 +489,19 @@ export function createCarouselApp(): CarouselApp {
 		}
 	}
 
+	/** 回到此刻。顺带把静思模式解掉、六句重新数 —— 这一下是「重新开始看」。 */
+	function backToNow() {
+		clock.reset();
+		stillTarget = 0;
+		linesWritten = 0;
+		markUsed();
+	}
+
 	function onDblClick(e: MouseEvent) {
 		const { x, y } = local(e);
 		const part = clock.partAt(x, y);
 		if (part === "center") {
-			clock.reset();
-			markUsed();
+			backToNow();
 		} else if (part === null) {
 			// 双击空地：风干最后一行字
 			brush.dry();
@@ -434,9 +522,25 @@ export function createCarouselApp(): CarouselApp {
 		if (tag === "INPUT" || tag === "TEXTAREA") return;
 		if (e.key === "Backspace") {
 			if (brush.undo()) e.preventDefault();
-		} else if (e.key === "Escape" && ring.expanded() >= 0) {
-			openPanel(ring.expanded());
+		} else if (e.key === "Escape") {
+			// Esc 先收说明面板，再收展开的灯片 —— 一层一层退，别一下全关掉
+			if (helpBox && !helpBox.hidden) {
+				toggleHelp(false);
+			} else if (ring.expanded() >= 0) {
+				openPanel(ring.expanded());
+			}
 		}
+	}
+
+	/** 说明面板开合。按钮与面板上的 aria 一起更新，读屏才知道现在是开还是关。 */
+	function toggleHelp(open: boolean) {
+		if (!helpBox || !helpToggle) return;
+		helpBox.hidden = !open;
+		helpToggle.setAttribute("aria-expanded", open ? "true" : "false");
+	}
+
+	function onVisibility() {
+		hidden = document.hidden;
 	}
 
 	// ---------------------------------------------------------------- 装配
@@ -458,9 +562,14 @@ export function createCarouselApp(): CarouselApp {
 	stage.addEventListener("dblclick", onDblClick);
 	stage.addEventListener("wheel", onWheel, { passive: false });
 	window.addEventListener("keydown", onKey);
-	resetBtn?.addEventListener("click", () => {
-		clock.reset();
-		markUsed();
+	document.addEventListener("visibilitychange", onVisibility);
+	resetBtn?.addEventListener("click", backToNow);
+	helpToggle?.addEventListener("click", () =>
+		toggleHelp(helpBox?.hidden ?? false),
+	);
+	soundBox?.addEventListener("change", () => {
+		setSound(soundBox.checked);
+		if (soundBox.checked) blip(560, 80, 0.05);
 	});
 	nav?.addEventListener("click", (e) => {
 		const btn = (e.target as HTMLElement).closest("button[data-slot]");
@@ -482,6 +591,10 @@ export function createCarouselApp(): CarouselApp {
 		brush,
 		scenery,
 		panels: PANELS,
+		// 这两个是内部计数器，不露出来的话「六句之后进静思」只能靠看画面猜
+		lines: () => linesWritten,
+		still: () => stillTarget,
+		ticks: () => lastTickIdx,
 	};
 
 	return {
@@ -498,6 +611,7 @@ export function createCarouselApp(): CarouselApp {
 			stage.removeEventListener("dblclick", onDblClick);
 			stage.removeEventListener("wheel", onWheel);
 			window.removeEventListener("keydown", onKey);
+			document.removeEventListener("visibilitychange", onVisibility);
 		},
 	};
 }

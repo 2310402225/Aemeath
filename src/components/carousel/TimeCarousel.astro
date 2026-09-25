@@ -95,6 +95,46 @@ import { url } from "@/utils/url-utils";
 		<button type="button" data-slot="5">玩具 · 发条玩具 玻璃弹珠</button>
 	</nav>
 
+	<!-- 操作说明：这一页有四种交互，靠一句「拨动指针」是猜不全的。
+	     折起来的时候只占一个按钮 —— 说明本身不该跟画面抢地方。 -->
+	<div class="tc-help-wrap">
+		<button
+			type="button"
+			class="tc-help-toggle"
+			id="tc-help-toggle"
+			aria-expanded="false"
+			aria-controls="tc-help"
+		>
+			<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+				<path
+					d="M4 5.5A1.5 1.5 0 0 1 5.5 4h5A1.5 1.5 0 0 1 12 5.5v13A1.5 1.5 0 0 1 10.5 20h-5A1.5 1.5 0 0 1 4 18.5zM12 8h6.5A1.5 1.5 0 0 1 20 9.5v9A1.5 1.5 0 0 1 18.5 20H12M7.5 8h1.5M7.5 11h1.5M15 11h2M15 14h2"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"></path>
+			</svg>
+			<span>操作说明</span>
+		</button>
+		<div class="tc-help" id="tc-help" hidden>
+			<ul class="tc-help-list">
+				<li><b>拨针</b>在钟内按住往外拖 · 时间往回走</li>
+				<li><b>转灯</b>按住灯片左右拖 · 六张跟着转</li>
+				<li><b>写字</b>在空处点一下 · 落一句旧话</li>
+				<li><b>展灯</b>点一下灯片 · 推开纸窗看那张</li>
+				<li><b>收藏</b>灯片上按住 1.5 秒，或右键</li>
+				<li><b>点亮</b>在旧物上按住 2.5 秒 · 三件一起亮</li>
+				<li><b>调速</b>钟面上滚轮，或双指上下滑</li>
+				<li><b>风干 / 淡去</b>双击空处 / 右键空处</li>
+				<li><b>撤销 / 复位</b>Backspace / 双击钟心</li>
+			</ul>
+			<label class="tc-help-sound">
+				<input type="checkbox" id="tc-sound" />
+				<span>音效（默认关）</span>
+			</label>
+		</div>
+	</div>
+
 	<p class="tc-credit">宣纸、墨钟、走马灯，全部当场算出来 · Canvas 2D</p>
 </section>
 
@@ -180,6 +220,10 @@ import { url } from "@/utils/url-utils";
 		/* 0.14 的边线在宣纸上几乎看不见，按钮的边界就没了；0.3 是「看得见但不抢」的那一档。 */
 		--tc-line: rgb(28 26 23 / 0.3);
 		--tc-panel-bg: rgb(245 240 230 / 0.72);
+		/* 四个浮层（退回 / 复位 / 说明按钮 / 说明面板）共用同一组贴边距离。
+		   从前这几个 clamp 在四处各写了一遍，加一个浮层就得再抄一遍。 */
+		--tc-float-x: clamp(1rem, 3.4vw, 2.2rem);
+		--tc-float-y: clamp(1rem, 3.4vh, 2rem);
 		color: var(--tc-ink);
 	}
 
@@ -341,9 +385,8 @@ import { url } from "@/utils/url-utils";
 	}
 
 	.tc-home,
-	.tc-reset {
-		position: absolute;
-		z-index: 6;
+	.tc-reset,
+	.tc-help-toggle {
 		display: flex;
 		align-items: center;
 		gap: 0.45rem;
@@ -355,6 +398,9 @@ import { url } from "@/utils/url-utils";
 		-webkit-backdrop-filter: blur(8px);
 		backdrop-filter: blur(8px);
 		color: var(--tc-ink);
+		/* ⚠️ button 不继承字体，a 继承。少了这一行，同一排的「退回博客」是站点字体、
+		   「回到此刻」是系统按钮字体，并排摆着粗细对不上。 */
+		font: inherit;
 		font-size: 0.72rem;
 		letter-spacing: 0.14em;
 		text-decoration: none;
@@ -366,15 +412,93 @@ import { url } from "@/utils/url-utils";
 			transform 220ms ease;
 	}
 
+	.tc-home,
+	.tc-reset {
+		position: absolute;
+		z-index: 6;
+	}
+
 	.tc-home {
-		right: clamp(1rem, 3.4vw, 2.2rem);
-		top: clamp(1rem, 3.4vh, 2rem);
+		right: var(--tc-float-x);
+		top: var(--tc-float-y);
 	}
 
 	.tc-reset {
-		right: clamp(1rem, 3.4vw, 2.2rem);
-		bottom: clamp(1rem, 3.4vh, 2rem);
+		right: var(--tc-float-x);
+		bottom: var(--tc-float-y);
 		cursor: pointer;
+	}
+
+	/* 说明按钮落在复位按钮上面一格：右下角是这一页的「控制区」，
+	   别的东西不往那儿放，也就不会跟画面抢地方。 */
+	.tc-help-wrap {
+		position: absolute;
+		right: var(--tc-float-x);
+		bottom: calc(var(--tc-float-y) + 54px);
+		z-index: 7;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.6rem;
+	}
+
+	.tc-help-toggle {
+		cursor: pointer;
+	}
+
+	.tc-help {
+		width: min(88vw, 21rem);
+		max-height: 62svh;
+		overflow: auto;
+		padding: 0.85rem 1.05rem 0.75rem;
+		border: 1px solid var(--tc-line);
+		border-radius: 0.9rem;
+		background: var(--tc-panel-bg);
+		-webkit-backdrop-filter: blur(10px);
+		backdrop-filter: blur(10px);
+		color: var(--tc-ink-mid);
+		font-size: 0.68rem;
+		line-height: 1.95;
+		letter-spacing: 0.04em;
+	}
+
+	/* ⚠️ 上一行给了 display，[hidden] 就压不住了，必须显式写回来 */
+	.tc-help[hidden] {
+		display: none;
+	}
+
+	.tc-help-list {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.tc-help-list li {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.tc-help-list b {
+		flex: 0 0 4.9rem;
+		color: var(--tc-ink);
+		font-weight: 500;
+	}
+
+	.tc-help-sound {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 0.65rem;
+		padding-top: 0.65rem;
+		border-top: 1px solid var(--tc-line);
+		cursor: pointer;
+	}
+
+	.tc-help-sound input {
+		width: 1rem;
+		height: 1rem;
+		margin: 0;
+		accent-color: var(--tc-cinnabar);
 	}
 
 	.tc-home:hover,
@@ -383,13 +507,22 @@ import { url } from "@/utils/url-utils";
 		transform: translateY(-2px);
 	}
 
+	.tc-help-toggle:hover {
+		border-color: rgb(28 26 23 / 0.4);
+	}
+
 	.tc-home svg,
 	.tc-reset svg {
 		opacity: 0.7;
 	}
 
+	.tc-help-toggle svg {
+		opacity: 0.7;
+	}
+
 	.tc-home:focus-visible,
-	.tc-reset:focus-visible {
+	.tc-reset:focus-visible,
+	.tc-help-toggle:focus-visible {
 		outline: 2px solid var(--tc-cinnabar);
 		outline-offset: 3px;
 	}
@@ -450,7 +583,8 @@ import { url } from "@/utils/url-utils";
 		}
 
 		.tc-home span,
-		.tc-reset span {
+		.tc-reset span,
+		.tc-help-toggle span {
 			/* 只留图标，把顶栏让给画面 —— 但 aria-label 仍在，读屏读得到 */
 			position: absolute;
 			width: 1px;
@@ -460,7 +594,8 @@ import { url } from "@/utils/url-utils";
 		}
 
 		.tc-home,
-		.tc-reset {
+		.tc-reset,
+		.tc-help-toggle {
 			padding: 0;
 			width: 44px;
 			justify-content: center;
@@ -469,6 +604,12 @@ import { url } from "@/utils/url-utils";
 		.tc-credit {
 			display: none;
 		}
+
+		/* 窄屏上说明面板会把画面压掉大半，所以一打开就铺满底部那一条 */
+		.tc-help {
+			width: min(92vw, 21rem);
+			max-height: 46svh;
+		}
 	}
 
 	/* 尊重系统的「减少动态效果」：CSS 这侧只关过渡，canvas 那侧由 JS 读同一个查询 */
@@ -476,7 +617,8 @@ import { url } from "@/utils/url-utils";
 		.tc-intro,
 		.tc-caption,
 		.tc-home,
-		.tc-reset {
+		.tc-reset,
+		.tc-help-toggle {
 			transition-duration: 1ms;
 		}
 

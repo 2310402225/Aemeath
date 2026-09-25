@@ -12,7 +12,14 @@
 // 交互：点空白写一句（语录池）、双击风干（冻住不再变）、右键淡去、Backspace 撤销。
 
 import { BRUSH_STROKES, type BrushGlyph } from "./brush-strokes";
-import { type Couplings, clamp, inkRgba, smoothstep } from "./couplings";
+import {
+	type Couplings,
+	clamp,
+	dprCap,
+	inkRgba,
+	lerp,
+	smoothstep,
+} from "./couplings";
 
 /** 语录池。点空处随机取一句 —— 固定的池子才配得上「旧话」这个说法。 */
 export const LINES = [
@@ -161,8 +168,10 @@ export type WriterOptions = {
 	alpha?: number;
 };
 
-/** 竖排时列与列的间距相对字号（`layout` 与 `fitSize` 必须用同一个）。 */
-const COL_GAP = 1.12;
+/** 竖排时列与列的间距相对字号（`layout` 与 `fitSize` 必须用同一个）。
+ *  导出是给自测用的：断言「字号 × 占位进得去框」时要用同一个间距，
+ *  在测试里另抄一个数就白测了。 */
+export const COL_GAP = 1.12;
 
 /** 洇：笔迹底下还铺着一层更宽更淡的底（见 paintRun）。它比字本身大这么多倍 ——
  *  排版要让「字 + 洇」一起进框，就不能只看字号，得把这个倍数除掉。 */
@@ -232,6 +241,7 @@ export function paintRun(
 	y: number,
 	opt: WriterOptions,
 	budget: number,
+	halo = HALO_SCALE,
 ) {
 	let left = budget;
 	for (const { ch, x: gx, y: gy } of layout(text, x, y, opt)) {
@@ -242,10 +252,11 @@ export function paintRun(
 			if (left <= 0) break;
 			const len = strokeLength(d);
 			const ratio = left >= len ? 1 : left / len;
-			// 洇：同一笔先铺一层更宽更淡的底，边缘就不再是刀切的
+			// 洇：同一笔先铺一层更宽更淡的底，边缘就不再是刀切的。
+			// `halo` 由调用方给：刚落的墨还在往纸里走，那层底是渐渐铺开的。
 			g.save();
 			g.globalAlpha *= 0.3;
-			inkStroke(g, d, gx, gy, (opt.size / 2) * HALO_SCALE, ratio);
+			inkStroke(g, d, gx, gy, (opt.size / 2) * halo, ratio);
 			g.restore();
 			inkStroke(g, d, gx, gy, opt.size / 2, ratio);
 			left -= len;
@@ -319,6 +330,9 @@ export type Brush = {
 	trail: (x: number, y: number, speed: number, dt: number) => void;
 	/** 页面上有没有字（自测用） */
 	count: () => number;
+	/** 正在淡去的行数（自测用）。⚠️ 它们还算在 `count()` 里（还没消失），
+	 *  所以要断言「墨迹上限真的生效了」必须两个一起看：总数封顶 + 确有在淡的。 */
+	fading: () => number;
 	/** 还有一笔正在写吗。⚠️ 别用 count() 判「写完了」—— 刚开始写它就已经 ≥1。 */
 	writing: () => boolean;
 };
@@ -346,6 +360,9 @@ export function createBrush(canvas: HTMLCanvasElement, c: Couplings): Brush {
 	}[] = [];
 	let wispAcc = 0;
 	let dirty = true;
+	/** 纸上最多留几行。再多也没人看，但每一行都要占一次烘焙与一次贴图 ——
+	 *  到顶就把最早的那行推去淡掉（不是删掉：淡是看得见的，删是凭空少一行）。 */
+	const MAX_ITEMS = 12;
 
 	function resetPage() {
 		page = document.createElement("canvas");
@@ -357,7 +374,7 @@ export function createBrush(canvas: HTMLCanvasElement, c: Couplings): Brush {
 
 	function resize() {
 		const rect = canvas.getBoundingClientRect();
-		dpr = Math.min(2, window.devicePixelRatio || 1);
+		dpr = dprCap();
 		w = Math.max(1, Math.round(rect.width));
 		h = Math.max(1, Math.round(rect.height));
 		canvas.width = Math.round(w * dpr);
@@ -375,6 +392,15 @@ export function createBrush(canvas: HTMLCanvasElement, c: Couplings): Brush {
 		if (alpha <= 0.01) return;
 		// 风干之后墨色会微微沉下去一点；没风干时字还是「湿」的，更深
 		const tone = item.state === "dry" ? 1.06 : 0.98;
+		// 洇：刚落下的墨还在往纸里走 —— 那层淡边在 0.3 秒里从贴边铺到最宽。
+		// 烘进纸里的字永远是铺满的（烘干即定型），所以只有正在写的那行在变。
+		const halo = live
+			? lerp(
+					1.03,
+					HALO_SCALE,
+					smoothstep((performance.now() / 1000 - item.born) / 0.3),
+				)
+			: HALO_SCALE;
 		g.save();
 		const ink = inkRgba(c, alpha, tone);
 		g.strokeStyle = ink;
@@ -386,6 +412,7 @@ export function createBrush(canvas: HTMLCanvasElement, c: Couplings): Brush {
 			item.y,
 			item.opt,
 			live ? item.done : Number.POSITIVE_INFINITY,
+			halo,
 		);
 		g.restore();
 	}
@@ -440,11 +467,17 @@ export function createBrush(canvas: HTMLCanvasElement, c: Couplings): Brush {
 			if (wisps[i].life <= 0) wisps.splice(i, 1);
 			else moving = true;
 		}
-		for (const it of items) {
-			if (it.state === "fading") {
-				it.fade += dt * 0.5;
-				moving = true;
-			}
+		for (let i = items.length - 1; i >= 0; i--) {
+			const it = items[i];
+			if (it.state !== "fading") continue;
+			it.fade += dt * 0.5;
+			if (it.fade >= 1) {
+				// 淡完了就得**真的出队**：留着的话它每帧仍要参与烘焙，
+				// 而 alpha 已经归零，纯是白画。
+				items.splice(i, 1);
+				bakeAll();
+				dirty = true;
+			} else moving = true;
 		}
 		if (dirty || moving) {
 			dirty = false;
@@ -477,6 +510,15 @@ export function createBrush(canvas: HTMLCanvasElement, c: Couplings): Brush {
 				fade: 0,
 				born: performance.now() / 1000,
 			};
+			// 到顶了：把最早那几行推去淡掉。要按「还没开始淡的」算，
+			// 否则连着写十几句时，一次只推一行，纸上会越堆越多。
+			let over = items.filter((it) => it.state !== "fading").length - MAX_ITEMS;
+			for (const it of items) {
+				if (over <= 0) break;
+				if (it.state === "fading") continue;
+				it.state = "fading";
+				over--;
+			}
 			dirty = true;
 		},
 		dry() {
@@ -542,6 +584,7 @@ export function createBrush(canvas: HTMLCanvasElement, c: Couplings): Brush {
 			dirty = true;
 		},
 		count: () => items.length + (active ? 1 : 0),
+		fading: () => items.filter((it) => it.state === "fading").length,
 		writing: () => active !== null,
 	};
 }
