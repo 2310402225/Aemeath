@@ -101,6 +101,12 @@ export function createDualApp(): DualApp {
 	let movedFar = false;
 	let inkPressed = false;
 	let holdFired = false;
+	/** 按下只记「抓到了什么」，位移过阈值才真正认领拖拽（spec：修复点击误触）。
+	 *  没有这一步，「在针上点一下」也会短暂占住 op，把同一时刻别的操作全挡掉。 */
+	let pending: { kind: "needle" | "ring" | "disc"; index: number } | null =
+		null;
+	/** 水墨模式：点画布是「写字」还是「晕开一幅画」。角落开关 / M 键切换。 */
+	let inkMode: "char" | "painting" = "char";
 
 	// ────────────────────────────────────────────── 尺寸
 
@@ -148,12 +154,10 @@ export function createDualApp(): DualApp {
 	function setScene(s: Scene) {
 		if (d.scene === s) return;
 		d.scene = s;
-		if (s === "cosmos") {
-			reelTarget = 0;
-			reels.solo(-1);
-		} else {
-			reels.solo(-1);
-		}
+		// 进寰宇：星空散开的同时胶卷旋开、汉字从中心一点飞出组装成罗盘（一次点击全发生）。
+		// 离开寰宇：胶卷收拢、汉字收回中心光点，下次进来重新组装。
+		reelTarget = s === "cosmos" ? 1 : 0;
+		reels.solo(-1);
 		syncButtons();
 	}
 
@@ -342,8 +346,8 @@ export function createDualApp(): DualApp {
 			// 胶片滚过针上的那几秒里按下针就变成"打开一张全屏照片" —— 而 frame_preview 会
 			// 把**之后每一次** pointerdown 全部吃掉（`onDown` 头一行就 return），于是「拨针」
 			// 整条交互一起失效。这一条是 trial-and-error 扫出来的：整圈 72 格里只有 2 格能抓到针。
-			if (h?.kind === "needle" && claim("dragging_pointer")) {
-				lastNeedleAngle = angleAt(x, y, gm);
+			if (h?.kind === "needle") {
+				pending = { kind: "needle", index: 0 };
 				return;
 			}
 			if (h?.kind === "memory") {
@@ -359,17 +363,12 @@ export function createDualApp(): DualApp {
 				openFrame(idx);
 				return;
 			}
-			// ④ 转汉字环时，随机让一条胶卷独立自转（一直转到环停稳）
-			if (h?.kind === "ring" && claim("dragging_text")) {
-				d.ringIdx = h.index;
-				lastRingAngle = angleAt(x, y, gm);
-				const n = reels.count();
-				d.soloIdx = n > 0 ? Math.floor(Math.random() * n) : -1;
-				reels.solo(d.soloIdx);
+			if (h?.kind === "ring") {
+				pending = { kind: "ring", index: h.index };
 				return;
 			}
-			if (h?.kind === "disc" && claim("dragging_compass")) {
-				lastTilt = { x, y };
+			if (h?.kind === "disc") {
+				pending = { kind: "disc", index: 0 };
 				return;
 			}
 			if (reels.onReel(x, y, gm) && claim("rolling_film")) {
@@ -415,6 +414,27 @@ export function createDualApp(): DualApp {
 		}
 		if (Math.hypot(x - downPos.x, y - downPos.y) > 6) movedFar = true;
 
+		// 误触阈值：按下时只记了「抓到什么」，拖过阈值才真正认领。
+		// 认领这一帧不算位移（针/环从下一帧开始跟手；转盘用按下点做基准，不丢第一帧）
+		if (pending) {
+			if (!movedFar) return;
+			const gm2 = compass.geom(d, view);
+			if (pending.kind === "needle" && claim("dragging_pointer")) {
+				lastNeedleAngle = angleAt(x, y, gm2);
+			} else if (pending.kind === "ring" && claim("dragging_text")) {
+				d.ringIdx = pending.index;
+				lastRingAngle = angleAt(x, y, gm2);
+				// ④ 转汉字环时，随机让一条胶卷独立自转（一直转到环停稳）
+				const n = reels.count();
+				d.soloIdx = n > 0 ? Math.floor(Math.random() * n) : -1;
+				reels.solo(d.soloIdx);
+			} else if (pending.kind === "disc" && claim("dragging_compass")) {
+				lastTilt = { x: downPos.x, y: downPos.y };
+			}
+			pending = null;
+			return;
+		}
+
 		const gm = compass.geom(d, view);
 		if (d.op === "dragging_pointer") {
 			const a = angleAt(x, y, gm);
@@ -459,6 +479,7 @@ export function createDualApp(): DualApp {
 		if (!alive) return;
 		const { x, y } = at(e);
 		const click = !movedFar && d.now - downAt < 420;
+		pending = null;
 
 		if (
 			d.op === "dragging_pointer" ||
@@ -479,9 +500,19 @@ export function createDualApp(): DualApp {
 			const wasPressed = inkPressed;
 			inkPressed = false;
 			if (wasPressed && y > view.river) {
-				if (!movedFar && !holdFired) ink.dot(x, y, 1); // 点一下 = 一滴
-				river.disturb(x, movedFar ? 0.3 : 0.55);
-				d.wave = Math.max(d.wave, movedFar ? 0.3 : 0.6);
+				if (!movedFar && !holdFired) {
+					// 点一下 = 按当前模式触发（spec：所有绘制触发都落在画布点击上，
+					// 不再有底部按钮）。想纯粹玩墨：拖一下是墨线、长按是泼墨。
+					if (inkMode === "char") {
+						tryWriteAt(x, y);
+					} else if (ink.surface(x, y)) {
+						river.disturb(x, 0.7);
+						d.wave = 1;
+					}
+				} else {
+					river.disturb(x, movedFar ? 0.3 : 0.55);
+					d.wave = Math.max(d.wave, movedFar ? 0.3 : 0.6);
+				}
 			}
 			return;
 		}
@@ -499,7 +530,22 @@ export function createDualApp(): DualApp {
 		if (d.now - lastSurfaceAt < 20000) return;
 		if (Math.random() > 0.34) return;
 		lastSurfaceAt = d.now;
-		ink.surface();
+		ink.surface(
+			view.w * (0.25 + Math.random() * 0.5),
+			view.river + (view.h - view.river) * (0.3 + Math.random() * 0.4),
+		);
+	}
+
+	/** 在 (x,y) 起笔写一个字（楷书模式下的画布点击）。 */
+	function tryWriteAt(x: number, y: number) {
+		if (!claim("ink_writing")) return;
+		const ch = ink.write(x, y);
+		if (!ch) {
+			d.op = "idle";
+			return;
+		}
+		pendingChar = ch;
+		syncButtons();
 	}
 
 	// ────────────────────────────────────────────── 全屏帧
@@ -637,13 +683,14 @@ export function createDualApp(): DualApp {
 
 	// ────────────────────────────────────────────── 按钮与读数
 
-	const btnWrite = opt<HTMLButtonElement>("#dr-write");
-	const btnSurface = opt<HTMLButtonElement>("#dr-surface-btn");
 	const btnOpen = opt<HTMLButtonElement>("#dr-open");
 	const btnBack = opt<HTMLButtonElement>("#dr-back");
 	const btnReset = opt<HTMLButtonElement>("#dr-reset");
 	const btnHelp = opt<HTMLButtonElement>("#dr-help-toggle");
 	const helpBox = opt<HTMLElement>("#dr-help");
+	const modeBox = opt<HTMLElement>("#dr-mode");
+	const modeChar = opt<HTMLButtonElement>("#dr-mode-char");
+	const modePaint = opt<HTMLButtonElement>("#dr-mode-paint");
 	const readScene = opt<HTMLElement>("#dr-readout-scene");
 	const readTime = opt<HTMLElement>("#dr-readout-time");
 	const intro = opt<HTMLElement>("#dr-intro");
@@ -652,10 +699,15 @@ export function createDualApp(): DualApp {
 		intro?.classList.add("is-gone");
 	}
 
+	function setInkMode(m: "char" | "painting") {
+		inkMode = m;
+		modeChar?.setAttribute("aria-pressed", String(m === "char"));
+		modePaint?.setAttribute("aria-pressed", String(m === "painting"));
+	}
+
 	function syncButtons() {
 		const s = d.scene;
-		if (btnWrite) btnWrite.hidden = s !== "ink";
-		if (btnSurface) btnSurface.hidden = s !== "ink";
+		if (modeBox) modeBox.hidden = s !== "ink";
 		if (btnOpen) {
 			btnOpen.hidden = s !== "cosmos";
 			btnOpen.textContent = reelTarget > 0.5 ? "收起胶卷" : "展开胶卷";
@@ -663,29 +715,11 @@ export function createDualApp(): DualApp {
 		if (btnBack) btnBack.hidden = s === "surface";
 		if (btnReset) btnReset.hidden = s !== "cosmos";
 		// 落在宣纸那半边的按钮换成纸底深字：深色玻璃压在纸上像贴了两层膏药
-		for (const b of [btnWrite, btnSurface, btnBack]) {
-			b?.classList.toggle("dr-btn-on-paper", s === "ink");
-		}
+		btnBack?.classList.toggle("dr-btn-on-paper", s === "ink");
 	}
 
-	btnWrite?.addEventListener("click", () => {
-		hideIntro();
-		if (!claim("ink_writing")) return;
-		const ch = ink.write();
-		if (!ch) {
-			d.op = "idle";
-			return;
-		}
-		pendingChar = ch;
-		syncButtons();
-	});
-
-	btnSurface?.addEventListener("click", () => {
-		hideIntro();
-		ink.surface();
-		river.disturb(view.w / 2, 0.7);
-		d.wave = 1;
-	});
+	modeChar?.addEventListener("click", () => setInkMode("char"));
+	modePaint?.addEventListener("click", () => setInkMode("painting"));
 
 	btnOpen?.addEventListener("click", () => {
 		if (!claim("rolling_film")) return;
@@ -764,6 +798,10 @@ export function createDualApp(): DualApp {
 			d.turns = 0;
 			d.turnsV = 0;
 			turnsHold = 0;
+		}
+		// M = 水墨模式切换（spec：模式切换用快捷键 / 极简悬浮开关）
+		if ((e.key === "m" || e.key === "M") && d.scene === "ink") {
+			setInkMode(inkMode === "char" ? "painting" : "char");
 		}
 	}
 

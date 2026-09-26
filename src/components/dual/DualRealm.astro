@@ -34,8 +34,8 @@ import { url } from "@/utils/url-utils";
 			<h1 class="dr-h1">时间走马灯</h1>
 			<p class="dr-sub">寰宇 · 水墨</p>
 			<p class="dr-enter">
-				<span><b>点上面</b>进寰宇星空 · 罗盘与胶卷</span>
-				<span><b>点下面</b>入水墨丹青 · 落墨与写字</span>
+				<span><b>点上面</b>进寰宇星空 · 汉字从光点里长出罗盘</span>
+				<span><b>点下面</b>入水墨丹青 · 点纸落字、拖纸走墨</span>
 				<span><b>河上</b>过一下手，波纹会往两边走</span>
 			</p>
 		</div>
@@ -81,14 +81,19 @@ import { url } from "@/utils/url-utils";
 		<span>退回博客</span>
 	</a>
 
-	<!-- 动作区：跟着当前场景换按钮。写字的按钮只在水墨里出现，
-	     展卷的按钮只在寰宇里出现 —— 不该给用户一个按下去没反应的键。 -->
+	<!-- 动作区：跟着当前场景换按钮。水墨半边的「写字/浮现」没有按钮 ——
+	     所有绘制都点画布触发，这里只剩导航性的键。 -->
 	<div class="dr-actions" id="dr-actions">
-		<button type="button" class="dr-btn" id="dr-write" hidden>书写汉字</button>
-		<button type="button" class="dr-btn" id="dr-surface-btn" hidden>浮现画面</button>
 		<button type="button" class="dr-btn" id="dr-open" hidden>展开胶卷</button>
 		<button type="button" class="dr-btn dr-btn-ghost" id="dr-back" hidden>退出</button>
 		<button type="button" class="dr-btn dr-btn-ghost" id="dr-reset" hidden>回到此刻</button>
+	</div>
+
+	<!-- 水墨模式开关：角落极简二选一（spec：移除底部按钮后的唯一开关）。
+	     点画布触发什么，由它说了算。 -->
+	<div class="dr-mode" id="dr-mode" role="group" aria-label="水墨模式，按 M 切换" hidden>
+		<button type="button" id="dr-mode-char" aria-pressed="true">楷书汉字</button>
+		<button type="button" id="dr-mode-paint" aria-pressed="false">水墨画面</button>
 	</div>
 
 	<!-- 操作说明：这一页有九种交互，靠首屏那三行是猜不全的 -->
@@ -105,6 +110,7 @@ import { url } from "@/utils/url-utils";
 			<section>
 				<h3>寰宇星空</h3>
 				<ul>
+					<li><b>组装</b>进来时汉字从中心光点飞出排成罗盘 · 收卷时沿原路收回</li>
 					<li><b>拖针</b>盘内按住往外拖 · 时间往回走，圈数不限，松手缓动归位</li>
 					<li><b>转盘</b>按住盘面拖 · 整只盘立体偏转，松手来回摆几下才停</li>
 					<li><b>转环</b>按住一圈汉字拖 · 阻尼收敛，字不变形</li>
@@ -116,11 +122,12 @@ import { url } from "@/utils/url-utils";
 			<section>
 				<h3>水墨丹青</h3>
 				<ul>
-					<li><b>滴墨</b>点一下 · 先聚成一颗浓点，再往外晕开</li>
-					<li><b>泼墨</b>按住不动约半秒 · 炸开一团大的</li>
+					<li><b>落字</b>楷书模式下点画布 · 随机一字按真实笔顺落在点击处</li>
+					<li><b>晕画</b>画面模式下点画布 · 一幅水墨从落点向外晕满整幅</li>
+					<li><b>切模式</b>左下角开关或按 M · 楷书汉字 / 水墨画面</li>
 					<li><b>墨线</b>按住拖 · 沿路径连续落墨（不是画笔）</li>
-					<li><b>写字</b>「书写汉字」· 随机一个字，按真实笔顺一笔一笔落</li>
-					<li><b>浮现</b>「浮现画面」· 随机一幅水墨，从淡轮廓里醒来</li>
+					<li><b>泼墨</b>按住不动约半秒 · 炸开一团大的</li>
+					<li><b>墨迹</b>落下就留住 · 太多了最老的才慢慢淡去</li>
 					<li><b>字帖</b>点飘着的纸片 · 展开一行字，再点折起</li>
 				</ul>
 			</section>
@@ -444,8 +451,59 @@ import { url } from "@/utils/url-utils";
 	/* ⚠️ 上面给了 display，[hidden] 就压不住了，必须显式写回来 */
 	.dr-actions [hidden],
 	.dr-frame[hidden],
-	.dr-help[hidden] {
+	.dr-help[hidden],
+	.dr-mode[hidden] {
 		display: none;
+	}
+
+	/* ---------------------------------------------------------- 水墨模式开关 */
+
+	/* 角落极简二选一：宣纸色系、低干扰，但仍是真按钮（键盘可达、44px 触达） */
+	.dr-mode {
+		position: absolute;
+		left: var(--dr-float-x);
+		bottom: var(--dr-float-y);
+		z-index: 8;
+		display: flex;
+		gap: 0.3rem;
+		padding: 0.26rem;
+		border: 1px solid var(--dr-line-dark);
+		border-radius: 999px;
+		background: var(--dr-panel-light);
+		-webkit-backdrop-filter: blur(9px);
+		backdrop-filter: blur(9px);
+	}
+
+	.dr-mode button {
+		height: 40px;
+		padding: 0 0.95rem;
+		border: 1px solid transparent;
+		border-radius: 999px;
+		background: transparent;
+		color: var(--dr-ink-soft);
+		font: inherit;
+		font-size: 0.68rem;
+		letter-spacing: 0.12em;
+		white-space: nowrap;
+		cursor: pointer;
+		transition:
+			color 200ms ease,
+			background-color 200ms ease,
+			border-color 200ms ease;
+	}
+
+	.dr-mode button[aria-pressed="true"] {
+		background: var(--dr-ink);
+		color: #f4efe3;
+	}
+
+	.dr-mode button:hover {
+		border-color: rgb(27 26 24 / 0.35);
+	}
+
+	.dr-mode button:focus-visible {
+		outline: 2px solid var(--dr-gold-deep);
+		outline-offset: 2px;
 	}
 
 	.dr-help-wrap {

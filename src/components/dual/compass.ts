@@ -155,9 +155,84 @@ export function createCompass(): Compass {
 		return d.rings[i] ?? 0;
 	}
 
+	/**
+	 * 组装度：胶卷展开 → 汉字从中心一点飞出、排布成罗盘。收拢时（0）只剩一颗光点。
+	 * 与 `reelOpen` 同源，不另起弹簧 —— 「胶卷旋开」和「罗盘组装」是同一件事的两面。
+	 */
+	function assemble(d: Dual): number {
+		return smoothstep(clamp((d.reelOpen - 0.04) / 0.9, 0, 1));
+	}
+
+	/** 收拢态的中心光点：全部汉字压成的微弱亮核，被胶卷球包着。 */
+	function drawSeed(
+		g: CanvasRenderingContext2D,
+		d: Dual,
+		gm: Geom,
+		as: number,
+	) {
+		const R = gm.R;
+		const pulse = 1 + 0.12 * Math.sin(d.now / 520);
+		const r = R * (0.045 + 0.05 * (1 - as)) * pulse;
+		const gg = g.createRadialGradient(gm.cx, gm.cy, 0, gm.cx, gm.cy, r * 4);
+		gg.addColorStop(0, goldCss(d, 0.8 * (1 - as * 0.75)));
+		gg.addColorStop(0.35, goldCss(d, 0.26 * (1 - as)));
+		gg.addColorStop(1, "rgb(0 0 0 / 0)");
+		g.fillStyle = gg;
+		g.fillRect(gm.cx - r * 4, gm.cy - r * 4, r * 8, r * 8);
+		g.fillStyle = goldCss(d, 0.9 * (1 - as * 0.6));
+		g.beginPath();
+		g.arc(gm.cx, gm.cy, Math.max(1.2, r * 0.2), 0, TAU);
+		g.fill();
+	}
+
+	/** 组装途中的某一圈：每个字按自己的节奏从中心沿半径飞出去（外圈先行，内圈随后）。 */
+	function drawRingFlyout(
+		g: CanvasRenderingContext2D,
+		i: number,
+		R: number,
+		ang: number,
+		as: number,
+	) {
+		const def = RINGS[i];
+		const size = def.size * R;
+		const rr = def.radius * R;
+		for (let k = 0; k < RING_STEPS; k++) {
+			const a = smoothstep(clamp(as * 1.3 - (k / RING_STEPS) * 0.3, 0, 1));
+			if (a <= 0.004) continue;
+			const ease = 1 - (1 - a) ** 3;
+			const th = k * STEP + ang;
+			g.save();
+			g.translate(Math.sin(th) * rr * ease, -Math.cos(th) * rr * ease);
+			g.rotate(th);
+			const word = def.words[k];
+			const sz = size * (0.3 + 0.7 * a);
+			writeChar(g, word[0], -((word.length - 1) * sz * 0.56), 0, {
+				size: sz,
+				progress: 1,
+				color: "rgb(226 212 178)",
+				alpha: 0.9 * a,
+				halo: 0.6,
+				dry: true,
+			});
+			if (word.length > 1) {
+				writeChar(g, word[1], sz * 0.56, 0, {
+					size: sz,
+					progress: 1,
+					color: "rgb(226 212 178)",
+					alpha: 0.9 * a,
+					halo: 0.6,
+					dry: true,
+				});
+			}
+			g.restore();
+		}
+	}
+
 	function hit(d: Dual, view: View, x: number, y: number): Hit | null {
 		const gm = geom(d, view);
 		if (gm.appear < 0.35) return null;
+		// 组装没完成时罗盘不可抓：字还在从中心往外飞，按下去抓到的都是错的位置
+		if (d.reelOpen < 0.8) return null;
 		const { lx, ly } = toLocal(d, view, x, y);
 		const r = Math.hypot(lx, ly);
 		if (r > gm.R * 1.12) return null;
@@ -214,6 +289,7 @@ export function createCompass(): Compass {
 		const R = gm.R;
 		const t = new Date(d.now);
 		const local = needleLocal(d);
+		const as = assemble(d);
 
 		// 盘体：先铺一层环境金雾，再落盘
 		g.save();
@@ -234,9 +310,23 @@ export function createCompass(): Compass {
 		g.fillRect(gm.cx - R * 1.9, gm.cy - R * 1.9, R * 3.8, R * 3.8);
 		g.globalCompositeOperation = "source-over";
 
+		// 收拢态：只留中心光点，盘面/字环/针一概不画
+		if (as < 0.995) drawSeed(g, d, gm, as);
+		if (as <= 0.002) {
+			g.restore();
+			return;
+		}
+
 		g.translate(gm.cx, gm.cy);
 		const m = mat(d);
 		g.transform(m[0], m[1], m[2], m[3], 0, 0);
+
+		// 盘面从光点里长出来：组装没完成时整盘按比例缩着
+		const ds = as >= 0.995 ? 1 : 0.08 + 0.92 * as;
+		if (ds < 1) {
+			g.save();
+			g.scale(ds, ds);
+		}
 
 		// ② 盘面
 		g.beginPath();
@@ -301,10 +391,33 @@ export function createCompass(): Compass {
 			g.stroke();
 		}
 
+		if (ds < 1) g.restore();
+
 		// ① 三圈汉字刻度环
 		for (let i = 0; i < RINGS.length; i++) {
 			const bk = bakeRing(i, R);
 			const ang = ringAngle(d, i);
+			if (as < 0.995) {
+				// 组装途中：字一个一个从中心沿半径飞出去；降级机直接缩放整圈烘图
+				if (d.lite) {
+					const ease = 1 - (1 - as) ** 3;
+					const sc = 0.1 + 0.9 * ease;
+					g.save();
+					g.rotate(ang);
+					g.globalAlpha = 0.9 * as;
+					g.drawImage(
+						bk.canvas,
+						-bk.ext * sc,
+						-bk.ext * sc,
+						bk.ext * 2 * sc,
+						bk.ext * 2 * sc,
+					);
+					g.restore();
+				} else {
+					drawRingFlyout(g, i, R, ang, as);
+				}
+				continue;
+			}
 			const cur =
 				((Math.round(-ang / STEP) % RING_STEPS) + RING_STEPS) % RING_STEPS;
 			g.save();
@@ -340,24 +453,31 @@ export function createCompass(): Compass {
 		}
 
 		// ③ 记忆点：写完一个字就在外圈落一颗金点，点它跳回那一刻
-		for (const mem of memories) {
-			const a = -Math.PI / 2 + mem.turns * TAU;
-			const rr = R * 1.045;
-			const gx = Math.cos(a) * rr;
-			const gy = Math.sin(a) * rr;
-			const pulse = 1 + 0.16 * Math.sin(d.now / 420 + mem.at);
-			g.fillStyle = goldCss(d, 0.95);
-			g.beginPath();
-			g.arc(gx, gy, R * 0.018 * pulse, 0, TAU);
-			g.fill();
-			g.strokeStyle = goldCss(d, 0.4);
-			g.lineWidth = 1;
-			g.beginPath();
-			g.arc(gx, gy, R * 0.034 * pulse, 0, TAU);
-			g.stroke();
+		const memA = as >= 0.995 ? 1 : smoothstep((as - 0.7) / 0.3);
+		if (memA > 0.004) {
+			for (const mem of memories) {
+				const a = -Math.PI / 2 + mem.turns * TAU;
+				const rr = R * 1.045;
+				const gx = Math.cos(a) * rr;
+				const gy = Math.sin(a) * rr;
+				const pulse = 1 + 0.16 * Math.sin(d.now / 420 + mem.at);
+				g.fillStyle = goldCss(d, 0.95 * memA);
+				g.beginPath();
+				g.arc(gx, gy, R * 0.018 * pulse, 0, TAU);
+				g.fill();
+				g.strokeStyle = goldCss(d, 0.4 * memA);
+				g.lineWidth = 1;
+				g.beginPath();
+				g.arc(gx, gy, R * 0.034 * pulse, 0, TAU);
+				g.stroke();
+			}
 		}
 
 		// ① 针。拖得越快，"运动模糊"的残影越多 —— 这是拨针唯一的动势来源
+		// 组装末段才现身：针是最后归位的那一件
+		const needleA = as >= 0.995 ? 1 : smoothstep((as - 0.5) / 0.45);
+		g.save();
+		g.globalAlpha = needleA;
 		const speed = Math.abs(d.turnsV);
 		const ghosts = d.lite ? 0 : clamp(Math.round(speed * 9), 0, 4);
 		// ⚠️ 旋转量 `na` 与"针在屏幕上的方向"差 π/2：针沿局部 −y 画，屏幕方向是
@@ -395,12 +515,14 @@ export function createCompass(): Compass {
 		g.beginPath();
 		g.arc(0, 0, R * 0.03, 0, TAU);
 		g.fill();
+		g.restore();
 
 		g.restore();
 
 		// ---------- 盘外的读数（不跟着 tilt 转，永远正的）----------
+		if (as <= 0.02) return;
 		g.save();
-		g.globalAlpha = gm.appear;
+		g.globalAlpha = gm.appear * as;
 		const hh = String(t.getHours()).padStart(2, "0");
 		const mm = String(t.getMinutes()).padStart(2, "0");
 		const ss = String(t.getSeconds()).padStart(2, "0");

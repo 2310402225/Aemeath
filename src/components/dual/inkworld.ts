@@ -1,17 +1,17 @@
 // 下位面：水墨丹青。
 //
-// 一块白宣纸，五种交互：
-//   ① 滴墨   点一下滴一滴：先在落点聚成一颗浓点，再慢慢往外晕开，边缘长出飞白与渗墨
-//   ② 泼墨   长按不放：炸开一团大的
-//   ③ 墨线   按住拖：沿路径落下连续的墨点（**不是画笔** —— 线是"滴"出来的，不是描出来的）
-//   ④ 写字   按钮：随机一个字，按真实笔顺一笔一笔落下去；写完洇一下、压深一点、冻住
-//   ⑤ 浮现   按钮：随机一幅水墨画，从一层很淡的轮廓里醒过来
+// 一块白宣纸。底部没有任何按钮 —— 只有角落一个二选一的模式开关
+// （楷书汉字 / 水墨画面），**一切效果都在画布上点出来**：
+//   ① 点一下   按当前模式触发：楷书模式在落点写一个字（真实笔顺，一笔一笔落）；
+//              画面模式从落点向外**全屏**晕开一幅水墨（径向 reveal，像记忆从纸底醒来）
+//   ② 泼墨     长按不放：炸开一团大的
+//   ③ 墨线     按住拖：沿路径落下连续的墨点（**不是画笔** —— 线是"滴"出来的，不是描出来的）
 //
 // 两条工程底线：
 //   · 已经沉下去的墨、写完的字、浮完的画，**全部烘进一张离屏"纸"**，每帧只贴一次图。
 //     不这么做，纸上攒到几十团墨时每帧要重画几十条 72 点路径，必掉帧。
-//   · 墨量有上限。超了就把最老的挑出来开始淡出，淡完从纸上抹掉重烘 ——
-//     于是"可以一直玩"和"不会越玩越卡"是同一件事。
+//   · 墨迹永久保留：不会自动消失、更没有一键清空。只有总量超上限时，最古老的那批
+//     **缓慢**降低透明度，淡完才从纸上抹掉重烘 —— "可以一直玩"和"不会越玩越卡"是同一件事。
 
 import { glyphLength, hasGlyph, writeChar } from "./brush-ink";
 import { PAINTINGS } from "./data";
@@ -22,8 +22,12 @@ const WRITE_POOL = [..."山水云风花雪灯影光墨梦鹤竹茶江剑星河�
 
 const MAX_BLOTS = 40;
 const MAX_CHARS = 8;
-const MAX_PAINTINGS = 3;
-const FADE = 1.7;
+/** 全屏水墨画同时在场最多两幅：第三幅来时最旧的那幅缓慢淡化让位 */
+const MAX_PAINTINGS = 2;
+/** 「缓慢淡化」：老旧墨迹退场要 ~2.6 秒，不是瞬删（瞬删像画面被挖掉一块） */
+const FADE = 2.6;
+/** 一幅水墨从落点晕满整幅要的时间（秒） */
+const REVEAL = 2.4;
 
 type Blot = {
 	x: number;
@@ -47,16 +51,19 @@ type Written = {
 	y: number;
 	size: number;
 	alpha: number;
+	/** 超上限后开始淡出的时刻，−1 = 没在淡 */
+	fadeAt: number;
 };
 type Surfaced = {
 	idx: number;
-	x: number;
-	y: number;
-	w: number;
-	h: number;
+	/** 点击点：reveal 从这里向外晕开 */
+	cx: number;
+	cy: number;
 	born: number;
-	/** 亮完并烘进纸了没有 —— 见 `draw()` 的 ④。 */
+	/** 晕满并烘进纸了没有 —— 见 `draw()` 的 ④。 */
 	baked: boolean;
+	/** 第三幅登场时开始淡出的时刻，−1 = 没在淡 */
+	fadeAt: number;
 };
 
 export type InkWorld = {
@@ -66,9 +73,10 @@ export type InkWorld = {
 	trail(x: number, y: number): void;
 	beginDrag(x: number, y: number): void;
 	endDrag(): void;
-	/** 写一个字。抢不到（正在写）就返回 null；否则返回这个字，交给罗盘去落记忆点。 */
-	write(): string | null;
-	surface(): boolean;
+	/** 在 (x,y) 写一个字。抢不到（正在写）就返回 null；否则返回这个字，交给罗盘去落记忆点。 */
+	write(x: number, y: number): string | null;
+	/** 从 (x,y) 向外全屏晕开一幅水墨。 */
+	surface(x: number, y: number): boolean;
 	writing(): boolean;
 	blotCount(): number;
 	clear(): void;
@@ -90,6 +98,9 @@ export function createInkWorld(): InkWorld {
 	/** 离屏「纸」：沉下去的墨 + 写完的字 + 浮完的画都烘在这里 */
 	let page: HTMLCanvasElement | null = null;
 	let pg: CanvasRenderingContext2D | null = null;
+	/** 离屏「晕」：全屏水墨画的径向 reveal 在这里做 mask，做完贴到主画布 */
+	let wash: HTMLCanvasElement | null = null;
+	let wg: CanvasRenderingContext2D | null = null;
 	let fiber: CanvasPattern | null = null;
 	let writing: {
 		ch: string;
@@ -133,10 +144,18 @@ export function createInkWorld(): InkWorld {
 			page = document.createElement("canvas");
 			pg = page.getContext("2d");
 		}
+		if (!wash) {
+			wash = document.createElement("canvas");
+			wg = wash.getContext("2d");
+		}
 		if (page.width !== w || page.height !== h) {
 			page.width = w;
 			page.height = h;
 			for (const b of blots) b.baked = false;
+		}
+		if (wash.width !== w || wash.height !== h) {
+			wash.width = w;
+			wash.height = h;
 		}
 		if (!fiber && pg) fiber = pg.createPattern(makeFiber(), "repeat");
 	}
@@ -216,7 +235,31 @@ export function createInkWorld(): InkWorld {
 		g.fill();
 	}
 
-	function paintSurfaced(
+	/** 把一幅水墨 cover 铺满宣纸区（river 以下整幅），居中裁边。 */
+	function paintCover(
+		g: CanvasRenderingContext2D,
+		img: HTMLImageElement,
+		alpha: number,
+	) {
+		const iw = img.naturalWidth;
+		const ih = img.naturalHeight;
+		if (!iw || !ih) return;
+		const rw = view.w;
+		const rh = view.h - view.river;
+		const sc = Math.max(rw / iw, rh / ih);
+		const dw = iw * sc;
+		const dh = ih * sc;
+		g.globalAlpha = clamp(alpha, 0, 1);
+		g.drawImage(img, (rw - dw) / 2, view.river + (rh - dh) / 2, dw, dh);
+		g.globalAlpha = 1;
+	}
+
+	/**
+	 * 全屏晕染浮现：从点击点 (cx,cy) 向外径向 reveal，边缘带羽毛，像墨在纸上洇开。
+	 * 先在离屏「晕」里 cover 铺图、用 destination-in 扣出圆晕，再整张贴上主画布 ——
+	 * 每帧一次 drawImage，与半径无关。
+	 */
+	function paintWash(
 		g: CanvasRenderingContext2D,
 		s: Surfaced,
 		t: number,
@@ -224,20 +267,45 @@ export function createInkWorld(): InkWorld {
 	) {
 		const img = images.get(s.idx);
 		if (!img?.complete || !img.naturalWidth) return;
-		const u = clamp((t - s.born) / 1.5, 0, 1);
-		// 前三分之一只给一层很淡的轮廓（记忆还没成形），之后才真的落下来
-		const a =
-			(u < 0.34 ? (u / 0.34) * 0.14 : lerp(0.14, 1, (u - 0.34) / 0.66)) * cap;
-		const scale = lerp(1.05, 1, u * u * (3 - 2 * u));
-		g.globalAlpha = clamp(a, 0, 1);
-		g.drawImage(
-			img,
-			s.x - (s.w * scale) / 2,
-			s.y - (s.h * scale) / 2,
-			s.w * scale,
-			s.h * scale,
-		);
-		g.globalAlpha = 1;
+		// 正在淡出的旧画：整张画慢慢隐去（新画的晕染不受它影响）
+		if (s.fadeAt >= 0) {
+			const f = clamp(1 - (t - s.fadeAt) / FADE, 0, 1);
+			paintCover(g, img, cap * f);
+			return;
+		}
+		const u = clamp((t - s.born) / REVEAL, 0, 1);
+		if (u >= 1 || !wg || !wash) {
+			paintCover(g, img, cap);
+			return;
+		}
+		const ease = u * u * (3 - 2 * u);
+		// 盖住整幅需要的半径 = 到宣纸区四个角的最远距离
+		let diag = 1;
+		for (const [qx, qy] of [
+			[0, view.river],
+			[view.w, view.river],
+			[0, view.h],
+			[view.w, view.h],
+		] as const) {
+			diag = Math.max(diag, Math.hypot(qx - s.cx, qy - s.cy));
+		}
+		const r = Math.max(1, ease * diag);
+		wg.setTransform(1, 0, 0, 1, 0, 0);
+		wg.clearRect(0, 0, wash.width, wash.height);
+		wg.scale(view.dpr, view.dpr);
+		paintCover(wg, img, 1);
+		wg.globalCompositeOperation = "destination-in";
+		const rg = wg.createRadialGradient(s.cx, s.cy, r * 0.55, s.cx, s.cy, r);
+		rg.addColorStop(0, "rgb(0 0 0 / 1)");
+		rg.addColorStop(1, "rgb(0 0 0 / 0)");
+		wg.fillStyle = rg;
+		wg.fillRect(0, 0, view.w, view.h);
+		wg.globalCompositeOperation = "source-over";
+		g.save();
+		g.setTransform(1, 0, 0, 1, 0, 0);
+		g.globalAlpha = cap;
+		g.drawImage(wash, 0, 0);
+		g.restore();
 	}
 
 	/** 重烘整张纸。只在"有东西沉下去 / 开始淡出 / 被抹掉"时调。 */
@@ -252,6 +320,12 @@ export function createInkWorld(): InkWorld {
 		// ⚠️ 纸不烘在这里（见 `draw()` 的 ⓪）：离屏只放「沉下去的东西」。
 		// 纸一旦烘进来就会跟着 `river` 一起错位 —— 而 `river` 每帧都在动。
 		const big = Number.POSITIVE_INFINITY;
+		// 画在最底层（记忆从纸底醒来），墨与字盖在它上面 —— 「已写汉字可被新墨迹覆盖」
+		for (const s of surfaced) {
+			if (s.fadeAt >= 0 || !s.baked) continue;
+			const im = images.get(s.idx);
+			if (im?.complete && im.naturalWidth) paintCover(pg, im, 0.92);
+		}
 		for (const b of blots) {
 			// born<=0 = 还没在纸上落定（刚 push、第一帧还没跑），这种不能烘，否则会
 			// 以"长定了"的样子直接定死
@@ -260,6 +334,8 @@ export function createInkWorld(): InkWorld {
 			b.baked = true;
 		}
 		for (const w of written) {
+			// 正在淡出的老字不烘回纸里：它只剩「当场画、越来越淡」这一条命
+			if (w.fadeAt >= 0) continue;
 			writeChar(pg, w.ch, w.x, w.y, {
 				size: w.size,
 				progress: 1,
@@ -269,11 +345,10 @@ export function createInkWorld(): InkWorld {
 				dry: true,
 			});
 		}
-		for (const s of surfaced) paintSurfaced(pg, s, d.now, 0.92);
 	}
 
-	/** 超上限：墨点挑最老的开始淡出（**不是瞬删** —— 瞬删会像画面被挖掉一块）；
-	 *  写完的字与浮出的画直接移出，它们本来就有出生顺序。 */
+	/** 超上限：挑最老的开始淡出（**不是瞬删** —— 瞬删会像画面被挖掉一块）。
+	 *  墨点、字、画一视同仁：先标 `fadeAt`，淡出期间当场画、不进烘，淡完再抹掉重烘。 */
 	function trim() {
 		const d = ref;
 		if (!d) return;
@@ -289,12 +364,24 @@ export function createInkWorld(): InkWorld {
 			}
 		}
 		if (written.length > MAX_CHARS) {
-			written.splice(0, written.length - MAX_CHARS);
-			changed = true;
+			const n = written.length - MAX_CHARS;
+			for (let i = 0; i < n; i++) {
+				const w = written[i];
+				if (w.fadeAt < 0) {
+					w.fadeAt = d.now;
+					changed = true;
+				}
+			}
 		}
 		if (surfaced.length > MAX_PAINTINGS) {
-			surfaced.splice(0, surfaced.length - MAX_PAINTINGS);
-			changed = true;
+			const n = surfaced.length - MAX_PAINTINGS;
+			for (let i = 0; i < n; i++) {
+				const s = surfaced[i];
+				if (s.fadeAt < 0) {
+					s.fadeAt = d.now;
+					changed = true;
+				}
+			}
 		}
 		if (changed) rebake();
 	}
@@ -335,16 +422,18 @@ export function createInkWorld(): InkWorld {
 		});
 	}
 
-	function write(): string | null {
+	function write(x: number, y: number): string | null {
 		if (writing) return null;
 		const pool = WRITE_POOL.filter(hasGlyph);
 		if (!pool.length) return null;
 		const ch = pool[Math.floor(rnd() * pool.length)] ?? "山";
-		const size = Math.min(view.w, view.h) * (view.w < 760 ? 0.32 : 0.27);
+		const size =
+			clamp((view.h - view.river) * 0.3, 88, 320) * (0.9 + rnd() * 0.2);
+		// 字心在点击处，但整字（含洇开的晕）不许越出纸面
 		writing = {
 			ch,
-			x: view.w * (0.24 + rnd() * 0.52),
-			y: view.river + (view.h - view.river) * (0.3 + rnd() * 0.4),
+			x: clamp(x, size * 0.62, view.w - size * 0.62),
+			y: clamp(y, view.river + size * 0.68, view.h - size * 0.6),
 			size,
 			from: 0,
 			dur: clamp(glyphLength(ch) * 0.42, 1.1, 3.2),
@@ -352,27 +441,30 @@ export function createInkWorld(): InkWorld {
 		return ch;
 	}
 
-	function surface(): boolean {
-		if (surfaced.length >= MAX_PAINTINGS) return false;
+	function surface(x: number, y: number): boolean {
 		const used = new Set(surfaced.map((s) => s.idx));
 		const free = PAINTINGS.map((_, i) => i).filter((i) => !used.has(i));
+		if (!free.length) return false;
 		const idx = free[Math.floor(rnd() * free.length)] ?? 0;
-		const img = images.get(idx);
-		const ar = img?.naturalWidth ? img.naturalHeight / img.naturalWidth : 0.58;
-		const box = clamp(
-			Math.min(view.w * 0.62, (view.h - view.river) * 0.74),
-			150,
-			720,
-		);
 		surfaced.push({
 			idx,
-			x: view.w * (0.32 + rnd() * 0.36),
-			y: view.river + (view.h - view.river) * (0.32 + rnd() * 0.36),
-			w: box,
-			h: box * ar,
+			cx: clamp(x, 0, view.w),
+			cy: clamp(y, view.river, view.h),
 			born: 0,
 			baked: false,
+			fadeAt: -1,
 		});
+		// 同时在场最多两幅：第三幅登场，最旧的缓慢淡化让位（不是瞬删）
+		const d = ref;
+		if (d && surfaced.length > MAX_PAINTINGS) {
+			const n = surfaced.length - MAX_PAINTINGS;
+			for (let i = 0; i < n; i++) {
+				if (surfaced[i].fadeAt < 0) surfaced[i].fadeAt = d.now;
+			}
+			rebake();
+		}
+		// 落点先聚一颗墨，画从这颗墨里晕开 —— 仪式感来自"先有墨、再有画"
+		dot(x, y, 0.8);
 		return true;
 	}
 
@@ -401,8 +493,8 @@ export function createInkWorld(): InkWorld {
 				w.y *= sy;
 			}
 			for (const s of surfaced) {
-				s.x *= sx;
-				s.y *= sy;
+				s.cx *= sx;
+				s.cy *= sy;
 			}
 		}
 		for (const b of blots) b.baked = false;
@@ -437,6 +529,12 @@ export function createInkWorld(): InkWorld {
 		if (page) {
 			g.save();
 			g.setTransform(1, 0, 0, 1, 0, 0);
+			// ⚠️ 必须裁到河以下：page 是整张画布大小的位图，里面烘的内容只在「当时」的
+			// 纸面区域。进了寰宇（河涨到 0.86h）不裁的话，烘进去的墨与画会整片压到
+			// 星空上 —— 局部小图时看不出来，全屏水墨画让这条变成「满屏穿帮」。
+			g.beginPath();
+			g.rect(0, (v.river - 2) * v.dpr, page.width, page.height);
+			g.clip();
 			g.drawImage(page, 0, 0);
 			g.restore();
 		}
@@ -447,7 +545,38 @@ export function createInkWorld(): InkWorld {
 		g.clip();
 
 		let settled = false;
-		// ② 还在长 / 还在淡的墨：当场画
+		// ② 浮现中 / 正在淡出的画：先画，压在墨与字的下面（记忆从纸底醒来）
+		for (const s of surfaced) {
+			if (s.born <= 0) {
+				s.born = t;
+				continue;
+			}
+			if (s.fadeAt < 0 && !s.baked) {
+				paintWash(g, s, t, 0.92);
+				// ⚠️ 晕满必须烘进纸。只在 REVEAL 这几秒里现画的话，画会**自己消失** ——
+				// 而 `rebake()` 原本只在"有墨沉下去"时才跑，于是"浮现一幅画"变成了"闪一下"。
+				if (t - s.born >= REVEAL) {
+					const im = images.get(s.idx);
+					// 图还没就绪就先不烘、也不标记，下一帧再试 —— 否则会烘出一块空白再定死。
+					if (im?.complete && im.naturalWidth) {
+						s.baked = true;
+						rebake();
+					}
+				}
+				continue;
+			}
+			if (s.fadeAt >= 0) paintWash(g, s, t, 0.92);
+		}
+		// 淡完的旧画抹掉
+		for (let i = surfaced.length - 1; i >= 0; i--) {
+			const s = surfaced[i];
+			if (s.fadeAt >= 0 && t - s.fadeAt > FADE) {
+				surfaced.splice(i, 1);
+				settled = true;
+			}
+		}
+
+		// ③ 还在长 / 还在淡的墨：当场画
 		for (const b of blots) {
 			if (b.born <= 0) b.born = t;
 			if (b.baked && b.fadeAt < 0) continue;
@@ -463,7 +592,7 @@ export function createInkWorld(): InkWorld {
 			}
 		}
 
-		// ③ 正在写的字（压在纸上面）
+		// ④ 正在写的字（压在纸上面）
 		if (writing) {
 			if (writing.from <= 0) writing.from = t;
 			const u = clamp((t - writing.from) / writing.dur, 0, 1);
@@ -482,35 +611,37 @@ export function createInkWorld(): InkWorld {
 					y: writing.y,
 					size: writing.size,
 					alpha: 0.95,
+					fadeAt: -1,
 				});
 				writing = null;
 				rebake();
 			}
 		}
 
-		// ④ 浮现中的画
-		for (const s of surfaced) {
-			if (s.born <= 0) {
-				s.born = t;
-				continue;
+		// ⑤ 正在淡出的老字：不进烘，只剩当场画这一条命，越来越淡
+		for (const w of written) {
+			if (w.fadeAt < 0) continue;
+			const f = clamp(1 - (t - w.fadeAt) / FADE, 0, 1);
+			writeChar(g, w.ch, w.x, w.y, {
+				size: w.size,
+				progress: 1,
+				color: `rgb(${inkTriple(d).join(" ")})`,
+				alpha: w.alpha * f,
+				halo: 1,
+				dry: true,
+			});
+		}
+		// 淡完的老字抹掉
+		for (let i = written.length - 1; i >= 0; i--) {
+			const w = written[i];
+			if (w.fadeAt >= 0 && t - w.fadeAt > FADE) {
+				written.splice(i, 1);
+				settled = true;
 			}
-			if (t - s.born < 1.5) {
-				paintSurfaced(g, s, t, 0.92);
-				continue;
-			}
-			// ⚠️ 亮完必须烘进纸。只在上面那 1.5 秒里现画的话，画会**自己消失** ——
-			// 而 `rebake()` 原本只在"有墨沉下去"时才跑，于是"浮现一幅画"变成了"闪一下"。
-			// （写字那条路早有这一步：u>=1 → push written + rebake。）
-			if (s.baked) continue;
-			const im = images.get(s.idx);
-			// 图还没就绪就先不烘、也不标记，下一帧再试 —— 否则会烘出一块空白再定死。
-			if (!im?.complete || !im.naturalWidth) continue;
-			s.baked = true;
-			rebake();
 		}
 		g.restore();
 
-		// ⑤ 指针在纸上游走的墨影。正在拖墨线时不画 —— 手在滴墨，别再叠一层雾
+		// ⑥ 指针在纸上游走的墨影。正在拖墨线时不画 —— 手在滴墨，别再叠一层雾
 		if (!dragging && d.px >= 0 && d.py > v.river && d.focus < 0.7 && !d.lite) {
 			const r = Math.min(v.w, v.h) * 0.05;
 			g.save();
@@ -525,7 +656,7 @@ export function createInkWorld(): InkWorld {
 			g.restore();
 		}
 
-		// ⑥ 收尾：把已经长定的烘进纸；超上限的挑老的淡出
+		// ⑦ 收尾：把已经长定的烘进纸；超上限的挑老的淡出
 		trimClock += dt;
 		if (settled) {
 			for (const b of blots)
