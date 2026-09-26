@@ -1,0 +1,736 @@
+---
+import { url } from "@/utils/url-utils";
+// 双位面外壳：上面一片寰宇星空，下面一块水墨宣纸，中间一条时间之河，全部在 canvas 上算，正文走 <slot />。
+//
+// 为什么需要这个 .astro（和丝缕四面体、月下灯市、走马灯同一个理由）：fullBleed 分支绕开
+// MainGridLayout，站点的樱花／壁纸／顶部渐变／欢迎条会糊在星空与水火上。要压掉它们只能用
+// global 样式 —— 而 <style is:global> 必须用 :has(#dr-stage) 钉住作用域，否则会被打进
+// 全站 CSS 误伤别的页面。
+//
+// 四张画布、七个模块都在 ./dual.ts 那一侧，这里只搭台子、写样式、挂载。
+---
+
+<section class="dr-stage" id="dr-stage">
+	<!-- 四张画布按「重绘预算」分层，不按视觉分层：
+	     ① 星空几乎每帧都在动（视差、闪烁、星轨下沉）
+	     ② 河永远在流，而且它是唯一会往两侧推波的东西
+	     ③ 墨痕只在"正在长 / 正在淡"时才要每帧画，沉下去的烘进一张纸，每帧一次贴图
+	     ④ 罗盘与胶卷必须共用一张画布 —— 胶卷要"前半圈在罗盘前、后半圈在罗盘后"，
+	        拆成两张就只能靠 z-index 硬凑，而那正是上一版"胶卷把罗盘裁掉一块"的病根。
+	     四者的刷新频率差两个数量级，压在一张画布上就只能按最贵的那个花。 -->
+	<div class="dr-scene">
+		<canvas id="dr-cosmos" class="dr-layer" aria-hidden="true"></canvas>
+		<canvas id="dr-river" class="dr-layer" aria-hidden="true"></canvas>
+		<canvas id="dr-ink" class="dr-layer"></canvas>
+		<canvas id="dr-core" class="dr-layer"></canvas>
+
+		<!-- 字帖：会飘的纸片。放在 DOM 里而不是画布上，因为它是"一行文字"，
+		     排版、换行、选中都该交给浏览器，不该自己写一套字形度量。 -->
+		<div class="dr-slips" id="dr-slips" aria-hidden="true"></div>
+
+		<!-- 首屏文案：第一次真正动手之后退场 -->
+		<div class="dr-intro" id="dr-intro">
+			<p class="dr-kicker">载尘望星 · 交互长卷</p>
+			<h1 class="dr-h1">时间走马灯</h1>
+			<p class="dr-sub">寰宇 · 水墨</p>
+			<p class="dr-enter">
+				<span><b>点上面</b>进寰宇星空 · 罗盘与胶卷</span>
+				<span><b>点下面</b>入水墨丹青 · 落墨与写字</span>
+				<span><b>河上</b>过一下手，波纹会往两边走</span>
+			</p>
+		</div>
+
+		<!-- 全屏帧：电影黑边 + 五种极简滤镜。点一下或 Esc 退出。 -->
+		<div class="dr-frame" id="dr-frame" hidden role="dialog" aria-modal="true" aria-label="放大查看胶卷中的一帧">
+			<div class="dr-frame-bars" aria-hidden="true"></div>
+			<figure class="dr-frame-body">
+				<img id="dr-frame-img" alt="" />
+				<figcaption class="dr-frame-cap">
+					<span id="dr-frame-title"></span>
+					<span class="dr-frame-hint">再点一下或按 Esc 退出</span>
+				</figcaption>
+			</figure>
+			<div class="dr-filters" id="dr-filters" role="group" aria-label="色调"></div>
+		</div>
+	</div>
+
+	<!-- 读数：现在在哪一层、什么时辰、拨出去了多少 -->
+	<p class="dr-readout" id="dr-readout">
+		<span id="dr-readout-scene">双位面对望</span>
+		<span class="dr-dot" aria-hidden="true">·</span>
+		<span id="dr-readout-time">—</span>
+	</p>
+
+	<a class="dr-home dr-btn" href={url("/")} aria-label="退回博客首页">
+		<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+			<path
+				d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.6"
+				stroke-linecap="round"
+				stroke-linejoin="round"></path>
+			<path
+				d="M3 10a2 2 0 0 1 .7-1.5l7-6a2 2 0 0 1 2.6 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.6"
+				stroke-linecap="round"
+				stroke-linejoin="round"></path>
+		</svg>
+		<span>退回博客</span>
+	</a>
+
+	<!-- 动作区：跟着当前场景换按钮。写字的按钮只在水墨里出现，
+	     展卷的按钮只在寰宇里出现 —— 不该给用户一个按下去没反应的键。 -->
+	<div class="dr-actions" id="dr-actions">
+		<button type="button" class="dr-btn" id="dr-write" hidden>书写汉字</button>
+		<button type="button" class="dr-btn" id="dr-surface-btn" hidden>浮现画面</button>
+		<button type="button" class="dr-btn" id="dr-open" hidden>展开胶卷</button>
+		<button type="button" class="dr-btn dr-btn-ghost" id="dr-back" hidden>退出</button>
+		<button type="button" class="dr-btn dr-btn-ghost" id="dr-reset" hidden>回到此刻</button>
+	</div>
+
+	<!-- 操作说明：这一页有九种交互，靠首屏那三行是猜不全的 -->
+	<div class="dr-help-wrap">
+		<button
+			type="button"
+			class="dr-btn"
+			id="dr-help-toggle"
+			aria-expanded="false"
+			aria-controls="dr-help">
+			<span>操作说明</span>
+		</button>
+		<div class="dr-help" id="dr-help" hidden>
+			<section>
+				<h3>寰宇星空</h3>
+				<ul>
+					<li><b>拖针</b>盘内按住往外拖 · 时间往回走，圈数不限，松手缓动归位</li>
+					<li><b>转盘</b>按住盘面拖 · 整只盘立体偏转，松手来回摆几下才停</li>
+					<li><b>转环</b>按住一圈汉字拖 · 阻尼收敛，字不变形</li>
+					<li><b>展卷 / 收卷</b>点胶卷 · 旋开露出罗盘，再点收回去</li>
+					<li><b>看大图</b>点胶卷里的某一格 · 全屏 + 电影黑边 + 五种色调</li>
+					<li><b>回记忆</b>点罗盘外圈的金点 · 跳回写完那个字时的时刻</li>
+				</ul>
+			</section>
+			<section>
+				<h3>水墨丹青</h3>
+				<ul>
+					<li><b>滴墨</b>点一下 · 先聚成一颗浓点，再往外晕开</li>
+					<li><b>泼墨</b>按住不动约半秒 · 炸开一团大的</li>
+					<li><b>墨线</b>按住拖 · 沿路径连续落墨（不是画笔）</li>
+					<li><b>写字</b>「书写汉字」· 随机一个字，按真实笔顺一笔一笔落</li>
+					<li><b>浮现</b>「浮现画面」· 随机一幅水墨，从淡轮廓里醒来</li>
+					<li><b>字帖</b>点飘着的纸片 · 展开一行字，再点折起</li>
+				</ul>
+			</section>
+			<p class="dr-help-foot">Esc 退出当前场景 · 键盘用户可用 Tab 走到所有按钮</p>
+		</div>
+	</div>
+
+	<p class="dr-credit">星空、河、罗盘、胶卷、墨，全部当场算出来 · Canvas 2D</p>
+</section>
+
+<article class="dr-article">
+	<div class="dr-article-inner prose prose-base dark:prose-invert max-w-none!">
+		<slot />
+	</div>
+</article>
+
+<script>
+	import { createDualApp, type DualApp } from "./dual";
+
+	// swup 做客户端导航时本页可能是换内容进来而不是整页加载 —— 模块只执行一次，
+	// 所以挂载写成幂等的，并在内容被换掉前把上一个实例拆干净。
+	let app: DualApp | null = null;
+
+	function boot() {
+		// 挂载点由模块自己从 document 里找（不吃外来的根元素）：querySelector 只搜后代
+		// 不搜自己，传 #dr-stage 进去第一句就是 null。丝缕四面体上吃过这个亏。
+		if (app || !document.getElementById("dr-stage")) return;
+		app = createDualApp();
+	}
+
+	function teardown() {
+		app?.destroy();
+		app = null;
+	}
+
+	boot();
+	document.addEventListener("swup:contentReplaced", boot);
+	document.addEventListener("swup:page:view", boot);
+	document.addEventListener("swup:willReplaceContent", teardown);
+</script>
+
+<style is:global>
+	/* 首屏是星空与宣纸，站点的樱花／壁纸／顶部渐变／欢迎条会糊在上面。
+	     用 :has() 钉住作用域（页面里有 #dr-stage 时才生效），否则这份 global 样式
+	     会被打进全站 CSS，在别的页面误伤。
+	     ⚠️ 清单里的 `.top-gradient-highlight` 必须带点：它是 class，写成类型选择器
+	     永远不匹配、也不报错，只是在画面上多一层浅灰。 */
+	html:has(#dr-stage) #canvas_sakura,
+	html:has(#dr-stage) welcome-toast,
+	html:has(#dr-stage) #page-background-decoration,
+	html:has(#dr-stage) .top-gradient-highlight,
+	html:has(#dr-stage) #wallpaper-wrapper {
+		display: none !important;
+	}
+
+	/* 页面外的部分仍是站点底色，刷成宣纸同色，否则窄屏滚到正文会看到接缝。
+	   ⚠️ 这里必须写字面量：`--dr-paper` 声明在 `.dr-stage` 上，自定义属性只向下继承，
+	   在 `html` 这一层取不到 → `var()` 在计算值阶段失效、整条声明被丢掉，规则静默空转。 */
+	html:has(#dr-stage) {
+		background: #f2ece0;
+	}
+</style>
+
+<style>
+	.dr-stage {
+		--dr-paper: #f2ece0;
+		--dr-paper-edge: #e3dbc9;
+		--dr-ink: #1b1a18;
+		--dr-ink-mid: #45413a;
+		/* ⚠️ 算出来的，不是挑出来的：#6f685b 压在 #f2ece0 上是 4.72:1，
+		   刚好过正文那条 4.5:1；原来的 #7b7367 只有 4.1:1，在纸上"看着柔和"，其实不合格。 */
+		--dr-ink-soft: #6f685b;
+		--dr-gold: #c9a45c;
+		--dr-gold-deep: #8a6a2c;
+		--dr-star: #e8ecff;
+		--dr-line: rgb(255 255 255 / 0.16);
+		--dr-line-dark: rgb(27 26 24 / 0.3);
+		--dr-panel: rgb(10 11 18 / 0.62);
+		--dr-panel-light: rgb(246 241 231 / 0.82);
+		--dr-float-x: clamp(0.9rem, 3vw, 2rem);
+		--dr-float-y: clamp(0.9rem, 3vh, 1.8rem);
+		position: relative;
+		height: 100svh;
+		min-height: 32rem;
+		overflow: hidden;
+		color: #f4f1ea;
+		background: #05060c;
+	}
+
+	.dr-scene {
+		position: absolute;
+		inset: 0;
+	}
+
+	.dr-layer {
+		position: absolute;
+		inset: 0;
+		display: block;
+		width: 100%;
+		height: 100%;
+		/* 拖针、转盘、落墨都要吃掉手势，不能让页面跟着滚 */
+		touch-action: none;
+	}
+
+	#dr-cosmos {
+		z-index: 1;
+	}
+
+	#dr-river {
+		z-index: 2;
+	}
+
+	/* 墨是"在纸上"的：它盖住星空的下半，但指针要能穿到下面的河 */
+	#dr-ink {
+		z-index: 3;
+	}
+
+	/* 罗盘与胶卷在最上面，也由自己内部再分前后 */
+	#dr-core {
+		z-index: 4;
+	}
+
+	/* ---------------------------------------------------------- 字帖纸片 */
+
+	.dr-slips {
+		position: absolute;
+		inset: 0;
+		z-index: 6;
+		pointer-events: none;
+	}
+
+	.dr-slip {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 3.1rem;
+		height: 4.2rem;
+		margin: -2.1rem 0 0 -1.55rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.3rem;
+		border: 1px solid rgb(140 118 82 / 0.4);
+		border-radius: 2px;
+		background: linear-gradient(160deg, #fbf7ee, #efe7d6);
+		box-shadow: 0 6px 18px rgb(40 33 22 / 0.22);
+		color: #3b352c;
+		font-size: 0.56rem;
+		line-height: 1.5;
+		letter-spacing: 0.06em;
+		writing-mode: vertical-rl;
+		text-orientation: upright;
+		pointer-events: auto;
+		cursor: pointer;
+		transition:
+			width 320ms cubic-bezier(0.22, 0.9, 0.24, 1),
+			height 320ms cubic-bezier(0.22, 0.9, 0.24, 1),
+			margin 320ms cubic-bezier(0.22, 0.9, 0.24, 1),
+			box-shadow 320ms ease;
+	}
+
+	.dr-slip.is-open {
+		width: 2.6rem;
+		height: 8.6rem;
+		margin: -4.3rem 0 0 -1.3rem;
+		box-shadow: 0 12px 30px rgb(40 33 22 / 0.3);
+	}
+
+	.dr-slip:focus-visible {
+		outline: 2px solid var(--dr-gold-deep);
+		outline-offset: 3px;
+	}
+
+	/* ---------------------------------------------------------- 首屏文案 */
+
+	.dr-intro {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: clamp(16vh, 20vh, 24vh);
+		z-index: 7;
+		text-align: center;
+		pointer-events: none;
+		transition: opacity 900ms ease;
+	}
+
+	.dr-intro.is-gone {
+		opacity: 0;
+	}
+
+	.dr-kicker {
+		margin: 0 0 0.5rem;
+		font-size: 0.6rem;
+		letter-spacing: 0.36em;
+		text-indent: 0.36em;
+		color: rgb(214 222 255 / 0.62);
+	}
+
+	.dr-h1 {
+		margin: 0;
+		font-size: clamp(1.7rem, 4vw, 2.7rem);
+		font-weight: 500;
+		line-height: 1.12;
+		letter-spacing: 0.32em;
+		text-indent: 0.32em;
+		color: #f6f3ec;
+		text-shadow: 0 0 26px rgb(255 226 168 / 0.28);
+	}
+
+	.dr-sub {
+		margin: 0.55rem 0 0;
+		font-size: 0.68rem;
+		letter-spacing: 0.46em;
+		text-indent: 0.46em;
+		color: rgb(214 222 255 / 0.55);
+	}
+
+	.dr-enter {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		margin: 1.9rem auto 0;
+		max-width: min(92%, 30rem);
+		font-size: 0.68rem;
+		line-height: 1.85;
+		letter-spacing: 0.06em;
+		color: rgb(222 228 255 / 0.68);
+	}
+
+	.dr-enter b {
+		color: var(--dr-gold);
+		font-weight: 500;
+	}
+
+	/* ---------------------------------------------------------- 浮层控件 */
+
+	.dr-readout {
+		position: absolute;
+		left: var(--dr-float-x);
+		top: var(--dr-float-y);
+		z-index: 8;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0;
+		font-size: 0.7rem;
+		letter-spacing: 0.14em;
+		color: rgb(226 231 255 / 0.68);
+		pointer-events: none;
+	}
+
+	.dr-dot {
+		opacity: 0.42;
+	}
+
+	.dr-btn {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		height: 42px;
+		padding: 0 1.05rem;
+		border: 1px solid var(--dr-line);
+		border-radius: 999px;
+		background: var(--dr-panel);
+		-webkit-backdrop-filter: blur(9px);
+		backdrop-filter: blur(9px);
+		color: #f1eee6;
+		/* ⚠️ button 不继承字体，a 继承。少了这一行，同一排的两个按钮字体对不上。 */
+		font: inherit;
+		font-size: 0.72rem;
+		letter-spacing: 0.14em;
+		text-decoration: none;
+		white-space: nowrap;
+		cursor: pointer;
+		transition:
+			border-color 220ms ease,
+			transform 220ms ease,
+			background-color 220ms ease;
+	}
+
+	/* 落到宣纸那半边的按钮换成纸底深字：深色玻璃压在纸上像贴了两层膏药 */
+	.dr-btn-on-paper {
+		border-color: var(--dr-line-dark);
+		background: var(--dr-panel-light);
+		color: var(--dr-ink);
+	}
+
+	.dr-btn:hover {
+		border-color: rgb(255 226 168 / 0.55);
+		transform: translateY(-2px);
+	}
+
+	.dr-btn:focus-visible {
+		outline: 2px solid var(--dr-gold);
+		outline-offset: 3px;
+	}
+
+	.dr-btn-ghost {
+		background: transparent;
+	}
+
+	.dr-home {
+		position: absolute;
+		right: var(--dr-float-x);
+		top: var(--dr-float-y);
+		z-index: 8;
+	}
+
+	.dr-actions {
+		position: absolute;
+		left: 50%;
+		bottom: calc(var(--dr-float-y) + 1.6rem);
+		z-index: 8;
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 0.5rem;
+		transform: translateX(-50%);
+	}
+
+	/* ⚠️ 上面给了 display，[hidden] 就压不住了，必须显式写回来 */
+	.dr-actions [hidden],
+	.dr-frame[hidden],
+	.dr-help[hidden] {
+		display: none;
+	}
+
+	.dr-help-wrap {
+		position: absolute;
+		right: var(--dr-float-x);
+		bottom: var(--dr-float-y);
+		z-index: 9;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.6rem;
+	}
+
+	.dr-help {
+		width: min(90vw, 23rem);
+		max-height: 64svh;
+		overflow: auto;
+		padding: 0.9rem 1.1rem 0.85rem;
+		border: 1px solid var(--dr-line);
+		border-radius: 0.9rem;
+		background: rgb(8 9 15 / 0.86);
+		-webkit-backdrop-filter: blur(12px);
+		backdrop-filter: blur(12px);
+		color: rgb(233 238 255 / 0.86);
+		font-size: 0.68rem;
+		line-height: 1.95;
+	}
+
+	.dr-help h3 {
+		margin: 0 0 0.3rem;
+		font-size: 0.72rem;
+		font-weight: 500;
+		letter-spacing: 0.18em;
+		color: var(--dr-gold);
+	}
+
+	.dr-help section + section {
+		margin-top: 0.7rem;
+		padding-top: 0.7rem;
+		border-top: 1px solid rgb(255 255 255 / 0.12);
+	}
+
+	.dr-help ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.dr-help li {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.dr-help b {
+		flex: 0 0 4.6rem;
+		color: #fff;
+		font-weight: 500;
+	}
+
+	.dr-help-foot {
+		margin: 0.7rem 0 0;
+		padding-top: 0.6rem;
+		border-top: 1px solid rgb(255 255 255 / 0.12);
+		color: rgb(214 222 255 / 0.6);
+	}
+
+	.dr-credit {
+		position: absolute;
+		left: 50%;
+		bottom: 0.6rem;
+		z-index: 8;
+		margin: 0;
+		transform: translateX(-50%);
+		font-size: 0.56rem;
+		letter-spacing: 0.08em;
+		color: rgb(214 222 255 / 0.42);
+		pointer-events: none;
+		white-space: nowrap;
+	}
+
+	/* ---------------------------------------------------------- 全屏帧 */
+
+	.dr-frame {
+		position: absolute;
+		inset: 0;
+		z-index: 20;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		background: rgb(4 4 7 / 0.94);
+		cursor: zoom-out;
+		animation: dr-fade 260ms ease both;
+	}
+
+	@keyframes dr-fade {
+		from {
+			opacity: 0;
+		}
+	}
+
+	/* 电影黑边：上下各一条，把注意力压进中间那一帧 */
+	.dr-frame-bars {
+		position: absolute;
+		left: 0;
+		right: 0;
+		height: clamp(28px, 7vh, 64px);
+		background: #000;
+		pointer-events: none;
+	}
+
+	.dr-frame-bars {
+		top: 0;
+		box-shadow: 0 clamp(-1px, -0.2vh, 0) 0 rgb(255 255 255 / 0.08);
+	}
+
+	.dr-frame-body {
+		position: relative;
+		margin: 0;
+		max-width: min(92vw, 1100px);
+		max-height: 74svh;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.7rem;
+	}
+
+	.dr-frame-body img {
+		display: block;
+		max-width: 100%;
+		max-height: 66svh;
+		object-fit: contain;
+		border-radius: 2px;
+		box-shadow: 0 24px 70px rgb(0 0 0 / 0.7);
+		/* 滤镜只作用在这一帧上（见 data.ts 的五种），帧外的画面不受影响 */
+		filter: none;
+		transition: filter 320ms ease;
+	}
+
+	.dr-frame-cap {
+		display: flex;
+		align-items: center;
+		gap: 0.9rem;
+		font-size: 0.7rem;
+		letter-spacing: 0.16em;
+		color: rgb(226 231 255 / 0.66);
+	}
+
+	.dr-frame-hint {
+		font-size: 0.62rem;
+		color: rgb(226 231 255 / 0.4);
+	}
+
+	.dr-filters {
+		position: absolute;
+		bottom: clamp(38px, 9vh, 78px);
+		display: flex;
+		gap: 0.5rem;
+		cursor: default;
+	}
+
+	.dr-filters button {
+		height: 36px;
+		padding: 0 0.85rem;
+		border: 1px solid rgb(255 255 255 / 0.2);
+		border-radius: 999px;
+		background: rgb(255 255 255 / 0.04);
+		color: rgb(235 238 255 / 0.8);
+		font: inherit;
+		font-size: 0.66rem;
+		letter-spacing: 0.14em;
+		cursor: pointer;
+		transition: border-color 200ms ease, color 200ms ease;
+	}
+
+	.dr-filters button[aria-pressed="true"] {
+		border-color: var(--dr-gold);
+		color: var(--dr-gold);
+	}
+
+	.dr-filters button:hover {
+		border-color: rgb(255 226 168 / 0.6);
+	}
+
+	/* ---------------------------------------------------------- 正文 */
+
+	.dr-article {
+		position: relative;
+		z-index: 1;
+		background: var(--dr-paper);
+	}
+
+	.dr-article-inner {
+		width: min(760px, calc(100% - 2.5rem));
+		margin: 0 auto;
+		padding: clamp(2.4rem, 6vh, 4.4rem) 0 clamp(4rem, 10vh, 7rem);
+	}
+
+	.dr-article-inner h2 {
+		margin-top: 2.6em;
+	}
+
+	.dr-article-inner h2:first-child {
+		margin-top: 0;
+	}
+
+	/* ---------------------------------------------------------- 窄屏 */
+
+	@media (max-width: 760px) {
+		.dr-intro {
+			top: clamp(3.4rem, 11vh, 6rem);
+		}
+
+		.dr-h1 {
+			letter-spacing: 0.2em;
+			text-indent: 0.2em;
+		}
+
+		.dr-enter {
+			margin-top: 1.2rem;
+			font-size: 0.64rem;
+		}
+
+		.dr-readout {
+			font-size: 0.62rem;
+			letter-spacing: 0.08em;
+		}
+
+		.dr-home span {
+			/* 只留图标，把顶栏让给画面 —— aria-label 仍在，读屏读得到 */
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip: rect(0, 0, 0, 0);
+		}
+
+		.dr-home {
+			padding: 0;
+			width: 42px;
+			justify-content: center;
+		}
+
+		.dr-actions {
+			bottom: calc(var(--dr-float-y) + 2.6rem);
+			gap: 0.4rem;
+		}
+
+		.dr-actions .dr-btn {
+			height: 38px;
+			padding: 0 0.8rem;
+			font-size: 0.66rem;
+		}
+
+		.dr-credit {
+			display: none;
+		}
+
+		.dr-help {
+			width: min(92vw, 23rem);
+			max-height: 48svh;
+		}
+
+		.dr-filters {
+			flex-wrap: wrap;
+			justify-content: center;
+			max-width: 92vw;
+		}
+	}
+
+	/* 尊重系统的「减少动态效果」：CSS 这一侧关过渡，canvas 那侧读同一个查询 */
+	@media (prefers-reduced-motion: reduce) {
+		.dr-intro,
+		.dr-slip,
+		.dr-btn,
+		.dr-frame-body img {
+			transition-duration: 1ms;
+		}
+
+		.dr-frame {
+			animation: none;
+		}
+
+		.dr-btn:hover {
+			transform: none;
+		}
+	}
+</style>
