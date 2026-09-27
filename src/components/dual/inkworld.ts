@@ -1,9 +1,10 @@
 // 下位面：水墨丹青。
 //
-// 一块白宣纸。底部没有任何按钮 —— 只有角落一个二选一的模式开关
-// （楷书汉字 / 水墨画面），**一切效果都在画布上点出来**：
+// 一块白宣纸。底部没有任何按钮 —— 只有角落一个三选的模式开关
+// （楷书汉字 / 水墨画面 / 擦除字迹），**一切效果都在画布上点出来**：
 //   ① 点一下   按当前模式触发：楷书模式在落点写一个字（真实笔顺，一笔一笔落）；
-//              画面模式从落点向外**全屏**晕开一幅水墨（径向 reveal，像记忆从纸底醒来）
+//              画面模式从落点向外**全屏**晕开一幅水墨（径向 reveal，像记忆从纸底醒来）；
+//              擦除模式把落点上的墨团与字从纸上抠掉
 //   ② 泼墨     长按不放：炸开一团大的
 //   ③ 墨线     按住拖：沿路径落下连续的墨点（**不是画笔** —— 线是"滴"出来的，不是描出来的）
 //
@@ -28,6 +29,11 @@ const MAX_PAINTINGS = 2;
 const FADE = 2.6;
 /** 一幅水墨从落点晕满整幅要的时间（秒） */
 const REVEAL = 2.4;
+
+// ⚠️ 上面这几个常量是**秒**，而 `d.now` 是墙钟**毫秒**（`Date.now()`）。
+// 两边直接相减 = 把 2.4 秒当成 2.4 毫秒用：晕染一帧就铺满、淡出一帧就消失、
+// 写字一帧就写完 —— 神报的「水墨画面不是从点击处逐渐浮现」就是这么来的。
+// 所以本模块内部**一律**用 `d.now * 0.001` 换算（`t` 是秒），谁也不许直接拿 d.now 当秒。
 
 type Blot = {
 	x: number;
@@ -77,6 +83,8 @@ export type InkWorld = {
 	write(x: number, y: number): string | null;
 	/** 从 (x,y) 向外全屏晕开一幅水墨。 */
 	surface(x: number, y: number): boolean;
+	/** 擦掉 (x,y) 处的墨与字（「擦墨」模式的一次点击）。返回有没有擦到东西。 */
+	erase(x: number, y: number): boolean;
 	writing(): boolean;
 	blotCount(): number;
 	clear(): void;
@@ -352,13 +360,14 @@ export function createInkWorld(): InkWorld {
 	function trim() {
 		const d = ref;
 		if (!d) return;
+		const now = d.now * 0.001;
 		let changed = false;
 		if (blots.length > MAX_BLOTS) {
 			const n = blots.length - MAX_BLOTS;
 			for (let i = 0; i < n; i++) {
 				const b = blots[i];
 				if (b.fadeAt < 0) {
-					b.fadeAt = d.now;
+					b.fadeAt = now;
 					changed = true;
 				}
 			}
@@ -368,7 +377,7 @@ export function createInkWorld(): InkWorld {
 			for (let i = 0; i < n; i++) {
 				const w = written[i];
 				if (w.fadeAt < 0) {
-					w.fadeAt = d.now;
+					w.fadeAt = now;
 					changed = true;
 				}
 			}
@@ -378,7 +387,7 @@ export function createInkWorld(): InkWorld {
 			for (let i = 0; i < n; i++) {
 				const s = surfaced[i];
 				if (s.fadeAt < 0) {
-					s.fadeAt = d.now;
+					s.fadeAt = now;
 					changed = true;
 				}
 			}
@@ -458,14 +467,48 @@ export function createInkWorld(): InkWorld {
 		const d = ref;
 		if (d && surfaced.length > MAX_PAINTINGS) {
 			const n = surfaced.length - MAX_PAINTINGS;
+			const now = d.now * 0.001;
 			for (let i = 0; i < n; i++) {
-				if (surfaced[i].fadeAt < 0) surfaced[i].fadeAt = d.now;
+				if (surfaced[i].fadeAt < 0) surfaced[i].fadeAt = now;
 			}
 			rebake();
 		}
 		// 落点先聚一颗墨，画从这颗墨里晕开 —— 仪式感来自"先有墨、再有画"
 		dot(x, y, 0.8);
 		return true;
+	}
+
+	/**
+	 * 擦墨：把落点上的墨团与汉字从纸上抠掉，再重烘一张纸。
+	 * 只擦「字迹」—— 已经晕开的画归它自己的上限管（第三幅来了最旧的那幅会自己淡走），
+	 * 点一下就把整幅画抹掉太像"删档"，不像在纸上擦。
+	 */
+	function erase(x: number, y: number): boolean {
+		let hit = false;
+		for (let i = blots.length - 1; i >= 0; i--) {
+			const b = blots[i];
+			// 取「这团墨自己的半径」与一个最小手感半径的较大者：小墨点也要点得中
+			if (Math.hypot(x - b.x, y - b.y) <= Math.max(b.r * 1.35, 26)) {
+				blots.splice(i, 1);
+				hit = true;
+			}
+		}
+		// 字心 ± 半个字（0.52 em 半宽）算命中：点在字上就整字擦掉，不擦"半个字"
+		const inChar = (cx: number, cy: number, size: number) =>
+			Math.abs(x - cx) < size * 0.52 && Math.abs(y - cy) < size * 0.52;
+		for (let i = written.length - 1; i >= 0; i--) {
+			const w = written[i];
+			if (inChar(w.x, w.y, w.size)) {
+				written.splice(i, 1);
+				hit = true;
+			}
+		}
+		if (writing && inChar(writing.x, writing.y, writing.size)) {
+			writing = null;
+			hit = true;
+		}
+		if (hit) rebake();
+		return hit;
 	}
 
 	function preload(idx: number) {
@@ -505,7 +548,8 @@ export function createInkWorld(): InkWorld {
 		ref = d;
 		view = v;
 		ensurePage();
-		const t = d.now;
+		// 秒（见文件头那段的「秒 vs 毫秒」）：本模块里所有 born / fadeAt / life 都是秒。
+		const t = d.now * 0.001;
 
 		// ⓪ 纸：每帧画，不进离屏。
 		// ⚠️ 纸曾经烘在 `page` 里 —— 而 `page` 只在「有东西沉下去」时才重烘，于是
@@ -685,6 +729,7 @@ export function createInkWorld(): InkWorld {
 		},
 		write,
 		surface,
+		erase,
 		writing: () => writing !== null,
 		blotCount: () => blots.length,
 		clear() {

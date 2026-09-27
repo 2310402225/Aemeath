@@ -154,6 +154,10 @@ export function inkStroke(
 	ratio: number,
 	st: StrokeStyle,
 ) {
+	// ⚠️ y 是 **加** 不是减：`glyphs.ts` 的坐标已是「y 轴向下」（与 canvas 同向），
+	// 直接 `cy + y*scale` 才是正的。这里曾经写成 `cy - y*scale`（照"数据 y 向上"的
+	// 旧注释来的），于是**每一个字都上下颠倒** —— 小字（罗盘刻度环）看不出来，
+	// 一笔 320px 的大字倒着，一眼就穿帮。
 	const count = d.ws.length;
 	if (count < 2) return;
 	const r = clamp(ratio, 0, 1);
@@ -176,8 +180,8 @@ export function inkStroke(
 					d.ws[mid] * scale * 2 * tip + scale * 0.045 * layer * st.halo,
 				);
 				g.beginPath();
-				g.moveTo(cx + d.pts[i * 2] * scale, cy - d.pts[i * 2 + 1] * scale);
-				g.lineTo(cx + d.pts[j * 2] * scale, cy - d.pts[j * 2 + 1] * scale);
+				g.moveTo(cx + d.pts[i * 2] * scale, cy + d.pts[i * 2 + 1] * scale);
+				g.lineTo(cx + d.pts[j * 2] * scale, cy + d.pts[j * 2 + 1] * scale);
 				g.stroke();
 			}
 		}
@@ -187,9 +191,9 @@ export function inkStroke(
 		const j = Math.min(i + step, upto - 1);
 		const mid = (i + j) >> 1;
 		const px = cx + d.pts[i * 2] * scale;
-		const py = cy - d.pts[i * 2 + 1] * scale;
+		const py = cy + d.pts[i * 2 + 1] * scale;
 		const qx = cx + d.pts[j * 2] * scale;
-		const qy = cy - d.pts[j * 2 + 1] * scale;
+		const qy = cy + d.pts[j * 2 + 1] * scale;
 		// 笔尖：还没写完时最后一段收细，停笔时看到的是"正在行走的笔尖"而不是被刀切断的带子
 		const tip = j >= upto - 1 && r < 1 ? 0.42 : 1;
 		// 起笔轻入：头两段压细压淡

@@ -105,8 +105,8 @@ export function createDualApp(): DualApp {
 	 *  没有这一步，「在针上点一下」也会短暂占住 op，把同一时刻别的操作全挡掉。 */
 	let pending: { kind: "needle" | "ring" | "disc"; index: number } | null =
 		null;
-	/** 水墨模式：点画布是「写字」还是「晕开一幅画」。角落开关 / M 键切换。 */
-	let inkMode: "char" | "painting" = "char";
+	/** 水墨模式：点画布是「落字」「晕开一幅画」还是「擦墨」。角落开关 / M 键切换。 */
+	let inkMode: "char" | "painting" | "erase" = "char";
 
 	// ────────────────────────────────────────────── 尺寸
 
@@ -505,6 +505,11 @@ export function createDualApp(): DualApp {
 					// 不再有底部按钮）。想纯粹玩墨：拖一下是墨线、长按是泼墨。
 					if (inkMode === "char") {
 						tryWriteAt(x, y);
+					} else if (inkMode === "erase") {
+						if (ink.erase(x, y)) {
+							river.disturb(x, 0.45);
+							d.wave = Math.max(d.wave, 0.45);
+						}
 					} else if (ink.surface(x, y)) {
 						river.disturb(x, 0.7);
 						d.wave = 1;
@@ -691,6 +696,7 @@ export function createDualApp(): DualApp {
 	const modeBox = opt<HTMLElement>("#dr-mode");
 	const modeChar = opt<HTMLButtonElement>("#dr-mode-char");
 	const modePaint = opt<HTMLButtonElement>("#dr-mode-paint");
+	const modeErase = opt<HTMLButtonElement>("#dr-mode-erase");
 	const readScene = opt<HTMLElement>("#dr-readout-scene");
 	const readTime = opt<HTMLElement>("#dr-readout-time");
 	const intro = opt<HTMLElement>("#dr-intro");
@@ -699,10 +705,14 @@ export function createDualApp(): DualApp {
 		intro?.classList.add("is-gone");
 	}
 
-	function setInkMode(m: "char" | "painting") {
+	const MODES = ["char", "painting", "erase"] as const;
+	type InkMode = (typeof MODES)[number];
+
+	function setInkMode(m: InkMode) {
 		inkMode = m;
 		modeChar?.setAttribute("aria-pressed", String(m === "char"));
 		modePaint?.setAttribute("aria-pressed", String(m === "painting"));
+		modeErase?.setAttribute("aria-pressed", String(m === "erase"));
 	}
 
 	function syncButtons() {
@@ -720,6 +730,7 @@ export function createDualApp(): DualApp {
 
 	modeChar?.addEventListener("click", () => setInkMode("char"));
 	modePaint?.addEventListener("click", () => setInkMode("painting"));
+	modeErase?.addEventListener("click", () => setInkMode("erase"));
 
 	btnOpen?.addEventListener("click", () => {
 		if (!claim("rolling_film")) return;
@@ -799,9 +810,10 @@ export function createDualApp(): DualApp {
 			d.turnsV = 0;
 			turnsHold = 0;
 		}
-		// M = 水墨模式切换（spec：模式切换用快捷键 / 极简悬浮开关）
+		// M = 水墨模式轮换：落字 → 晕画 → 擦墨（spec：模式切换用快捷键 / 极简悬浮开关）
 		if ((e.key === "m" || e.key === "M") && d.scene === "ink") {
-			setInkMode(inkMode === "char" ? "painting" : "char");
+			const next = MODES[(MODES.indexOf(inkMode) + 1) % MODES.length];
+			if (next) setInkMode(next);
 		}
 	}
 

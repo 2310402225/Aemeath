@@ -89,11 +89,12 @@ import { url } from "@/utils/url-utils";
 		<button type="button" class="dr-btn dr-btn-ghost" id="dr-reset" hidden>回到此刻</button>
 	</div>
 
-	<!-- 水墨模式开关：角落极简二选一（spec：移除底部按钮后的唯一开关）。
+	<!-- 水墨模式开关：角落极简三选一（spec：移除底部按钮后的唯一开关）。
 	     点画布触发什么，由它说了算。 -->
-	<div class="dr-mode" id="dr-mode" role="group" aria-label="水墨模式，按 M 切换" hidden>
+	<div class="dr-mode" id="dr-mode" role="group" aria-label="水墨模式，按 M 轮换" hidden>
 		<button type="button" id="dr-mode-char" aria-pressed="true">楷书汉字</button>
 		<button type="button" id="dr-mode-paint" aria-pressed="false">水墨画面</button>
+		<button type="button" id="dr-mode-erase" aria-pressed="false">擦除字迹</button>
 	</div>
 
 	<!-- 操作说明：这一页有九种交互，靠首屏那三行是猜不全的 -->
@@ -124,7 +125,8 @@ import { url } from "@/utils/url-utils";
 				<ul>
 					<li><b>落字</b>楷书模式下点画布 · 随机一字按真实笔顺落在点击处</li>
 					<li><b>晕画</b>画面模式下点画布 · 一幅水墨从落点向外晕满整幅</li>
-					<li><b>切模式</b>左下角开关或按 M · 楷书汉字 / 水墨画面</li>
+					<li><b>擦墨</b>擦除模式下点画布 · 点到的墨与字从纸上擦掉</li>
+					<li><b>切模式</b>左下角开关或按 M · 楷书 / 画面 / 擦除轮换</li>
 					<li><b>墨线</b>按住拖 · 沿路径连续落墨（不是画笔）</li>
 					<li><b>泼墨</b>按住不动约半秒 · 炸开一团大的</li>
 					<li><b>墨迹</b>落下就留住 · 太多了最老的才慢慢淡去</li>
@@ -259,7 +261,13 @@ import { url } from "@/utils/url-utils";
 		pointer-events: none;
 	}
 
-	.dr-slip {
+	/* ⚠️ 纸片是 dual.ts 里 `createElement` 造出来的，**不是**这份模板的元素。
+	   Astro 的 scoped style 会给选择器钉一个 `[data-astro-cid-*]`，而运行期建的节点
+	   身上没有这个属性 → 直接写 `.dr-slip { … }` 一条都不匹配，纸片退化成没有底、
+	   没有尺寸、没有竖排的裸按钮，看着就是「字帖根本没呈现出来」。运行期节点一律走
+	   `:global()`，作用域锚点留给模板里那个 `.dr-slips` 容器
+	   （和 Calendar.astro 的 `:global(.calendar-day)` 同一个理）。 */
+	.dr-slips :global(.dr-slip) {
 		position: absolute;
 		top: 0;
 		left: 0;
@@ -289,14 +297,14 @@ import { url } from "@/utils/url-utils";
 			box-shadow 320ms ease;
 	}
 
-	.dr-slip.is-open {
+	.dr-slips :global(.dr-slip.is-open) {
 		width: 2.6rem;
 		height: 8.6rem;
 		margin: -4.3rem 0 0 -1.3rem;
 		box-shadow: 0 12px 30px rgb(40 33 22 / 0.3);
 	}
 
-	.dr-slip:focus-visible {
+	.dr-slips :global(.dr-slip:focus-visible) {
 		outline: 2px solid var(--dr-gold-deep);
 		outline-offset: 3px;
 	}
@@ -458,7 +466,7 @@ import { url } from "@/utils/url-utils";
 
 	/* ---------------------------------------------------------- 水墨模式开关 */
 
-	/* 角落极简二选一：宣纸色系、低干扰，但仍是真按钮（键盘可达、44px 触达） */
+	/* 角落极简三选一：宣纸色系、低干扰，但仍是真按钮（键盘可达、44px 触达） */
 	.dr-mode {
 		position: absolute;
 		left: var(--dr-float-x);
@@ -665,7 +673,8 @@ import { url } from "@/utils/url-utils";
 		cursor: default;
 	}
 
-	.dr-filters button {
+	/* 那排色调按钮同样是 dual.ts 建出来的 → 同 `.dr-slip` 那条，必须 `:global()` */
+	.dr-filters :global(button) {
 		height: 36px;
 		padding: 0 0.85rem;
 		border: 1px solid rgb(255 255 255 / 0.2);
@@ -679,12 +688,12 @@ import { url } from "@/utils/url-utils";
 		transition: border-color 200ms ease, color 200ms ease;
 	}
 
-	.dr-filters button[aria-pressed="true"] {
+	.dr-filters :global(button[aria-pressed="true"]) {
 		border-color: var(--dr-gold);
 		color: var(--dr-gold);
 	}
 
-	.dr-filters button:hover {
+	.dr-filters :global(button:hover) {
 		border-color: rgb(255 226 168 / 0.6);
 	}
 
@@ -758,6 +767,18 @@ import { url } from "@/utils/url-utils";
 			font-size: 0.66rem;
 		}
 
+		/* 三档模式开关在窄屏要把自己收窄，否则会顶到右下角那个「操作说明」上 */
+		.dr-mode {
+			gap: 0.2rem;
+			padding: 0.2rem;
+		}
+
+		.dr-mode button {
+			padding: 0 0.55rem;
+			font-size: 0.62rem;
+			letter-spacing: 0.06em;
+		}
+
 		.dr-credit {
 			display: none;
 		}
@@ -777,7 +798,7 @@ import { url } from "@/utils/url-utils";
 	/* 尊重系统的「减少动态效果」：CSS 这一侧关过渡，canvas 那侧读同一个查询 */
 	@media (prefers-reduced-motion: reduce) {
 		.dr-intro,
-		.dr-slip,
+		.dr-slips :global(.dr-slip),
 		.dr-btn,
 		.dr-frame-body img {
 			transition-duration: 1ms;

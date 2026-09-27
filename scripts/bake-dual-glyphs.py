@@ -112,7 +112,9 @@ def fetch(ch: str):
     return None
 
 
-# hanzi-writer 的坐标是 1024×1024、y 轴向下、原点左上。换到 em 框中心、y 向上。
+# hanzi-writer 的 medians 是 1024×1024、**y 轴向上**、原点左下。`(512-y)/512` 把它平移到
+# em 框中心、并翻成 **y 轴向下的 canvas 坐标**（和 `brush-ink.ts` 里 `cy + y*scale` 是一对；
+# 哪天这里改成不翻，`brush-ink` 那边必须跟着改，否则整页的字上下颠倒）。
 def norm(x: float, y: float):
     return round((x - 512) / 512, 4), round((512 - y) / 512, 4)
 
@@ -156,7 +158,8 @@ lines = [
     "//",
     "// 每字：n = 每笔的点数（按书写顺序），p = 扁平坐标 [x0,y0,x1,y1,...]（各笔依次拼接），",
     "// w = 每点的半宽（由该笔轮廓到中线的距离量出，所以提按顿挫是真的，不是画上去的）。",
-    "// 坐标已归一化到 [-1,1]、y 轴向上、原点在 em 框中心；同一 em 框所以字距天然正确。",
+    "// 坐标已归一化到 [-1,1]、**y 轴向下**（与 canvas 同向）、原点在 em 框中心；",
+    "// 同一 em 框所以字距天然正确。画的时候直接 `cy + y*size`，别再翻一次。",
     "//",
     "// biome-ignore-all lint/suspicious/noApproximativeNumericConstant: 这些小数是量出来的坐标与笔宽，",
     "// 不是「写了个近似常量」。偶尔撞上 √2/2 之类的值纯属巧合。",
