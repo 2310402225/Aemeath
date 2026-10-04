@@ -293,8 +293,13 @@ export function createHoleLayer(): HoleLayer {
 	}
 
 	/**
-	 * 吸积盘：三条细光带，各自转速不同；`near` = 只画靠近镜头的半圈。
-	 * 亮度是**压着调的**：单段峰值 0.2 上下，整圈叠起来最深的一条带也就 0.3 —— 暗盘。
+	 * 吸积盘：一层很淡的椭圆辉光 + 三条**细**光带。
+	 * 🔴 这里是最容易翻车的一处，两条规矩：
+	 *   ① 盘必须是细的。带一厚（原来 0.4R 那种）在加色混合下就变成不透明的彩色盘子，
+	 *      三带再一叠 —— 整颗黑洞成了一坨饱和的蓝环，跟"暗宇宙里一点冷光"毫不沾边。
+	 *   ② 前后**不许二值切**。`front !== near → continue` 会在切点留下一道笔直的接缝
+	 *      （厚带上尤其明显，看着像被刀切开），而且切点那一圈的 alpha 还是满的。
+	 *      改成按 sin(角度) 连续加权：两趟各自在切点收到最低，谁也不留硬边。
 	 */
 	function drawDisk(
 		g: CanvasRenderingContext2D,
@@ -306,37 +311,48 @@ export function createHoleLayer(): HoleLayer {
 		boost: number,
 	) {
 		const R = hole.r;
+
+		// 远半那趟顺带铺一层椭圆辉光 —— 用 scale 把圆形渐变压成椭圆，不必手搓椭圆渐变
+		if (!near) {
+			g.save();
+			g.translate(hole.x, hole.y);
+			g.scale(1, k);
+			const halo = g.createRadialGradient(0, 0, R * 1.02, 0, 0, R * 2.6);
+			halo.addColorStop(0, "rgb(160 200 255 / 0)");
+			halo.addColorStop(
+				0.32,
+				`rgb(126 168 255 / ${clamp(0.06 * boost, 0, 0.1)})`,
+			);
+			halo.addColorStop(1, "rgb(96 132 255 / 0)");
+			g.fillStyle = halo;
+			g.beginPath();
+			g.arc(0, 0, R * 2.6, 0, TAU);
+			g.fill();
+			g.restore();
+		}
+
+		g.lineCap = "round";
 		for (let band = 0; band < BANDS.length; band++) {
 			const rgb = BANDS[band];
 			if (!rgb) continue;
-			const inner = R * (1.2 + band * 0.3);
-			const outer = inner + R * (0.22 + band * 0.18);
+			// 带与带之间留出空隙：细是这一层的全部意义
+			const rr = R * (1.34 + band * 0.42);
+			const thick = R * (0.05 + band * 0.022);
 			const spin = s.spin * (1 - band * 0.22) + t * 0.05 * (1 - band * 0.3);
-			const segs = 44;
+			const segs = 84;
+			g.lineWidth = thick;
+			g.strokeStyle = `rgb(${rgb.join(" ")})`;
 			for (let i = 0; i < segs; i++) {
 				const a0 = spin + (TAU * i) / segs;
 				const a1 = spin + (TAU * (i + 1)) / segs;
 				const mid = (a0 + a1) / 2 - spin;
-				const front = Math.sin(mid) >= 0;
-				if (front !== near) continue;
-				// 前面的亮、后面的暗（薄光边缘 + 深阴影）
-				const depth = front ? 1 : 0.4;
-				// 靠视界那一侧更亮（"光源来自黑洞方向"）
-				const hot = 0.5 + 0.5 * Math.cos(mid);
-				const alpha = clamp((0.035 + 0.15 * hot) * depth * boost, 0, 0.42);
-				g.strokeStyle = `rgb(${rgb.join(" ")})`;
-				g.globalAlpha = alpha;
-				g.lineWidth = (outer - inner) * (front ? 1 : 0.8);
+				const face = Math.sin(mid); // +1 靠镜头 / −1 绕到背后
+				// 连续加权：本趟只认自己这一侧的 face，切点处自动收到 0.3 → 没有硬接缝
+				const w = 0.3 + 0.7 * (near ? Math.max(0, face) : Math.max(0, -face));
+				const hot = 0.5 + 0.5 * Math.cos(mid); // 一侧略亮，盘才有方向感
+				g.globalAlpha = clamp((0.05 + 0.3 * hot) * w * boost, 0, 0.42);
 				g.beginPath();
-				g.ellipse(
-					hole.x,
-					hole.y,
-					(inner + outer) / 2,
-					((inner + outer) / 2) * k,
-					0,
-					a0,
-					a1,
-				);
+				g.ellipse(hole.x, hole.y, rr, rr * k, 0, a0, a1);
 				g.stroke();
 			}
 		}
