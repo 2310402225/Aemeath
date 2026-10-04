@@ -4,19 +4,22 @@
 // 引力波）都在这一个文件里推进，模块**只读不写**。四个读者 + 九个交互，散着写必然串台 ——
 // 上一页（时间走马灯）的教训：一份状态，多个读者，这是唯一能长期不烂的写法。
 //
-// 状态机：idle · pressing · drag_hole · drag_rite
+// 状态机：idle · pressing · drag_rite
 //   ⚠️ 误触阈值：按下只记"抓到了什么"，拖过 6px 才真正认领 —— 不然"在法阵上点一下"
 //      也会占住 op，把同一时刻的生成/拖拽全挡掉。
+//
+// 🔴 **黑洞是钉死在页面中心的**（`s.hx/s.hy` 只在 `relayout` 里写一次）。它曾经可以被
+//    拽着走、松手再弹回来，但那样整页的重心跟着指针跑，而引力透镜的中心是**烘在星野里**的
+//    （见 hole.ts 的 `lensWarp`）—— 一拖，被掰弯的那片天就跟黑球错开，像画歪了。
+//    "会动的天体"和"被扭曲的空间"这两件事，静态构图里只能选一个。
 
 import { createHoleLayer, holeOf, hoverOf } from "./hole";
 import { createRites, type Rites } from "./rites";
 import {
 	approach,
-	clamp,
 	createShared,
 	dprCap,
 	type Shared,
-	spring,
 	type View,
 } from "./state";
 
@@ -124,11 +127,8 @@ export function createBlackHoleApp(): BlackHoleApp {
 		s.hover = approach(s.hover, hoverOf(s, view, hole), 5, dt);
 		s.spin += dt * (0.16 + 0.42 * s.hover) * (s.calm ? 0.4 : 1);
 
-		// 黑洞回位：松手后弹回页面中心（带速度，见 state.ts 的 spring）
-		if (s.op !== "drag_hole") {
-			[s.hx, s.hvx] = spring(s.hx, s.hvx, view.w * 0.5, 18, 7.4, dt);
-			[s.hy, s.hvy] = spring(s.hy, s.hvy, view.h * 0.5, 18, 7.4, dt);
-		}
+		// 黑洞钉死在页面中心（`relayout` 里写死）。原来这里有一步"松手后弹回中心"的弹簧，
+		// 现在没有东西会把它推开，弹簧就只剩下一堆每帧的空转计算 —— 一起去掉。
 
 		// 吞噬脉冲：叠加有上限（spec §二 吞噬反馈），随后 1~2 秒平滑回落
 		s.pulse = approach(s.pulse, 0, 1.5, dt);
@@ -204,18 +204,13 @@ export function createBlackHoleApp(): BlackHoleApp {
 		downPos = { x, y };
 		movedFar = false;
 		dragIdx = -1;
-		const hole = holeOf(s, view);
-		// 命中次序 = **精度优先**：先问法阵（圆环窄、还在动），再问黑洞（大而稳）。
-		// 反过来的话，想拖法阵会变成把黑洞拽走。
 		const i = rites.grab(x, y);
 		if (i >= 0) {
 			pending = { kind: "rite", index: i };
 			return;
 		}
-		if (Math.hypot(x - hole.x, y - hole.y) < hole.r * 2.6) {
-			pending = { kind: "hole" };
-			return;
-		}
+		// 黑洞不参与拖拽（它钉在中心），所以按下落在它身上就是"没抓到东西" ——
+		// 干净点击照旧在这一点生成法阵。
 		pending = null;
 	}
 
@@ -232,21 +227,12 @@ export function createBlackHoleApp(): BlackHoleApp {
 		if (s.op === "pressing") {
 			if (!movedFar && Math.hypot(x - downPos.x, y - downPos.y) > 6) {
 				movedFar = true;
-				if (pending?.kind === "hole") s.op = "drag_hole";
-				else if (pending?.kind === "rite") {
+				if (pending?.kind === "rite") {
 					dragIdx = pending.index;
 					s.op = "drag_rite";
 				}
 				pending = null;
 			}
-			return;
-		}
-		if (s.op === "drag_hole") {
-			// 直接跟手（不给速度，松手才让弹簧接上）
-			s.hx = clamp(x, view.w * 0.18, view.w * 0.82);
-			s.hy = clamp(y, view.h * 0.2, view.h * 0.8);
-			s.hvx = 0;
-			s.hvy = 0;
 			return;
 		}
 		if (s.op === "drag_rite" && dragIdx >= 0) rites.drag(dragIdx, x, y);

@@ -14,8 +14,9 @@
 /**
  * 统一状态机。同一时刻只允许一个主动操作 —— 所有 pointerdown 入口都要先过 `claim()`，
  * 抢不到就什么都不做。这是"想拖动法阵，结果把黑洞拖走了"这类串台 bug 的唯一防线。
+ * ⚠️ 没有 `drag_hole`：黑洞**钉死在页面中心**，不参与拖拽（理由见 black-hole.ts 头注释）。
  */
-export type Op = "idle" | "pressing" | "drag_hole" | "drag_rite";
+export type Op = "idle" | "pressing" | "drag_rite";
 
 /** 法阵生命周期的六个阶段（spec 点名的六态）。 */
 export type Phase =
@@ -47,12 +48,9 @@ export type Shared = {
 	/** 指针位置（CSS 像素），−1 = 不在页面上 */
 	px: number;
 	py: number;
-	/** 黑洞中心（可被拖动偏移，松手弹回页面中心） */
+	/** 黑洞中心。🔴 **只在 `relayout` 里写一次**（钉死在页面中心，不可拖动）。 */
 	hx: number;
 	hy: number;
-	/**_v 是弹簧速度：拖拽时直接给位置，松手后带速度弹回 —— 不带速度会退化成"慢慢爬" */
-	hvx: number;
-	hvy: number;
 	/** 吸积盘自转相位（弧度，只增不减） */
 	spin: number;
 	/** 吞噬脉冲强度 0..1（连续吞噬会叠加，但有上限） */
@@ -79,8 +77,6 @@ export function createShared(): Shared {
 		py: -1,
 		hx: 0,
 		hy: 0,
-		hvx: 0,
-		hvy: 0,
 		spin: 0,
 		pulse: 0,
 		hover: 0,

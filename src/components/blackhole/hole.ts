@@ -115,10 +115,7 @@ export function createHoleLayer(): HoleLayer {
 				view.h * ny,
 				Math.max(view.w, view.h) * nr,
 			);
-			grd.addColorStop(
-				0,
-				`rgb(${rgb.join(" ")} / ${rgb[0] > 100 ? 0.16 : 0.13})`,
-			);
+			grd.addColorStop(0, `rgb(${rgb.join(" ")} / 0.13)`);
 			grd.addColorStop(1, `rgb(${rgb.join(" ")} / 0)`);
 			g.fillStyle = grd;
 			g.fillRect(0, 0, view.w, view.h);
@@ -135,12 +132,135 @@ export function createHoleLayer(): HoleLayer {
 		g.translate(hz.x, hz.y);
 		g.scale(1, 0.5);
 		const haze = g.createRadialGradient(0, 0, 0, 0, 0, hz.r * 3.2);
-		haze.addColorStop(0, "rgb(200 170 132 / 0.22)");
-		haze.addColorStop(0.7, "rgb(200 170 132 / 0.19)");
-		haze.addColorStop(1, "rgb(200 170 132 / 0)");
+		haze.addColorStop(0, "rgb(188 166 142 / 0.18)");
+		haze.addColorStop(0.7, "rgb(188 166 142 / 0.155)");
+		haze.addColorStop(1, "rgb(188 166 142 / 0)");
 		g.fillStyle = haze;
 		g.fillRect(-hz.r * 3.2, -hz.r * 3.2, hz.r * 6.4, hz.r * 6.4);
 		g.restore();
+
+		// 尘埃**纤维丝** —— 这是"空间被扭曲"能不能被**看出来**的关键。
+		// 🔴 为什么非要它：星野是一堆互不相关的点，做径向重映射之后只是"点变密了"，
+		//    看不出**空间**被掰过。只有**有方向、穿过整个画面的长条**才会：一条直线在
+		//    接近洞口时被推着往外弯，整片背景于是绕着黑洞卷起来 —— 参考图那一圈缠上去
+		//    的丝就是这件事。少了它，透镜只是个"更亮的环"，读不出引力。
+		// ⚠️ 方向要**统一给一个轻微倾角**（像一条斜穿画面的星系尘埃带），不能全随机：
+		//    方向各异的丝被掰弯了也读不出来，因为没有"原本是直的"这个参照。
+		// ⚠️ 一条丝 = **一次 stroke 配一个线性渐变**。别拆成一段段画 —— 加色混合下
+		//    相邻描边的圆头端点会互相叠加，整条丝变成一串珠子（这一版实测踩过）。
+		const tilt = -0.22;
+		const wisps = view.w < 760 ? 60 : 150;
+		const span = Math.max(view.w, view.h);
+		for (let i = 0; i < wisps; i++) {
+			// 沿"带"铺：离带轴越远越稀（t² 分布），于是中间厚、两边散
+			const t = (rand() - 0.5) * 2;
+			const off = Math.sign(t) * t * t * span * 0.62;
+			const along = rand() * (view.w + view.h) - view.w * 0.35;
+			const bx = view.w * 0.5 + Math.cos(tilt) * along - Math.sin(tilt) * off;
+			const by = view.h * 0.5 + Math.sin(tilt) * along + Math.cos(tilt) * off;
+			const len = 90 + rand() * 360;
+			const dir = tilt + (rand() - 0.5) * 0.55;
+			const hx = (Math.cos(dir) * len) / 2;
+			const hy = (Math.sin(dir) * len) / 2;
+			// 一点点弧度：太直的丝看着像划痕，不像尘埃
+			const bow = (rand() - 0.5) * len * 0.35;
+			// ⚠️ **越靠画边越弱**。铺成一整片均匀的丝，整帧读起来像"拉丝金属"
+			//    （这张图实测就是这样）—— 真实感来自"尘埃聚在洞口附近、外围是空的"。
+			const far = Math.hypot(bx - hz.x, by - hz.y) / (span * 0.55);
+			const near = clamp(1.3 - far, 0.15, 1);
+			const a = (0.05 + rand() * 0.1) * near;
+			const warm = rand() > 0.28;
+			const col = warm ? "180 142 102" : "132 144 172";
+			const grd = g.createLinearGradient(bx - hx, by - hy, bx + hx, by + hy);
+			grd.addColorStop(0, `rgb(${col} / 0)`);
+			grd.addColorStop(0.5, `rgb(${col} / ${a})`);
+			grd.addColorStop(1, `rgb(${col} / 0)`);
+			g.lineCap = "round";
+			g.strokeStyle = grd;
+			g.lineWidth = 0.8 + rand() * 2.2;
+			g.beginPath();
+			g.moveTo(bx - hx, by - hy);
+			g.quadraticCurveTo(
+				bx + Math.cos(dir + Math.PI / 2) * bow,
+				by + Math.sin(dir + Math.PI / 2) * bow,
+				bx + hx,
+				by + hy,
+			);
+			g.stroke();
+		}
+
+		// ② 绕洞的**漩涡丝** —— 这一层才是"空间被扭曲"的主体。
+		// 🔴 关键在半径分布：`u²` 让它们**越靠洞口越密**，而且**一大半落在 1R 以内**。
+		//    那些丝在画面上本来是**看不见的**（会被不透明的视界圆盖掉），是末尾的
+		//    `lensWarp` 把它们从 β<1R 推到 θ∈[1, 2.6]R 才露出来的 ——
+		//    所以环外那圈卷起来的丝，物理上就是"**洞口背后那片天被掰了出来**"。
+		//    这是全页最像引力的一笔：不是画上去的装饰，是同一片天被透镜搬了个位置。
+		// 🔴 **必须是压扁 + 逐道旋转的椭圆，不是正圆**。正圆一圈圈铺出来是"水波纹"；
+		//    压扁（跟着盘的平面）再逐道扭一点，才读成**漩涡**。半径还要有抖动，
+		//    否则 300 道丝会自己对齐成一圈圈等距的环 —— 一眼假。
+		// ⚠️ 每条丝 = **一次 `ellipse` 一笔画完**。别拆成小段配渐变 —— 加色混合下相邻
+		//    段会叠成一串珠子（上面那条尘埃带就是用一次 stroke 配线性渐变解决的）。
+		g.lineCap = "round";
+		const swirls = view.w < 760 ? 90 : 300;
+		for (let i = 0; i < swirls; i++) {
+			const u = rand();
+			const rr = hz.r * (0.08 + 3.4 * u * u * (0.75 + rand() * 0.5));
+			const ry = rr * (0.45 + rand() * 0.3);
+			const sweep = 0.12 + rand() * 0.9;
+			const a0 = rand() * TAU;
+			const rot = (rr / hz.r) * 0.14 + (rand() - 0.5) * 0.35;
+			const warm = rand() > 0.22;
+			const col = warm ? "198 152 106" : "142 154 184";
+			g.globalAlpha =
+				(0.05 + rand() * 0.14) * clamp(1.4 - rr / (hz.r * 3), 0.1, 1);
+			g.strokeStyle = `rgb(${col})`;
+			g.lineWidth = 0.6 + rand() * 1.9;
+			g.beginPath();
+			g.ellipse(hz.x, hz.y, rr, ry, rot, a0, a0 + sweep);
+			g.stroke();
+		}
+		// ②b 几道**大扫帚**：参考图上最显眼的不是细丝，是十来道又长又宽的亮臂，
+		//     从洞口的上下两侧扫出去。细丝只负责质感，骨架靠这几道。
+		for (let i = 0; i < (view.w < 760 ? 8 : 18); i++) {
+			const u = rand();
+			const rr = hz.r * (1.12 + 1.5 * u);
+			const ry = rr * (0.4 + rand() * 0.25);
+			const a0 = rand() * TAU;
+			const sweep = 0.7 + rand() * 1.5;
+			g.globalAlpha = 0.07 + rand() * 0.12;
+			g.strokeStyle = `rgb(${rand() > 0.3 ? "214 176 128" : "166 172 196"})`;
+			g.lineWidth = 2 + rand() * 4.5;
+			g.beginPath();
+			g.ellipse(
+				hz.x,
+				hz.y,
+				rr,
+				ry,
+				(rr / hz.r) * 0.12 + (rand() - 0.5) * 0.3,
+				a0,
+				a0 + sweep,
+			);
+			g.stroke();
+		}
+		g.globalAlpha = 1;
+
+		// ③ 弥散的尘埃斑块：给整片天一点大尺度的疏密。少了它，外围就是"贴了张黑纸"——
+		//    参考图里离洞口 4~5R 的地方仍然有可读的暗尘纹理。
+		//    ⚠️ alpha 只能给到 0.04~0.09：这是**底噪**，一擦亮就变成"土黄滤镜"，
+		//       而且会被下面的透镜一起放大成一片糊。
+		const puffs = view.w < 760 ? 26 : 68;
+		for (let i = 0; i < puffs; i++) {
+			const px = rand() * view.w;
+			const py = rand() * view.h;
+			const pr = 40 + rand() * 190;
+			const warm = rand() > 0.3;
+			const col = warm ? "152 118 86" : "98 110 140";
+			const pg = g.createRadialGradient(px, py, 0, px, py, pr);
+			pg.addColorStop(0, `rgb(${col} / ${0.04 + rand() * 0.055})`);
+			pg.addColorStop(1, `rgb(${col} / 0)`);
+			g.fillStyle = pg;
+			g.fillRect(px - pr, py - pr, pr * 2, pr * 2);
+		}
 
 		// 星野。⚠️ 这里**不再掏空中心**：透镜要靠 θ ≈ 1R 处那一圈像素去采 β < 1R 的星，
 		//    中心留空的话，视界外那圈环采回来的是空白，"光堆在环上"当场落空。
@@ -204,9 +324,11 @@ export function createHoleLayer(): HoleLayer {
 		const cx = hole.x * sc;
 		const cy = hole.y * sc;
 		const R = hole.r * sc;
-		const thetaE = R * 0.86;
-		// 影响半径之外原样不动：θE/θ 在 6R 处只剩 0.02R，再往外做纯浪费
-		const far = R * 6;
+		const thetaE = R * 1.0;
+		// 影响半径之外原样不动：θE/θ 在 8R 处只剩 0.125R，再往外做纯浪费。
+		// ⚠️ 边界上会留一道"位移跳变"（里侧被推出去、外侧没动）—— 所以窗口要开得比
+		//    肉眼能分辨的位移更大。8R 时跳变 0.125R，配上下面的拖影，读不出来。
+		const far = R * 8;
 		const x0 = Math.max(0, Math.floor(cx - far));
 		const x1 = Math.min(W, Math.ceil(cx + far) + 1);
 		const y0 = Math.max(0, Math.floor(cy - far));
@@ -237,15 +359,45 @@ export function createHoleLayer(): HoleLayer {
 				// β = θ − θE²/θ；钳到 0（视界内什么都没有，采哪都一样黑）
 				const b = Math.max(0, d - (thetaE * thetaE) / d);
 				const k = b / d;
-				const sx = Math.round(x + dx * (k - 1));
-				const sy = Math.round(y + dy * (k - 1));
-				if (sx < 0 || sy < 0 || sx >= sw || sy >= sh) continue;
-				const si = (sy * sw + sx) * 4;
+				// 切向拖影：切向放大率是 θ/β，越贴近爱因斯坦环越趋于无穷 ——
+				// 一个点光源在那里会被拉成**一段弧**。nearest 采样本身就会把同一片
+				// 源像素铺到一圈上，但窗外的源采不到、亮斑会断；这里沿切向多取两个样本
+				// 取**最大值**，把那段弧接起来（取平均会把星点拉暗，反而不像）。
+				const mag = Math.min(3, d / Math.max(b, 1e-3)) - 1;
+				const da = mag > 0.08 ? Math.min(0.09, mag * 0.05) : 0;
+				const ox = cx - x0;
+				const oy = cy - y0;
+				const rx = x + dx * (k - 1) - ox;
+				const ry = y + dy * (k - 1) - oy;
+				// 小角近似代替 cos/sin：每帧上百万个像素，两次三角函数太贵
+				const c1 = 1 - (da * da) / 2;
+				let br = 0;
+				let bg = 0;
+				let bb = 0;
+				let ba = 0;
+				for (let s = -1; s <= 1; s++) {
+					let tx = ox + rx;
+					let ty = oy + ry;
+					if (s !== 0 && da > 0) {
+						const c = s * da;
+						tx = ox + rx * c1 - ry * c;
+						ty = oy + rx * c + ry * c1;
+					}
+					tx = Math.round(tx);
+					ty = Math.round(ty);
+					if (tx < 0 || ty < 0 || tx >= sw || ty >= sh) continue;
+					const si = (ty * sw + tx) * 4;
+					if (sp[si + 3] > ba) ba = sp[si + 3];
+					if (sp[si] > br) br = sp[si];
+					if (sp[si + 1] > bg) bg = sp[si + 1];
+					if (sp[si + 2] > bb) bb = sp[si + 2];
+				}
+				if (ba === 0) continue;
 				const di = (y * sw + x) * 4;
-				op[di] = sp[si];
-				op[di + 1] = sp[si + 1];
-				op[di + 2] = sp[si + 2];
-				op[di + 3] = sp[si + 3];
+				op[di] = br;
+				op[di + 1] = bg;
+				op[di + 2] = bb;
+				op[di + 3] = ba;
 			}
 		}
 		g.putImageData(out, x0, y0);
@@ -280,7 +432,7 @@ export function createHoleLayer(): HoleLayer {
 
 		if (dust.length === 0) {
 			const rand = rngOf(4242);
-			for (let i = 0; i < (view.w < 760 ? 48 : 104); i++) {
+			for (let i = 0; i < (view.w < 760 ? 40 : 76); i++) {
 				dust.push({
 					a: rand() * TAU,
 					r: R * (1.6 + rand() * 2.8),
@@ -329,7 +481,7 @@ export function createHoleLayer(): HoleLayer {
 			const x = hole.x + Math.cos(d.a) * d.r;
 			const y = hole.y + Math.sin(d.a) * d.r * KD;
 			g.globalAlpha =
-				(0.28 + 0.3 * Math.sin(t * 1.4 + d.a)) * (1 + s.hover * 0.4);
+				(0.15 + 0.16 * Math.sin(t * 1.4 + d.a)) * (1 + s.hover * 0.35);
 			g.fillStyle = "#ffd9a0";
 			g.beginPath();
 			g.arc(x, y, d.size, 0, TAU);
@@ -373,9 +525,9 @@ export function createHoleLayer(): HoleLayer {
 		//    只剩外侧两肩露出来 —— 参考图上赤道左右那两片最亮的地方就是它。
 		g.save();
 		g.globalCompositeOperation = "lighter";
-		// 两趟：**宽而暗的一层先铺（晕）**，**细而亮的那根后画（针）**。
+		// 两趟：**宽而暗的一层先铺（焦距附近的 flare）**，**细而亮的那根后画（光束）**。
 		// 参考图就是"一根细亮线泡在一片宽光里"；顺序反了针会被晕糊掉一层。
-		drawDisk(g, hole, KD * 3.2, s, t, false, diskBoost * 0.34);
+		drawDisk(g, hole, KD * 3.2, s, t, false, diskBoost * 0.34, "all", 3);
 		drawDisk(g, hole, KD, s, t, false, diskBoost);
 		g.restore();
 
@@ -405,24 +557,21 @@ export function createHoleLayer(): HoleLayer {
 		])[][] = [
 			// 下方（屏幕 y 向下就是它）
 			[
-				[1.32, 1.15, 0.05, 0.54, 0],
-				[1.52, 1.33, 0.04, 0.32, 0.03],
-				[1.68, 1.47, 0.075, 0.5, 0.05],
-				[1.86, 1.63, 0.055, 0.32, 0.08],
-				[2.12, 1.87, 0.03, 0.18, 0.1],
-				[2.44, 2.15, 0.025, 0.14, 0.13],
-				[2.85, 2.54, 0.02, 0.1, 0.16],
+				[1.32, 1.15, 0.05, 0.6, 0],
+				[1.5, 1.32, 0.045, 0.34, 0.03],
+				[1.68, 1.47, 0.08, 0.52, 0.05],
+				[1.88, 1.64, 0.06, 0.32, 0.08],
+				[2.2, 1.95, 0.04, 0.2, 0.11],
 			],
-			// 上方。⚠️ 外面那几道（1.5R~2.6R）不能省：参考图正上方 1.58R→89 / 1.80R→91 /
-			//    2.20R→85，是几根**一直缠到 2.6R 外的细丝**，不是一处近处的亮弧。
+			// 上方。⚠️ 外面那几道（1.5R~2.5R）不能省：参考图正上方 1.58R→89 / 1.80R→91 /
+			//    2.20R→85，是几根**一直缠到 2.5R 外的细丝**，不是一处近处的亮弧。
 			//    少了它们黑洞上方就是一片空；曾经靠一层正圆大暖雾去补，补成了一颗"奶球"。
 			[
-				[1.28, 1.12, 0.06, 0.54, 0],
-				[1.46, 1.29, 0.045, 0.34, 0.03],
-				[1.72, 1.53, 0.03, 0.12, 0.05],
-				[2.02, 1.8, 0.032, 0.15, 0.08],
-				[2.48, 2.22, 0.028, 0.11, 0.11],
-				[2.95, 2.63, 0.026, 0.08, 0.14],
+				[1.28, 1.12, 0.06, 0.58, 0],
+				[1.46, 1.29, 0.05, 0.34, 0.03],
+				[1.72, 1.53, 0.035, 0.16, 0.05],
+				[2.05, 1.82, 0.03, 0.18, 0.08],
+				[2.5, 2.24, 0.028, 0.13, 0.11],
 			],
 		];
 		for (const dir of [-1, 1]) {
@@ -431,17 +580,25 @@ export function createHoleLayer(): HoleLayer {
 			//    后来收敛成"一把粗细各异、越往外越弱的细丝"，参考图那些弧线更像**毛笔
 			//    扫过去的痕**，所以还让线宽跟着 `fade` 走（两端收细、中段最粗）。
 			for (const [rx, ry, wd, a, rot] of BANDS[dir > 0 ? 0 : 1]) {
-				const steps = 72;
-				// 越宽的带子收得越紧：它们本来就淡，横向铺太远就变成一圈完整椭圆的"箍"
-				const P = wd > 0.06 ? 5.5 : 3.6;
+				const steps = 96;
+				// 🔴 指数不能小。线宽**只**随 `fade` 收（alpha 恒定），所以 `fade` 一摊平，
+				//    整条弧就一路铺到水平线，一"扇"叠起来又变成靶子（放大看过）。6.5 让
+				//    可见段落在 apex 两侧 ±45° 内，读成"一道扫过去的痕"。
+				const P = 6.5;
+				// 🔴 **alpha 整条恒定，粗细交给 `fade`**。逐段改 alpha 在这里是错的：
+				//    画布是 `lighter`，相邻两段在接缝处重叠 —— alpha 一累加，整条弧就变成
+				//    一串**珠子**（这一版实测就是这样，放大看得清清楚楚）。
+				//    视觉上的"淡"要由**面积**给（两端收细到 0），不由 alpha 给。
+				// ⚠️ 端点必须 `butt`。圆头会往两端各伸半个线宽，重叠区被加两遍 → 还是珠子。
+				g.globalAlpha = clamp(a * lensBoost, 0, 0.8);
+				g.lineCap = "butt";
 				for (let i = 0; i < steps; i++) {
 					const ph0 = (i / steps) * Math.PI;
 					const ph1 = ((i + 1) / steps) * Math.PI;
 					const fade = Math.sin((ph0 + ph1) / 2) ** P;
-					g.globalAlpha = clamp(a * lensBoost * fade, 0, 0.75);
-					if (g.globalAlpha < 0.012) continue;
-					// 两端收细、中段最粗 —— 一根粗细均匀的圆环是"箍"，不是"痕"
-					g.lineWidth = Math.max(1.2, R * wd * (0.45 + 0.85 * fade));
+					const lw = R * wd * 1.7 * fade;
+					if (lw < 0.6) continue; // 细到看不见就不画，省得留一道毛边
+					g.lineWidth = lw;
 					g.beginPath();
 					// dir>0 画下半圈（屏幕 y 向下，0→π 正好扫过下方）
 					g.ellipse(
@@ -504,25 +661,63 @@ export function createHoleLayer(): HoleLayer {
 		g.arc(hole.x, hole.y, R * 1.3, 0, TAU);
 		g.arc(hole.x, hole.y, R * 0.985, 0, TAU, true);
 		g.fill();
-		// 环本体：逐段画。**厚度和亮度都随角度变** —— 参考图里视界下缘是一条宽带、
-		// 上缘只是一根细线（盘在下面那一侧的光更多绕过来），死圆是画不像的。
-		// ⚠️ 强度系数必须是**同一个连续函数**，见 `drawDisk` 的第 ④ 条注。
-		const segs = 96;
-		g.lineCap = "round";
-		g.strokeStyle = `rgb(${GOLD[0].join(" ")})`;
-		for (let i = 0; i < segs; i++) {
-			const ph0 = (TAU * i) / segs;
-			const ph1 = (TAU * (i + 1)) / segs;
-			const mid = (ph0 + ph1) / 2;
-			const down = Math.max(0, Math.sin(mid)); // 屏幕 y 向下，sin>0 就是下缘
-			const lobe = 0.55 + 0.3 * Math.abs(Math.cos(mid)) + 0.42 * down;
-			g.lineWidth = Math.max(1.6, R * (0.055 + 0.075 * down));
-			g.globalAlpha = clamp(0.62 * lensBoost * lobe, 0, 1);
-			g.beginPath();
-			g.arc(hole.x, hole.y, R * 1.035, ph0, ph1);
-			g.stroke();
-		}
-		g.globalAlpha = 1;
+		// 环本体。🔴 **用径向渐变填充的一个圆环，不是"粗描边的一圈线"**。
+		//    描边那条路实测有两个后果：① 圆头端点在加色混合下互相叠加 → 环上一串珠子；
+		//    ② 环厚给到 0.13R 时几何重叠把 alpha 堆到饱和 → 一圈**硬边白箍**，一眼假。
+		//    径向渐变是连续的，厚薄亮暗全由色标说了算。
+		// 色标对着参考图量出来的形状：内缘 ~0.98R 起，峰在 1.08~1.10R（亮度 230~240），
+		// 1.28R 收干净；再往外是一道**暗缝**（参考图 1.35R 处只有 45~100，不是亮的）。
+		// `r0 = 0.94R` 顺带把视界里面留空 —— r < r0 的区域用 0 号色标（alpha 0）。
+		const ring = g.createRadialGradient(
+			hole.x,
+			hole.y,
+			R * 0.94,
+			hole.x,
+			hole.y,
+			R * 1.44,
+		);
+		ring.addColorStop(0, `rgb(${GOLD[2].join(" ")} / 0)`);
+		ring.addColorStop(
+			0.12,
+			`rgb(${GOLD[1].join(" ")} / ${clamp(0.24 * lensBoost, 0, 0.32)})`,
+		);
+		ring.addColorStop(
+			0.3,
+			`rgb(${GOLD[0].join(" ")} / ${clamp(0.8 * lensBoost, 0, 0.92)})`,
+		);
+		ring.addColorStop(
+			0.46,
+			`rgb(${GOLD[1].join(" ")} / ${clamp(0.44 * lensBoost, 0, 0.56)})`,
+		);
+		ring.addColorStop(
+			0.68,
+			`rgb(${GOLD[2].join(" ")} / ${clamp(0.14 * lensBoost, 0, 0.2)})`,
+		);
+		ring.addColorStop(1, `rgb(${GOLD[3].join(" ")} / 0)`);
+		g.fillStyle = ring;
+		g.beginPath();
+		g.arc(hole.x, hole.y, R * 1.44, 0, TAU);
+		g.fill();
+		// 下缘更厚更亮（盘在下面那一侧绕过来的光更多）：再叠一层**偏下**的柔环。
+		// 参考图的下方 0.95~1.25R 都是亮的（150~230），上方只有 1.05~1.18R 一段。
+		g.save();
+		g.translate(hole.x, hole.y + R * 0.1);
+		const ring2 = g.createRadialGradient(0, 0, R * 0.95, 0, 0, R * 1.36);
+		ring2.addColorStop(0, `rgb(${GOLD[2].join(" ")} / 0)`);
+		ring2.addColorStop(
+			0.3,
+			`rgb(${GOLD[1].join(" ")} / ${clamp(0.34 * lensBoost, 0, 0.45)})`,
+		);
+		ring2.addColorStop(
+			0.62,
+			`rgb(${GOLD[2].join(" ")} / ${clamp(0.12 * lensBoost, 0, 0.18)})`,
+		);
+		ring2.addColorStop(1, `rgb(${GOLD[3].join(" ")} / 0)`);
+		g.fillStyle = ring2;
+		g.beginPath();
+		g.arc(0, 0, R * 1.36, 0, TAU);
+		g.fill();
+		g.restore();
 		g.restore();
 
 		// ⑦ 吸积盘近半（压在核心**上面**）：盘从黑洞前面横过去 —— 这一趟不能省，
@@ -533,20 +728,37 @@ export function createHoleLayer(): HoleLayer {
 		//      参考图里穿过视界的只有**一根头发丝**，所以那根单独画（见 ⑧）。
 		g.save();
 		g.globalCompositeOperation = "lighter";
-		drawDisk(g, hole, KD * 3.2, s, t, true, diskBoost * 0.34, "out");
+		drawDisk(g, hole, KD * 3.2, s, t, true, diskBoost * 0.34, "out", 3);
 		drawDisk(g, hole, KD, s, t, true, diskBoost, "out");
 		g.restore();
 
 		// ⑧ 横穿视界的那道细线：盘的内缘在视界前面掠过去。
 		//    单独画一条直线，**不要**拿近半那趟去铺 —— 盘的厚度由 `KD` 定，铺出来必然是一块板，
-		//    而这里要的是"一根线"。参考图上它峰值只有 `rgb(52,30,19)`（暗橙），因为它是画在
-		//    本该全黑的核心上的，一点点漏光就够了 —— 顺手量过：alpha 0.34 出来是 rgb(86,64,41)，
-		//    正好亮了一档、黑球看着像"被线扎穿"，所以压到 0.21。
+		//    而这里要的是"一根线"。
+		//    量出来的：它**只有 2~4px**，但很亮（中心 190，越往右越亮到 255）—— 盘朝着我们
+		//    这一侧（右边）多普勒增亮。所以是**沿 x 的线性渐变**，不是一根均匀的线。
 		g.save();
 		g.globalCompositeOperation = "lighter";
-		g.globalAlpha = clamp(0.21 * diskBoost, 0, 0.3);
-		g.strokeStyle = "rgb(250 150 95)";
-		g.lineWidth = Math.max(1, R * 0.022);
+		const lineG = g.createLinearGradient(
+			hole.x - R * 1.06,
+			hole.y,
+			hole.x + R * 1.06,
+			hole.y,
+		);
+		lineG.addColorStop(
+			0,
+			`rgb(255 190 140 / ${clamp(0.3 * diskBoost, 0, 0.4)})`,
+		);
+		lineG.addColorStop(
+			0.5,
+			`rgb(255 214 170 / ${clamp(0.62 * diskBoost, 0, 0.75)})`,
+		);
+		lineG.addColorStop(
+			1,
+			`rgb(255 246 226 / ${clamp(0.96 * diskBoost, 0, 1)})`,
+		);
+		g.strokeStyle = lineG;
+		g.lineWidth = Math.max(1.4, R * 0.034);
 		g.beginPath();
 		g.moveTo(hole.x - R * 1.07, hole.y);
 		g.lineTo(hole.x + R * 1.07, hole.y);
@@ -595,6 +807,8 @@ export function createHoleLayer(): HoleLayer {
 		boost: number,
 		/** 只要球外那两段（`out`）、只要穿过球的那一段（`in`）、还是整张（`all`） */
 		zone: "all" | "in" | "out" = "all",
+		/** 盘体铺到几个 R（宽的那趟是焦距附近的 flare，短；细的那趟要伸出画外） */
+		reach = 8.5,
 	) {
 		const R = hole.r;
 		g.save();
@@ -622,32 +836,33 @@ export function createHoleLayer(): HoleLayer {
 		//   参考图贴球外侧的横向剖面（以球半径 R 为单位）：
 		//     1.06R→254 / 1.39R→253 / 1.76R→253 / 2.18R→232 / 2.59R→199 / 3.06R→142
 		//   也就是——**近白的一条平台**一直铺到 1.8R，之后慢速衰减，而且这条带子伸出画外。
-		//   ⚠️ 所以 r1 从 2.3R 拉到了 3.4R：2.3R 那版的盘是一颗短粗的"眼睛"，
-		//      读起来是"远处一颗发光点"，不是参考图那种横贯画面的光束。
 		// ⚠️ 填充必须**挖掉中心**：canvas 的 createRadialGradient 在 r < r0 的区域照样用
 		//    0 号色标涂满 —— 不挖的话，近半那趟会在黑球下半部糊上一块平的亮板
 		//    （实测就是这个症状：黑球下半截变成一块不透明的盘子）。
+		// ⚠️ 外缘按**视口**给（`reach`），不按 R。黑洞现在小了（R≈94），4.6R 只有 435px，
+		//    光束还没走到画边就收成一个尖 —— 一眼看得出是"画出来的东西"。参考图那条光束
+		//    是从画面一边穿到另一边的。所以细的那趟铺到 8.5R，宽的那趟（=焦距附近的flare）
+		//    留在 3R。
 		const H1 = "255 252 240";
 		const H2 = "253 246 224";
 		const H3 = "232 206 172";
 		const H4 = "199 165 131";
 		const H5 = "120 96 78";
-		// ⚠️ 外缘给到 **4.6R**：参考图那条光束是**伸出画外**的，没有收口。
-		//    原来 3.4R 收尾，末端必然收成一个尖 —— 一眼就看得出是"画出来的东西"。
-		const body = g.createRadialGradient(0, 0, R * 1.02, 0, 0, R * 4.6);
-		body.addColorStop(0, `rgb(${H1} / ${clamp(0.72 * boost, 0, 0.82)})`);
-		body.addColorStop(0.06, `rgb(${H2} / ${clamp(0.86 * boost, 0, 0.94)})`);
-		body.addColorStop(0.15, `rgb(${H2} / ${clamp(0.9 * boost, 0, 0.96)})`);
-		body.addColorStop(0.26, `rgb(${H1} / ${clamp(0.84 * boost, 0, 0.9)})`);
-		body.addColorStop(0.4, `rgb(${H3} / ${clamp(0.68 * boost, 0, 0.78)})`);
-		body.addColorStop(0.55, `rgb(${H4} / ${clamp(0.5 * boost, 0, 0.6)})`);
-		body.addColorStop(0.72, `rgb(${H4} / ${clamp(0.4 * boost, 0, 0.48)})`);
-		body.addColorStop(0.87, `rgb(${H4} / ${clamp(0.24 * boost, 0, 0.3)})`);
-		body.addColorStop(0.96, `rgb(${H4} / ${clamp(0.1 * boost, 0, 0.14)})`);
+		const body = g.createRadialGradient(0, 0, R * 1.02, 0, 0, R * reach);
+		body.addColorStop(0, `rgb(${H1} / ${clamp(0.75 * boost, 0, 0.85)})`);
+		body.addColorStop(0.01, `rgb(${H2} / ${clamp(0.96 * boost, 0, 1)})`);
+		body.addColorStop(0.055, `rgb(${H1} / ${clamp(1 * boost, 0, 1)})`);
+		body.addColorStop(0.11, `rgb(${H2} / ${clamp(0.98 * boost, 0, 1)})`);
+		body.addColorStop(0.17, `rgb(${H3} / ${clamp(0.9 * boost, 0, 1)})`);
+		body.addColorStop(0.265, `rgb(${H3} / ${clamp(0.82 * boost, 0, 0.95)})`);
+		body.addColorStop(0.4, `rgb(${H3} / ${clamp(0.62 * boost, 0, 0.75)})`);
+		body.addColorStop(0.55, `rgb(${H4} / ${clamp(0.44 * boost, 0, 0.55)})`);
+		body.addColorStop(0.72, `rgb(${H4} / ${clamp(0.28 * boost, 0, 0.36)})`);
+		body.addColorStop(0.88, `rgb(${H4} / ${clamp(0.14 * boost, 0, 0.2)})`);
 		body.addColorStop(1, `rgb(${H5} / 0)`);
 		g.fillStyle = body;
 		g.beginPath();
-		g.arc(0, 0, R * 4.6, 0, TAU);
+		g.arc(0, 0, R * reach, 0, TAU);
 		g.arc(0, 0, R * 1.02, 0, TAU, true); // 反向 → 中间挖空
 		g.fill();
 
@@ -658,6 +873,7 @@ export function createHoleLayer(): HoleLayer {
 			[1.72, 0.022, 0.32],
 			[2.62, 0.014, 0.16],
 		] as const) {
+			if (rr > reach) continue;
 			const spin = s.spin * (1 - rr * 0.1) + t * 0.05;
 			g.lineWidth = R * wd;
 			g.strokeStyle = `rgb(${H1})`;
@@ -687,14 +903,15 @@ export function createHoleLayer(): HoleLayer {
 
 /** 事件视界半径：跟着视口走，但**永远留给法阵**（不许因此挡住整页）。 */
 export function holeOf(s: Shared, view: View): Hole {
-	// ⚠️ 0.062 在 1258×566 的视口上只有 35px —— "黑洞是视觉中心"当场落空，整页看起来是
-	//    一颗远处的白点；后来提到 0.098（1440×900 上 R=88px），还是偏小。
-	//    参考图上视界半径占画面宽度的 **0.147** —— 按短边换算是 0.13，1440×900 上 R≈117、
-	//    直径 234px，这才是"视觉中心"。上限抬到 150，免得超宽屏上又缩回去。
+	// 参考图上视界半径占画面宽度的 0.147 —— 但那是**竖幅壁纸**（球在画面正中、占了
+	// 整张图的宽度）。搬到 16:10 的网页上按短边取 0.15 就太大了：1440×900 上 R=135、
+	// 直径 270px，黑洞把整页的视觉重心全吃掉，法阵没处放。
+	// 现在按短边 0.105（1440×900 → R=94.5、直径 189px）：仍然是视觉中心，
+	// 但四周留得下法阵、星野和尘埃，读起来才是"太空里的一个天体"。
 	const r = clamp(
-		Math.min(view.w, view.h) * (view.w < 760 ? 0.16 : 0.15),
-		34,
-		200,
+		Math.min(view.w, view.h) * (view.w < 760 ? 0.115 : 0.105),
+		26,
+		150,
 	);
 	return { x: s.hx, y: s.hy, r };
 }
