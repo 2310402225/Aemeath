@@ -203,37 +203,22 @@ export function createHoleLayer(): HoleLayer {
 		const diskBoost = 1 + 0.35 * s.pulse;
 		const rimBoost = 1 + 0.9 * s.pulse;
 
-		// ③ 吸积盘。**一趟画完**：盘的内缘在视界之外，和核心不重叠，
-		//    所以不需要"远半压在核心下、近半压在核心上"那套 —— 那两趟正是上一版
-		//    把 alpha 叠成荧光白圈的原因（见 drawDisk 的注释）。
+		// ③ 吸积盘远半（压在核心**下面**）：它绕到视界背后，被黑球吃掉大半
 		g.save();
 		g.globalCompositeOperation = "lighter";
-		drawDisk(g, hole, k, s, t, diskBoost);
+		drawDisk(g, hole, k, s, t, false, diskBoost);
 		g.restore();
 
-		// ④ 引力透镜：**只贴视界一圈**的冷白辉光 + 上下两道被弯折的细弧。
-		//    原来是 0.34 白铺满 2.8R 的一个方框 —— 那是把整个中心区提亮，等于给黑洞糊了一手电筒。
+		// ④ 引力透镜：上下两道被弯折的细弧。引力的味道就在这两道弧上。
+		//    （原来这里还有一块"0.34 白铺满 2.8R"的透镜方框 —— 那是把整个中心区提亮，
+		//      等于给黑洞糊了一手电筒，已经删掉；贴视界的那圈光现在归 ⑤ 的渐变环。）
 		g.save();
 		g.globalCompositeOperation = "lighter";
-		const ring = g.createRadialGradient(
-			hole.x,
-			hole.y,
-			R * 0.9,
-			hole.x,
-			hole.y,
-			R * 1.16,
-		);
-		ring.addColorStop(0, `rgb(226 238 255 / ${0.13 * rimBoost})`);
-		ring.addColorStop(0.55, `rgb(150 186 255 / ${0.05 * rimBoost})`);
-		ring.addColorStop(1, "rgb(120 160 255 / 0)");
-		g.fillStyle = ring;
-		g.fillRect(hole.x - R * 1.2, hole.y - R * 1.2, R * 2.4, R * 2.4);
 		for (const dir of [-1, 1]) {
 			g.globalAlpha = 0.16 + 0.3 * s.pulse;
 			g.strokeStyle = "#dce9ff";
 			g.lineWidth = 1.1;
 			g.beginPath();
-			// 上方被"抬"起来的光弧，下方对称 —— 引力的味道就在这两道弧上
 			g.ellipse(
 				hole.x,
 				hole.y - dir * R * 0.06,
@@ -257,25 +242,41 @@ export function createHoleLayer(): HoleLayer {
 		g.beginPath();
 		g.arc(hole.x, hole.y, R, 0, TAU);
 		g.fill();
-		// 光子环：紧贴视界的一圈冷白细线 —— 这一页真正"亮"的东西只有它。
-		// ⚠️ 它必须**细而弱**。画粗一点（3.4px、0.42 白）配上扁平的盘，观感就成了
-		//    "一个白圆泡泡套在黑球外面"——因为盘是压扁的椭圆、环是正圆，两者不在一个平面感里。
-		//    现在只留发丝一圈，读起来才是"视界的边"。
+		// 视界边光（光子环）：这一页真正"亮"的东西只有它。
+		// ⚠️ 但它必须**极克制**。试过两种画法都会翻车：细圆线（1.2px/2.6px）会读成"白泡泡"，
+		//    加宽的柔边渐变环更糟 —— 整个环都亮起来，直接是一圈发光圆箍套在黑球外面。
+		//    根因：盘是压扁的椭圆、这个环在屏幕平面里是正圆，两者读不到同一个空间里去。
+		//    所以只留一条**很淡**的窄渐变，够把视界的边勾勒出来就行，剩下的交给吸积盘内缘。
 		g.save();
 		g.globalCompositeOperation = "lighter";
-		g.strokeStyle = `rgb(236 246 255 / ${clamp(0.3 * rimBoost, 0, 0.62)})`;
-		g.lineWidth = 1.2;
+		const rim = g.createRadialGradient(
+			hole.x,
+			hole.y,
+			R * 0.975,
+			hole.x,
+			hole.y,
+			R * 1.055,
+		);
+		rim.addColorStop(0, "rgb(236 246 255 / 0)");
+		rim.addColorStop(
+			0.5,
+			`rgb(236 246 255 / ${clamp(0.15 * rimBoost, 0, 0.3)})`,
+		);
+		rim.addColorStop(1, "rgb(170 205 255 / 0)");
+		g.fillStyle = rim;
 		g.beginPath();
-		g.arc(hole.x, hole.y, R * 1.008, 0, TAU);
-		g.stroke();
-		g.strokeStyle = `rgb(198 224 255 / ${clamp(0.09 * rimBoost, 0, 0.26)})`;
-		g.lineWidth = 2.6;
-		g.beginPath();
-		g.arc(hole.x, hole.y, R * 1.016, 0, TAU);
-		g.stroke();
+		g.arc(hole.x, hole.y, R * 1.055, 0, TAU);
+		g.fill();
 		g.restore();
 
-		// ⑥ 吞噬反馈的引力波：一圈极淡的冷白往外扩
+		// ⑥ 吸积盘近半（压在核心**上面**）：盘从黑洞前面横过去 —— 这一趟不能省，
+		//    省了就只剩"左右两片翅膀"（盘是压扁的椭圆、视界是正圆，上半圈本来就在球后面）
+		g.save();
+		g.globalCompositeOperation = "lighter";
+		drawDisk(g, hole, k, s, t, true, diskBoost);
+		g.restore();
+
+		// ⑦ 吞噬反馈的引力波：一圈极淡的冷白往外扩
 		if (s.wave >= 0) {
 			const u = clamp(s.wave / 1.5, 0, 1);
 			const rr = R * 1.1 + u * Math.min(view.w, view.h) * 0.42;
@@ -292,17 +293,19 @@ export function createHoleLayer(): HoleLayer {
 	}
 
 	/**
-	 * 吸积盘：一层很淡的椭圆辉光 + 三条细光带。
-	 * 🔴 这里翻过两次车，三条规矩：
-	 *   ① 盘必须是**细**的。带一厚（0.4R 那种）在加色混合下就成了不透明的彩色盘子，
-	 *      三条一叠 → 一坨饱和的蓝环，跟"暗宇宙里一点冷光"毫不沾边。
-	 *   ② **一趟画整圈**。曾经按 `front !== near → continue` 拆前后两趟：切点处留一道
-	 *      笔直的接缝（薄视角下像被刀切开）。改成连续加权又踩了第二个坑 —— 两趟各自都把
-	 *      **整圈**点了一遍，alpha 与亮度等于翻倍，画出来是三条荧光白圈，而且前后梯度被
-	 *      两趟互相填平，看着依然均匀。现在只画一趟，前后亮度由 `sin(角度)` 单值决定：
-	 *      既没有接缝，也不会叠两次。（盘的内缘在视界之外，本来就不需要靠"画在核心前后"
-	 *      来分遮挡 —— 那两趟的存在意义从一开始就没有。）
-	 *   ③ 每条带描两遍：宽而淡的当软边、窄而亮的当芯，才有"燃"的边而不是一条塑料线。
+	 * 吸积盘。**在压扁的空间里画**（`translate` + `scale(1, k)`）：于是"圆"就是椭圆，
+	 * 渐变、clip、圆弧全都按圆的写法来，一次 arc 就够了，不必逐段拼椭圆。
+	 *
+	 * 🔴 这里来回翻过三次车，四条规矩都别动：
+	 *   ① 盘的主体会发光，靠的是**一圈从内缘往外衰减的椭圆辉光**（一次 radialGradient 填充），
+	 *      不是"几条细光带"。细光带铺到屏幕上就是几根荧光线 —— 那是霓虹圈，不是吸积盘。
+	 *   ② **必须分前后两趟**，近半画在核心**之后**。盘是压扁的椭圆（纵向半径只有 ~0.4R），
+	 *      视界是正圆：上半圈整个压在黑球后面，只有外侧两肩露得出来。近半若也画在核心之前，
+	 *      整条盘就只剩"左右两片翅膀"（实测就是这个症状）。分开画才有那张经典照片的意思：
+	 *      **盘从黑洞前面横过去**。
+	 *   ③ 分半用 **clip 半平面**，不是"逐段跳过"。逐段跳会在切点留下一道笔直的接缝，
+	 *      而 clip 出来的是完整的半张盘，切口落在水平线上，本来就看不见。
+	 *   ④ 环上的明暗沿角度用 cos **连续**变化 —— 既给出"盘在转"的信息，也不会出现硬边。
 	 */
 	function drawDisk(
 		g: CanvasRenderingContext2D,
@@ -310,57 +313,66 @@ export function createHoleLayer(): HoleLayer {
 		k: number,
 		s: Shared,
 		t: number,
+		near: boolean,
 		boost: number,
 	) {
 		const R = hole.r;
-
-		// 椭圆辉光：盘的"体积感"靠这一层，不靠加厚光带。
-		// 用 translate + scale 把圆形渐变压成椭圆 —— 省得手搓椭圆渐变。
 		g.save();
 		g.translate(hole.x, hole.y);
 		g.scale(1, k);
-		const halo = g.createRadialGradient(0, 0, R, 0, 0, R * 2.7);
-		halo.addColorStop(0, "rgb(160 200 255 / 0)");
-		halo.addColorStop(
-			0.3,
-			`rgb(120 162 255 / ${clamp(0.07 * boost, 0, 0.12)})`,
-		);
-		halo.addColorStop(1, "rgb(88 124 250 / 0)");
-		g.fillStyle = halo;
+		// 只画自己那一半：局部坐标 y>0 是近半（屏幕下方），y<0 是远半
 		g.beginPath();
-		g.arc(0, 0, R * 2.7, 0, TAU);
-		g.fill();
-		g.restore();
+		if (near) g.rect(-1e5, 0, 2e5, 1e5);
+		else g.rect(-1e5, -1e5, 2e5, 1e5);
+		g.clip();
 
+		// 盘体：内缘最热（冷白），往外经过幽青、钴蓝，在暗紫里淡掉。
+		// ⚠️ 填充必须**挖掉中心**：canvas 的 createRadialGradient 在 r < r0 的区域照样用
+		//    0 号色标涂满 —— 不挖的话，近半那趟会在黑球下半部糊上一块平的暖灰板子
+		//    （实测就是这个症状：黑球下半截变成一块不透明的盘子）。
+		const [pur, cyan, blue] = [BANDS[0], BANDS[1], BANDS[2]] as const;
+		const body = g.createRadialGradient(0, 0, R * 1.06, 0, 0, R * 2.6);
+		body.addColorStop(0, `rgb(238 243 255 / ${clamp(0.32 * boost, 0, 0.48)})`);
+		body.addColorStop(
+			0.1,
+			`rgb(${cyan.join(" ")} / ${clamp(0.2 * boost, 0, 0.32)})`,
+		);
+		body.addColorStop(
+			0.3,
+			`rgb(${blue.join(" ")} / ${clamp(0.11 * boost, 0, 0.18)})`,
+		);
+		body.addColorStop(
+			0.64,
+			`rgb(${pur.join(" ")} / ${clamp(0.04 * boost, 0, 0.08)})`,
+		);
+		body.addColorStop(1, `rgb(${pur.join(" ")} / 0)`);
+		g.fillStyle = body;
+		g.beginPath();
+		g.arc(0, 0, R * 2.6, 0, TAU);
+		g.arc(0, 0, R * 1.06, 0, TAU, true); // 反向 → 中间挖空
+		g.fill();
+
+		// 两条细环：给盘一点结构，否则只剩一团糊。亮度沿角度连续起伏 —— 旋转才看得见。
 		g.lineCap = "round";
-		for (let band = 0; band < BANDS.length; band++) {
-			const rgb = BANDS[band];
-			if (!rgb) continue;
-			const rr = R * (1.36 + band * 0.42); // 1.36R / 1.78R / 2.20R：带间留空隙
-			const thick = R * (0.08 + band * 0.03);
-			const spin = s.spin * (1 - band * 0.22) + t * 0.05 * (1 - band * 0.3);
-			const gain = 1 - band * 0.3; // 内圈最亮：光源在视界那一侧
-			const segs = 72;
-			g.strokeStyle = `rgb(${rgb.join(" ")})`;
-			for (const [wScale, aScale] of [
-				[1, 0.3],
-				[0.44, 1],
-			] as const) {
-				g.lineWidth = thick * wScale;
-				for (let i = 0; i < segs; i++) {
-					const a0 = spin + (TAU * i) / segs;
-					const a1 = spin + (TAU * (i + 1)) / segs;
-					const face = Math.sin((a0 + a1) / 2 - spin);
-					// 靠镜头那半亮、绕到背后那半暗，沿 sin 连续过渡
-					const lit = 0.34 + 0.66 * (0.5 + 0.5 * face);
-					g.globalAlpha = clamp(0.24 * lit * gain * boost * aScale, 0, 0.3);
-					g.beginPath();
-					g.ellipse(hole.x, hole.y, rr, rr * k, 0, a0, a1);
-					g.stroke();
-				}
+		const segs = 72;
+		for (const [rr, wd, a] of [
+			[1.22, 0.03, 0.34],
+			[1.7, 0.018, 0.15],
+		] as const) {
+			const spin = s.spin * (1 - rr * 0.1) + t * 0.05;
+			g.lineWidth = R * wd;
+			g.strokeStyle = "rgb(232 242 255)";
+			for (let i = 0; i < segs; i++) {
+				const a0 = (TAU * i) / segs;
+				const a1 = (TAU * (i + 1)) / segs;
+				const shade = 0.5 + 0.5 * Math.cos((a0 + a1) / 2 - spin);
+				g.globalAlpha = clamp(a * boost * (0.4 + 0.6 * shade), 0, 0.5);
+				g.beginPath();
+				g.arc(0, 0, R * rr, a0, a1);
+				g.stroke();
 			}
 		}
-		g.globalAlpha = 1;
+		g.restore();
 	}
 
 	return {
