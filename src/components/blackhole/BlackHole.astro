@@ -157,13 +157,15 @@ import { url } from "@/utils/url-utils";
 
 <style>
 	.bh-stage {
-		--bh-cold: #e8f2ff;
-		/* ⚠️ 算出来的，不是挑出来的：#b9c2da 压在 #05050a 上是 11.6:1，
+		/* 整页只有一根色轴：**暖金**。黑洞本体是按参考图做的暖金/琥珀/白炽，
+		   外壳要是还留着冷白，那圈冷光会立刻把主体读成"贴错了"。 */
+		--bh-accent: #ffdcae;
+		/* ⚠️ 算出来的，不是挑出来的：#c2bcb0 压在 #05050a 上约 11:1，
 		   连"低透明度"的提示文字也稳过 AA 那条 4.5:1。 */
-		--bh-text: #b9c2da;
+		--bh-text: #c2bcb0;
 		--bh-line: rgb(255 255 255 / 0.14);
-		--bh-panel: rgb(9 9 16 / 0.7);
-		--bh-panel-light: rgb(16 16 26 / 0.82);
+		--bh-panel: rgb(11 9 10 / 0.7);
+		--bh-panel-light: rgb(20 16 14 / 0.82);
 		--bh-gold: #d8ae64;
 		--bh-float-x: clamp(0.9rem, 3vw, 2rem);
 		--bh-float-y: clamp(0.9rem, 3vh, 1.8rem);
@@ -176,7 +178,7 @@ import { url } from "@/utils/url-utils";
 	}
 
 	.bh-stage:focus-visible {
-		outline: 2px solid var(--bh-cold);
+		outline: 2px solid var(--bh-accent);
 		outline-offset: -4px;
 	}
 
@@ -236,7 +238,7 @@ import { url } from "@/utils/url-utils";
 		font-size: 0.6rem;
 		letter-spacing: 0.36em;
 		text-indent: 0.36em;
-		color: rgb(190 202 232 / 0.72);
+		color: rgb(208 198 180 / 0.72);
 	}
 
 	.bh-h1 {
@@ -246,8 +248,8 @@ import { url } from "@/utils/url-utils";
 		line-height: 1.12;
 		letter-spacing: 0.32em;
 		text-indent: 0.32em;
-		color: #f2f5ff;
-		text-shadow: 0 0 28px rgb(150 190 255 / 0.3);
+		color: #faf3e8;
+		text-shadow: 0 0 28px rgb(255 186 108 / 0.3);
 	}
 
 	.bh-sub {
@@ -255,7 +257,7 @@ import { url } from "@/utils/url-utils";
 		font-size: 0.68rem;
 		letter-spacing: 0.46em;
 		text-indent: 0.46em;
-		color: rgb(178 190 224 / 0.72);
+		color: rgb(202 192 174 / 0.72);
 	}
 
 	.bh-enter {
@@ -267,7 +269,7 @@ import { url } from "@/utils/url-utils";
 		font-size: 0.68rem;
 		line-height: 1.85;
 		letter-spacing: 0.06em;
-		color: rgb(186 196 226 / 0.78);
+		color: rgb(206 196 178 / 0.78);
 	}
 
 	.bh-enter b {
@@ -297,8 +299,8 @@ import { url } from "@/utils/url-utils";
 		width: 6px;
 		height: 6px;
 		border-radius: 999px;
-		background: var(--bh-cold);
-		box-shadow: 0 0 10px rgb(200 226 255 / 0.8);
+		background: var(--bh-accent);
+		box-shadow: 0 0 10px rgb(255 214 150 / 0.8);
 	}
 
 	.bh-sep {
@@ -317,7 +319,7 @@ import { url } from "@/utils/url-utils";
 		background: var(--bh-panel);
 		-webkit-backdrop-filter: blur(10px);
 		backdrop-filter: blur(10px);
-		color: #eef2ff;
+		color: #f7f0e4;
 		/* ⚠️ button 不继承字体，a 继承。少了这一行，同一排的两个按钮字体对不上。 */
 		font: inherit;
 		font-size: 0.72rem;
@@ -332,19 +334,19 @@ import { url } from "@/utils/url-utils";
 	}
 
 	.bh-btn:hover {
-		border-color: rgb(200 226 255 / 0.5);
+		border-color: rgb(255 214 150 / 0.5);
 		transform: translateY(-2px);
 	}
 
 	.bh-btn:focus-visible {
-		outline: 2px solid var(--bh-cold);
+		outline: 2px solid var(--bh-accent);
 		outline-offset: 3px;
 	}
 
 	.bh-btn-primary {
-		border-color: rgb(200 226 255 / 0.28);
+		border-color: rgb(255 214 150 / 0.3);
 		background: var(--bh-panel-light);
-		box-shadow: 0 0 24px rgb(120 160 255 / 0.16);
+		box-shadow: 0 0 26px rgb(255 170 80 / 0.18);
 	}
 
 	.bh-home {
@@ -393,7 +395,7 @@ import { url } from "@/utils/url-utils";
 		font-size: 0.72rem;
 		font-weight: 500;
 		letter-spacing: 0.18em;
-		color: var(--bh-cold);
+		color: var(--bh-accent);
 	}
 
 	.bh-help section + section {
@@ -423,7 +425,7 @@ import { url } from "@/utils/url-utils";
 		margin: 0.7rem 0 0;
 		padding-top: 0.6rem;
 		border-top: 1px solid rgb(255 255 255 / 0.12);
-		color: rgb(178 190 224 / 0.72);
+		color: rgb(202 192 174 / 0.72);
 	}
 
 	/* ⚠️ 上面给了 display，[hidden] 就压不住了，必须显式写回来 */
@@ -441,7 +443,7 @@ import { url } from "@/utils/url-utils";
 		margin: 0;
 		font-size: 0.56rem;
 		letter-spacing: 0.08em;
-		color: rgb(178 190 224 / 0.6);
+		color: rgb(202 192 174 / 0.62);
 		pointer-events: none;
 		white-space: nowrap;
 	}

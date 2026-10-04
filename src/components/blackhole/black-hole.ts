@@ -103,7 +103,8 @@ export function createBlackHoleApp(): BlackHoleApp {
 		// 首次布好之后才知道尺寸：把黑洞钉回中心
 		s.hx = view.w * 0.5;
 		s.hy = view.h * 0.5;
-		bg.resize(view);
+		// ⚠️ 背景层要拿 `s`：它烘星野时要顺手算引力透镜（透镜中心 = 黑洞静止位，见 hole.ts）
+		bg.resize(view, s);
 		rites.resize(view);
 	}
 
