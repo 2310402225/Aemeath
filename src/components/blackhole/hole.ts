@@ -3,10 +3,23 @@
 //   背景层（低频）：星野 + 暗雾 + 星云**烘进一张离屏位图**，每帧只贴一次图（带一点点视差）。
 //     星野每帧重抽样毫无意义 —— 它又不动，动的是视差。走马灯那一页的教训：把"不变的东西"
 //     每帧重算，是白扔的预算。
-//   黑洞层（持续但低负载）：吸积盘按"远半 → 核心 → 近半"三趟画；再叠爱因斯坦环、
-//     上下两道"盘的后半被抬到视界上方"的二次像、引力波。
+//   黑洞层（持续但低负载）：绕洞的活丝（每帧、差速自转）→ 暖尘 → 暖晕 → 吸积盘三趟 →
+//     盘上亮点 → 上下细弧 → 核心 → 爱因斯坦环 → 横穿那道线 → 引力波。
 //
 // 模块**只读**共享态：吸积盘自转相位、吞噬脉冲、指针靠近程度都在接线层推进。
+//
+// 🔴 **"看起来杂" = 无序，不是 "东西多"**（做完和参考图的同构图 A/B 才想明白的）：
+//    参考图上洞口那一涡其实有**几十道丝**，比"乱"的那版还密；它不乱，是因为每根丝
+//    **朝同一个方向卷**，整片读成一个漩涡。所以碰到"太杂"要砍的是**没有方向的东西**
+//    （同心圆环、各歪各的短划），不是密度。密度不够，"空间被搅动"这件事根本立不起来。
+//
+// 🔴 **"烘"和"活"的分界线，是这一页最贵的一条经验**：
+//    烘（`rebake`）只放**真的不动**的东西 —— 星野、星云、底色、几根当"直尺"用的尘埃纤维。
+//    凡是要看出"在动"的（绕洞的丝、暖尘、雾、盘、弧），一律每帧画。
+//    上一版把 300 条漩涡丝 + 18 道扫帚烘进了位图 —— 数量、配色、剖面对得上参考图，
+//    但那一层**一条都不会动**，整页于是像一张壁纸。神：「没有动感，太死了」。
+//    ⚠️ 烘死的还有第二个代价：烘一次要几百毫秒，想让它动就得每帧重烘 —— 更贵。
+//    所以"想动"从设计上就要求它是活层，不是把烘的东西挪出来。
 //
 // 观感基准（神给的参考图，暖金路数）：白炽 → 米金 → 琥珀的一条**极薄**亮盘带，
 // 视界正上方一圈亮环 + 几根细弧，四周是暖褐尘埃。曾经是青蓝紫 —— 那是另一套东西了。
@@ -69,6 +82,42 @@ export function createHoleLayer(): HoleLayer {
 	 */
 	let dust: { a: number; r: number; sp: number; fall: number; size: number }[] =
 		[];
+
+	/**
+	 * 绕洞的**活丝**（每帧画，不是烘进背景）。
+	 *
+	 * 🔴 这是这一页"有没有动感"的全部来源，三个设计点缺一不可：
+	 *   ① **半径存的是"真实"半径 `b`（单位 R），不是画到屏幕上的半径**。每帧用透镜方程
+	 *      正解把它映射成视半径 `θ = (β + √(β² + 4θE²)) / 2` —— 于是 `b < 1R` 的丝
+	 *      **一定**落在视界外（1R ~ 1.6R），物理上就是"洞口背后那片天被掰了出来"。
+	 *      烘死那版做不到这件事：它只能靠位图重映射，而重映射的结果不会动。
+	 *   ② **角位置按 `s.spin` 推，但每条的速率不同**（`rate ∝ 1/(1 + b)`，内快外慢）。
+	 *      差速 = 剪切 = 整片丝read成**在流**，而不是一圈一起转的硬盘子。
+	 *      ⚠️ 只跟 `s.spin` 走是**故意的**：`s.spin` 只增不减，所以相位永远不抖，
+	 *      也不需要额外状态。旋转方向上吸积盘、暖尘、这些丝是一套。
+	 *   ③ 数量降到几十条。第一版烘了 300 条 + 18 道扫帚，神的评价是「线条太杂了」——
+	 *      动起来之后**每条都看得见**，所以条数只能比烘死那版更少。
+	 */
+	type Filament = {
+		/** 真实半径（单位 R，未透镜） */
+		b: number;
+		/** 纵向压扁比 `ry / rx` */
+		flat: number;
+		/** 起始角（弧度） */
+		a0: number;
+		/** 弧长（弧度） */
+		sweep: number;
+		/** 轨道面倾角（弧度，逐道递增 → 不读成同心圆） */
+		rot0: number;
+		/** 线宽（单位 R） */
+		w: number;
+		/** 基础亮度 */
+		alpha: number;
+		warm: boolean;
+		/** 角速度系数（差速） */
+		rate: number;
+	};
+	let filament: Filament[] = [];
 
 	function rebake(view: View, s: Shared) {
 		const w = Math.max(1, Math.round(view.w * view.dpr));
@@ -148,26 +197,32 @@ export function createHoleLayer(): HoleLayer {
 		//    方向各异的丝被掰弯了也读不出来，因为没有"原本是直的"这个参照。
 		// ⚠️ 一条丝 = **一次 stroke 配一个线性渐变**。别拆成一段段画 —— 加色混合下
 		//    相邻描边的圆头端点会互相叠加，整条丝变成一串珠子（这一版实测踩过）。
+		// 🔴 **这一层是"参照网"，必须少**。它烘死在背景里（不动），负责提供"原本是直的"
+		//    这话；真正动的是下面那个**活层**（`drawFilaments`）。第一版铺了 150 条、
+		//    每条最长 450px，整屏都是斜线 —— 神的原话是「线条太杂了」。真实感来自
+		//    "尘埃聚在洞口附近、外围是空的"，所以数量砍到 38，长度砍半，外围直接归零。
 		const tilt = -0.22;
-		const wisps = view.w < 760 ? 60 : 150;
+		const wisps = view.w < 760 ? 8 : 16;
 		const span = Math.max(view.w, view.h);
 		for (let i = 0; i < wisps; i++) {
 			// 沿"带"铺：离带轴越远越稀（t² 分布），于是中间厚、两边散
 			const t = (rand() - 0.5) * 2;
-			const off = Math.sign(t) * t * t * span * 0.62;
+			const off = Math.sign(t) * t * t * span * 0.45;
 			const along = rand() * (view.w + view.h) - view.w * 0.35;
 			const bx = view.w * 0.5 + Math.cos(tilt) * along - Math.sin(tilt) * off;
 			const by = view.h * 0.5 + Math.sin(tilt) * along + Math.cos(tilt) * off;
-			const len = 90 + rand() * 360;
+			const len = 60 + rand() * 200;
 			const dir = tilt + (rand() - 0.5) * 0.55;
 			const hx = (Math.cos(dir) * len) / 2;
 			const hy = (Math.sin(dir) * len) / 2;
 			// 一点点弧度：太直的丝看着像划痕，不像尘埃
 			const bow = (rand() - 0.5) * len * 0.35;
 			// ⚠️ **越靠画边越弱**。铺成一整片均匀的丝，整帧读起来像"拉丝金属"
-			//    （这张图实测就是这样）—— 真实感来自"尘埃聚在洞口附近、外围是空的"。
+			//    （这张图实测就是这样）—— 而且"杂"就是这么来的。1.05 起步意味着
+			//    到 1.05×span 之外权重直接归零，画边是干净的。
 			const far = Math.hypot(bx - hz.x, by - hz.y) / (span * 0.55);
-			const near = clamp(1.3 - far, 0.15, 1);
+			const near = clamp(1.05 - far, 0, 1);
+			if (near <= 0) continue;
 			const a = (0.05 + rand() * 0.1) * near;
 			const warm = rand() > 0.28;
 			const col = warm ? "180 142 102" : "132 144 172";
@@ -189,77 +244,31 @@ export function createHoleLayer(): HoleLayer {
 			g.stroke();
 		}
 
-		// ② 绕洞的**漩涡丝** —— 这一层才是"空间被扭曲"的主体。
-		// 🔴 关键在半径分布：`u²` 让它们**越靠洞口越密**，而且**一大半落在 1R 以内**。
-		//    那些丝在画面上本来是**看不见的**（会被不透明的视界圆盖掉），是末尾的
-		//    `lensWarp` 把它们从 β<1R 推到 θ∈[1, 2.6]R 才露出来的 ——
-		//    所以环外那圈卷起来的丝，物理上就是"**洞口背后那片天被掰了出来**"。
-		//    这是全页最像引力的一笔：不是画上去的装饰，是同一片天被透镜搬了个位置。
-		// 🔴 **必须是压扁 + 逐道旋转的椭圆，不是正圆**。正圆一圈圈铺出来是"水波纹"；
-		//    压扁（跟着盘的平面）再逐道扭一点，才读成**漩涡**。半径还要有抖动，
-		//    否则 300 道丝会自己对齐成一圈圈等距的环 —— 一眼假。
-		// ⚠️ 每条丝 = **一次 `ellipse` 一笔画完**。别拆成小段配渐变 —— 加色混合下相邻
-		//    段会叠成一串珠子（上面那条尘埃带就是用一次 stroke 配线性渐变解决的）。
-		g.lineCap = "round";
-		const swirls = view.w < 760 ? 90 : 300;
-		for (let i = 0; i < swirls; i++) {
-			const u = rand();
-			const rr = hz.r * (0.08 + 3.4 * u * u * (0.75 + rand() * 0.5));
-			const ry = rr * (0.45 + rand() * 0.3);
-			const sweep = 0.12 + rand() * 0.9;
-			const a0 = rand() * TAU;
-			const rot = (rr / hz.r) * 0.14 + (rand() - 0.5) * 0.35;
-			const warm = rand() > 0.22;
-			const col = warm ? "198 152 106" : "142 154 184";
-			g.globalAlpha =
-				(0.05 + rand() * 0.14) * clamp(1.4 - rr / (hz.r * 3), 0.1, 1);
-			g.strokeStyle = `rgb(${col})`;
-			g.lineWidth = 0.6 + rand() * 1.9;
-			g.beginPath();
-			g.ellipse(hz.x, hz.y, rr, ry, rot, a0, a0 + sweep);
-			g.stroke();
-		}
-		// ②b 几道**大扫帚**：参考图上最显眼的不是细丝，是十来道又长又宽的亮臂，
-		//     从洞口的上下两侧扫出去。细丝只负责质感，骨架靠这几道。
-		for (let i = 0; i < (view.w < 760 ? 8 : 18); i++) {
-			const u = rand();
-			const rr = hz.r * (1.12 + 1.5 * u);
-			const ry = rr * (0.4 + rand() * 0.25);
-			const a0 = rand() * TAU;
-			const sweep = 0.7 + rand() * 1.5;
-			g.globalAlpha = 0.07 + rand() * 0.12;
-			g.strokeStyle = `rgb(${rand() > 0.3 ? "214 176 128" : "166 172 196"})`;
-			g.lineWidth = 2 + rand() * 4.5;
-			g.beginPath();
-			g.ellipse(
-				hz.x,
-				hz.y,
-				rr,
-				ry,
-				(rr / hz.r) * 0.12 + (rand() - 0.5) * 0.3,
-				a0,
-				a0 + sweep,
-			);
-			g.stroke();
-		}
-		g.globalAlpha = 1;
+		// ⚠️ **绕洞的漩涡丝不在这里**（第一版有 300 条烘在这儿，加上 18 道大扫帚）。
+		//    它们被搬去了 `drawFilaments()`，改成**每帧画**——因为烘死的丝**不会动**，
+		//    而"会不会动"恰恰是这一页最缺的东西（神：「没有动感，太死了」）。
+		//    搬走之后这里反而干净：烘的只剩"不动的参照"，动的一律每帧来。
 
 		// ③ 弥散的尘埃斑块：给整片天一点大尺度的疏密。少了它，外围就是"贴了张黑纸"——
 		//    参考图里离洞口 4~5R 的地方仍然有可读的暗尘纹理。
 		//    ⚠️ alpha 只能给到 0.04~0.09：这是**底噪**，一擦亮就变成"土黄滤镜"，
 		//       而且会被下面的透镜一起放大成一片糊。
-		const puffs = view.w < 760 ? 26 : 68;
+		//    ⚠️ **撒在 2R 外的环带里**，别撒满全屏：撒满的结果是洞口周围糊了一圈脏，
+		//       而它本来要解决的只是"外围太空"。判定用"到洞口的距离"而不是 `rand()*w`。
+		const puffs = view.w < 760 ? 8 : 18;
 		for (let i = 0; i < puffs; i++) {
-			const px = rand() * view.w;
-			const py = rand() * view.h;
-			const pr = 40 + rand() * 190;
+			const pa = rand() * TAU;
+			const pr = hz.r * (1.9 + 2.8 * rand());
+			const px = hz.x + Math.cos(pa) * pr;
+			const py = hz.y + Math.sin(pa) * pr * 0.75;
+			const rad = 40 + rand() * 150;
 			const warm = rand() > 0.3;
 			const col = warm ? "152 118 86" : "98 110 140";
-			const pg = g.createRadialGradient(px, py, 0, px, py, pr);
-			pg.addColorStop(0, `rgb(${col} / ${0.04 + rand() * 0.055})`);
+			const pg = g.createRadialGradient(px, py, 0, px, py, rad);
+			pg.addColorStop(0, `rgb(${col} / ${0.035 + rand() * 0.045})`);
 			pg.addColorStop(1, `rgb(${col} / 0)`);
 			g.fillStyle = pg;
-			g.fillRect(px - pr, py - pr, pr * 2, pr * 2);
+			g.fillRect(px - rad, py - rad, rad * 2, rad * 2);
 		}
 
 		// 星野。⚠️ 这里**不再掏空中心**：透镜要靠 θ ≈ 1R 处那一圈像素去采 β < 1R 的星，
@@ -363,8 +372,11 @@ export function createHoleLayer(): HoleLayer {
 				// 一个点光源在那里会被拉成**一段弧**。nearest 采样本身就会把同一片
 				// 源像素铺到一圈上，但窗外的源采不到、亮斑会断；这里沿切向多取两个样本
 				// 取**最大值**，把那段弧接起来（取平均会把星点拉暗，反而不像）。
+				// ⚠️ **幅度别贪**。第一版给到 0.09 rad，结果是整片星野被拉成**一地白色
+				//    小划痕** —— 那不是"被掰弯的光"，那就是脏（神：「线条太杂了」）。
+				//    0.035 只在贴着环的那一圈起作用，外面仍是"小而锐的点"。
 				const mag = Math.min(3, d / Math.max(b, 1e-3)) - 1;
-				const da = mag > 0.08 ? Math.min(0.09, mag * 0.05) : 0;
+				const da = mag > 0.12 ? Math.min(0.035, mag * 0.02) : 0;
 				const ox = cx - x0;
 				const oy = cy - y0;
 				const rx = x + dx * (k - 1) - ox;
@@ -418,6 +430,58 @@ export function createHoleLayer(): HoleLayer {
 		g.drawImage(field, ox, oy, view.w, view.h);
 	}
 
+	/**
+	 * 绕洞活丝层。**每帧画** —— 这是"动感"的唯一来源（见 `Filament` 的注释）。
+	 *
+	 * 每条丝 = **一次 `ellipse` 一笔画完**（`lineCap: "round"` 给两端收圆）。
+	 * ⚠️ 别拆成小段配渐变 —— 加色混合下相邻段的端点会叠成一串珠子（尘埃纤维那层踩过）。
+	 *    一个 path 只有两个端点，所以圆头在这里是安全的。
+	 *
+	 * 成本：桌面 260 条 × 1 次 `ellipse`。上一版是 96 条（还几乎看不见），背景里另有
+	 * 300 条烘死的 —— 一起算，这一版比"烘死那版"少一个量级，而且**全都会动**。
+	 */
+	function drawFilaments(
+		g: CanvasRenderingContext2D,
+		s: Shared,
+		hole: Hole,
+		boost: number,
+	) {
+		if (filament.length === 0) return;
+		const R = hole.r;
+		// 透镜：θE = 1.0R，和烘制那趟的 `lensWarp` 取同一个值（两处必须一致，
+		// 否则活丝会落在"被掰出来的那片天"之外，读成两套几何）
+		const thetaE = R * 1.0;
+		g.save();
+		g.globalCompositeOperation = "lighter";
+		for (const f of filament) {
+			// ① 解析透镜：真实半径 → 视半径。β=0 时 θ=θE（刚好贴着视界外），
+			//    β 大时 θ ≈ β + θE²/β，会轻微外推。
+			const bR = f.b * R;
+			const th = 0.5 * (bR + Math.sqrt(bR * bR + 4 * thetaE * thetaE));
+			// ② 差速自转：内圈快、外圈慢。`s.spin` 只增不减，所以这条没有累积误差，
+			//    也不需要给每条丝存相位。
+			const ang = f.a0 + s.spin * f.rate;
+			// ③ 越靠涡心越亮（那里的丝被压得最密），往外收
+			const fade = clamp(1.5 - f.b / 2.6, 0.15, 0.92);
+			// 上限 0.42 → 0.5：260 条叠起来才够"卷云"的厚度。单条仍压得很低，
+			//    "亮"是**很多条加出来的**，不是单条给的 —— 单条给亮就成了划痕。
+			g.globalAlpha = clamp(f.alpha * fade * boost, 0, 0.5);
+			if (g.globalAlpha < 0.012) continue;
+			// 暖金为主。冷蓝只当少数点缀 —— 冷暖各半时整圈会读成"灰白划痕"。
+			g.strokeStyle = f.warm ? "rgb(212 158 96)" : "rgb(128 148 196)";
+			// ⚠️ 一条丝 = **一次 `ellipse`**，而且 `lineCap` 用 `round`：
+			//    同一个 path 只有**两个**端点，圆头不会在自己身上叠出珠子。
+			//    （"珠子"只在把同一条弧拆成很多次 `stroke` 时才会出现。）
+			//    圆头还顺手把丝的两端收圆 —— 硬头硬尾看着就是"划痕"。
+			g.lineCap = "round";
+			g.lineWidth = Math.max(0.6, R * f.w);
+			g.beginPath();
+			g.ellipse(hole.x, hole.y, th, th * f.flat, f.rot0, ang, ang + f.sweep);
+			g.stroke();
+		}
+		g.restore();
+	}
+
 	function draw(
 		g: CanvasRenderingContext2D,
 		s: Shared,
@@ -430,6 +494,13 @@ export function createHoleLayer(): HoleLayer {
 		const calm = s.calm ? 0.25 : 1;
 		const R = hole.r;
 
+		// 这三条前面好几个层都要用（活丝层、盘、环、弧），所以提到最前面。
+		const diskBoost = 1 + 0.35 * s.pulse;
+		// 透镜那一套（爱因斯坦环 + 细弧 + 活丝）整体提一档：吞噬时"光被掰得更狠"
+		const lensBoost = 1 + 0.5 * s.pulse;
+		/** 弧线的颜色。暖金第二档（米金），和盘体同一根色轴。 */
+		const ARC = `rgb(${GOLD[1].join(" ")})`;
+
 		if (dust.length === 0) {
 			const rand = rngOf(4242);
 			for (let i = 0; i < (view.w < 760 ? 40 : 76); i++) {
@@ -439,6 +510,52 @@ export function createHoleLayer(): HoleLayer {
 					sp: (rand() < 0.5 ? -1 : 1) * (0.05 + rand() * 0.1),
 					fall: R * (0.05 + rand() * 0.16),
 					size: 0.6 + rand() * 1.5,
+				});
+			}
+		}
+
+		// 活丝：只在第一次（以及窗口尺寸变了之后）展开一次，之后**每帧重画同一份**。
+		// ⚠️ 半径一律存"真实半径 b"（单位 R），所以重展开只跟数量有关、跟分辨率无关。
+		if (filament.length === 0) {
+			const rand = rngOf(20261004 ^ 0x5eed);
+			// 🔴 **"杂"是"无序"，不是"多"** —— 这是做完 A/B 才想明白的一条。
+			//    参考图上洞口周围那一圈其实是**密密麻麻几十道丝**，比第一版还密；
+			//    它之所以不乱，是因为**所有丝朝同一个方向卷**，整片读成"一个漩涡"。
+			//    反过来，稀疏的孤立短弧（我中途那版）才是真的乱：没有方向，看着像划痕。
+			//    所以这里的密度给回来，靠下面那条**同号的扭转**去保证"有序"。
+			// ⚠️ 密度是**最后一档才给够**的：170 条时 A/B 里我这版明显比参考图"薄"，
+			//    参考图洞口上下那两片是被梳过去的**厚卷云**，不是几缕丝。260 条才立得住"体积"。
+			const n = view.w < 760 ? 110 : 260;
+			for (let i = 0; i < n; i++) {
+				const u = rand();
+				// `u^1.6`：越靠洞口越密（涡心那一圈最亮最挤），往外逐渐稀疏。
+				const b = 0.14 + 3.0 * u ** 1.6;
+				const big = rand() > 0.9;
+				filament.push({
+					b,
+					// 🔴 **扁，但别太扁**。参考图上那一涡是"宽 > 高"的 —— 顺着盘面被梳过去，
+					//    不是个圆环。但给到 0.24 那种极扁值时，丝全挤在盘面上下一条带里，
+					//    洞口上下是空的、读成"赤道上的沙尘暴"；参考图那圈是**兜住整个洞口**的。
+					//    0.32~0.58 才既保持"宽 > 高"，又能把视界上下一起裹住。
+					//    ⚠️ 而一旦逼近 0.8 就转圆，整片立刻读成"行星环"（试过，翻车）。
+					flat: 0.32 + rand() * 0.26,
+					a0: rand() * TAU,
+					// 弧要**长**：涡是"一条条扫过半圈的痕"连起来的，短弧看着是碎屑。
+					// ⚠️ 但长弧必须**很多根叠着**才成涡；一根长的就是一圈环（试过，翻车）。
+					sweep: 0.5 + rand() * 1.5,
+					// 🔴 **同号、随半径单调增加的扭转** —— "整片读成一个涡"靠这一条。
+					//    ⚠️ 系数别大：试过 `b*0.42`，所有长轴被扭进同一个 ~70° 扇区，
+					//    结果涡只出现在左上-右下一条斜带上，另外两个象限是空的（渲染图看得很清楚）。
+					//    0.16 够给出"越往外越扭"的方向感，抖动则把方向铺满整圈。
+					rot0: b * 0.16 + (rand() - 0.5) * 0.42,
+					// 绝大多数是细丝，少数几道当骨架
+					// ⚠️ 骨架别太粗：0.062R 那种会读成一根**笔触/绸带**（加色下还糊成一块平色），
+					//    参考图那一涡是"**一片细密平行痕里夹几道亮些的**"，不是几十根粗带子。
+					w: big ? 0.02 + rand() * 0.024 : 0.006 + rand() * 0.012,
+					alpha: big ? 0.13 + rand() * 0.09 : 0.05 + rand() * 0.1,
+					warm: rand() > 0.2,
+					// 差速：内圈 ~2.1×、外圈 ~0.6×（相对吸积盘的名义转速）
+					rate: 2.6 / (1 + b * 1.1),
 				});
 			}
 		}
@@ -461,6 +578,9 @@ export function createHoleLayer(): HoleLayer {
 		}
 		g.restore();
 
+		// ①b 绕洞活丝。**放在暖尘之前**：它是"被掰弯的天"，比落进去的尘埃更远。
+		drawFilaments(g, s, hole, lensBoost);
+
 		// ② 暖尘：**持续往视界里掉**。这是"光/物质被吸进去"最直白的读数 ——
 		//    指针一靠近，掉得更快（spec §二 黑洞基础交互）；落到 `R*1.02` 就回收重放到外圈。
 		//    ⚠️ 别改成"绕圈打转"：原地转读不出引力，只有确确实实在往里掉才算数。
@@ -480,12 +600,28 @@ export function createHoleLayer(): HoleLayer {
 			}
 			const x = hole.x + Math.cos(d.a) * d.r;
 			const y = hole.y + Math.sin(d.a) * d.r * KD;
+			// 🔴 **画成一条短线，不是一个点**。一颗粒子每帧只走 1~2px，画成圆点看不出
+			//    它在动；拉成它**自己运动方向**上的一小段，就成了运动模糊 —— 静止的
+			//    一帧里也读得出"它在往洞里掉"。拖影长度按**固定时间 τ** 算（不是按 dt），
+			//    否则 24fps 的静止档会只剩半截尾巴，动一下就变长，像在闪。
+			const tau = 0.13;
+			const backA =
+				d.a -
+				(d.sp * (1 + s.hover * 1.5) + (d.fall / Math.max(d.r, 1)) * 0.4) *
+					calm *
+					tau;
+			const backR = d.r + d.fall * pull * calm * tau;
+			const bx = hole.x + Math.cos(backA) * backR;
+			const by = hole.y + Math.sin(backA) * backR * KD;
 			g.globalAlpha =
 				(0.15 + 0.16 * Math.sin(t * 1.4 + d.a)) * (1 + s.hover * 0.35);
-			g.fillStyle = "#ffd9a0";
+			g.strokeStyle = "#ffd9a0";
+			g.lineCap = "round";
+			g.lineWidth = d.size * 1.5;
 			g.beginPath();
-			g.arc(x, y, d.size, 0, TAU);
-			g.fill();
+			g.moveTo(bx, by);
+			g.lineTo(x, y);
+			g.stroke();
 		}
 		g.restore();
 
@@ -515,25 +651,19 @@ export function createHoleLayer(): HoleLayer {
 		}
 		g.restore();
 
-		const diskBoost = 1 + 0.35 * s.pulse;
-		// 透镜那一套（爱因斯坦环 + 细弧）整体提一档：吞噬时"光被掰得更狠"
-		const lensBoost = 1 + 0.5 * s.pulse;
-		/** 弧线的颜色。暖金第二档（米金），和盘体同一根色轴。 */
-		const ARC = `rgb(${GOLD[1].join(" ")})`;
-
 		// ③ 吸积盘远半（压在核心**下面**）：它绕到视界背后，被黑球吃掉大半，
 		//    只剩外侧两肩露出来 —— 参考图上赤道左右那两片最亮的地方就是它。
 		g.save();
 		g.globalCompositeOperation = "lighter";
 		// 两趟：**宽而暗的一层先铺（焦距附近的 flare）**，**细而亮的那根后画（光束）**。
 		// 参考图就是"一根细亮线泡在一片宽光里"；顺序反了针会被晕糊掉一层。
-		drawDisk(g, hole, KD * 3.2, s, t, false, diskBoost * 0.34, "all", 3);
-		drawDisk(g, hole, KD, s, t, false, diskBoost);
+		drawDisk(g, hole, KD * 3.2, false, diskBoost * 0.34, "all", 3);
+		drawDisk(g, hole, KD, false, diskBoost);
 		g.restore();
 
 		// ④ 引力透镜（一）：**上下两组细弧** —— 盘的后半被引力抬到视界上方/下方的二次像。
 		//    参考图上视界正上方那几根平行的细弧就是它，也是整页"引力"味道最重的一笔。
-		//    ⚠️ 每段强度按 `sin(φ)^1.6` 收到 0 —— 直接画半圆会在两端留下一道硬切口，
+		//    ⚠️ 每段强度按 `sin(φ)^P` 收到 0 —— 直接画半圆会在两端留下一道硬切口，
 		//    那看着像"没画完"，不像被弯折的光。
 		g.save();
 		g.globalCompositeOperation = "lighter";
@@ -545,9 +675,15 @@ export function createHoleLayer(): HoleLayer {
 		//    （盘在下面那一侧绕过来的光更多）。用同一份表的后果是上方糊成一片、
 		//    下方又撑不起那个 216 的肩。
 		// 元组 = `[横向半轴, 纵向半轴, 线宽, 亮度, 旋转]`（半轴单位 R、旋转单位弧度）。
+		// 🔴 **从 5+5 砍到 2+2，再砍到 1+1**。上一版十道同心的椭圆叠在洞口外，量出来的
+		//    数是对上了，但读出来是**靶子** —— 神的原话是「黑洞周围的线条太杂了」。
+		//    砍到 2+2 之后还剩最后一道"行星环"：最外那道（2.2R / 2.5R）几乎是个**正圆**，
+		//    孤零零画在空旷的天上，一整圈绕过去 —— 和"盘被抬起来的二次像"没关系了，
+		//    就是一枚环。参考图在那个位置本来就极淡（85~110，全图最暗的一档），
+		//    所以直接删掉，那片交给**会动的活丝**去给（见 `drawFilaments`）。
+		//    现在每侧只剩**贴洞口那一根**：它压在爱因斯坦环的外沿上，读成"盘的内缘
+		//    绕过来"，这才是"二次像"该在的位置。
 		//  · **两个半轴分开给**（纵向更小）让它们读成"趴下来的弓"，不是一圈圈同心圆。
-		//  · **旋转**（越往外扭得越多）是最后一块拼图：全部轴对齐的话，一"扇"弧叠起来
-		//    还是靶子；同方向逐渐扭过去，才读成一团**漩涡**（参考图视界上方那团就是）。
 		const BANDS: readonly (readonly [
 			number,
 			number,
@@ -556,24 +692,14 @@ export function createHoleLayer(): HoleLayer {
 			number,
 		])[][] = [
 			// 下方（屏幕 y 向下就是它）
-			[
-				[1.32, 1.15, 0.05, 0.6, 0],
-				[1.5, 1.32, 0.045, 0.34, 0.03],
-				[1.68, 1.47, 0.08, 0.52, 0.05],
-				[1.88, 1.64, 0.06, 0.32, 0.08],
-				[2.2, 1.95, 0.04, 0.2, 0.11],
-			],
-			// 上方。⚠️ 外面那几道（1.5R~2.5R）不能省：参考图正上方 1.58R→89 / 1.80R→91 /
-			//    2.20R→85，是几根**一直缠到 2.5R 外的细丝**，不是一处近处的亮弧。
-			//    少了它们黑洞上方就是一片空；曾经靠一层正圆大暖雾去补，补成了一颗"奶球"。
-			[
-				[1.28, 1.12, 0.06, 0.58, 0],
-				[1.46, 1.29, 0.05, 0.34, 0.03],
-				[1.72, 1.53, 0.035, 0.16, 0.05],
-				[2.05, 1.82, 0.03, 0.18, 0.08],
-				[2.5, 2.24, 0.028, 0.13, 0.11],
-			],
+			[[1.32, 1.15, 0.05, 0.6, 0]],
+			// 上方
+			[[1.28, 1.12, 0.06, 0.58, 0]],
 		];
+		// 整组弧**随盘子慢慢转**：它们是"盘的后半被抬起来的二次像"，盘的相位变了，
+		// 这个像自然也得跟着挪 —— 静止的几道椭圆是这一页看起来"死"的另一个原因。
+		// 系数 0.12 远小于盘本身的 1.0：二次像在远处，视觉位移本来就该小。
+		const bandSpin = s.spin * 0.12;
 		for (const dir of [-1, 1]) {
 			// ⚠️ 强弱的配比是量出来的，别凭手感：第一版给成 0.5/0.3/0.17，量出来是
 			//    77/39/26 —— 四道几乎一样亮，读起来像**同心圆测试卡**，不像被掰弯的光。
@@ -606,7 +732,7 @@ export function createHoleLayer(): HoleLayer {
 						hole.y,
 						R * rx,
 						R * ry,
-						rot,
+						rot + bandSpin,
 						dir > 0 ? ph0 : -ph1,
 						dir > 0 ? ph1 : -ph0,
 					);
@@ -637,28 +763,32 @@ export function createHoleLayer(): HoleLayer {
 		g.save();
 		g.globalCompositeOperation = "lighter";
 		// 外侧柔光：把"亮"铺开一点，别只有一条线。
+		// 🔴 **这一层必须浅、必须窄**。三张图叠在一起（halo + ring + ring2）在 `lighter`
+		//    下是加法：第一版 halo 给到 0.26、ring 峰 0.8、ring2 0.34，加起来渲染出来是
+		//    **一圈实心奶油甜甜圈** —— 洞口被糊成一坨，四周那些丝全成了"糊在奶油上的划痕"。
+		//    现在三张各自减半，亮的那条留给 ring 一个人。
 		// ⚠️ 必须挖掉中心 —— createRadialGradient 在 r < r0 的区域照样用 0 号色标涂满，
-		//    不挖就会给纯黑的核心糊上一层 0.2 的暖光，黑球变褐色。
+		//    不挖就会给纯黑的核心糊上一层暖光，黑球变褐色。
 		const halo = g.createRadialGradient(
 			hole.x,
 			hole.y,
 			R,
 			hole.x,
 			hole.y,
-			R * 1.3,
+			R * 1.2,
 		);
 		halo.addColorStop(
 			0,
-			`rgb(${GOLD[1].join(" ")} / ${clamp(0.26 * lensBoost, 0, 0.36)})`,
+			`rgb(${GOLD[1].join(" ")} / ${clamp(0.15 * lensBoost, 0, 0.2)})`,
 		);
 		halo.addColorStop(
-			0.45,
-			`rgb(${GOLD[2].join(" ")} / ${clamp(0.1 * lensBoost, 0, 0.16)})`,
+			0.5,
+			`rgb(${GOLD[2].join(" ")} / ${clamp(0.06 * lensBoost, 0, 0.1)})`,
 		);
 		halo.addColorStop(1, `rgb(${GOLD[2].join(" ")} / 0)`);
 		g.fillStyle = halo;
 		g.beginPath();
-		g.arc(hole.x, hole.y, R * 1.3, 0, TAU);
+		g.arc(hole.x, hole.y, R * 1.2, 0, TAU);
 		g.arc(hole.x, hole.y, R * 0.985, 0, TAU, true);
 		g.fill();
 		// 环本体。🔴 **用径向渐变填充的一个圆环，不是"粗描边的一圈线"**。
@@ -666,7 +796,9 @@ export function createHoleLayer(): HoleLayer {
 		//    ② 环厚给到 0.13R 时几何重叠把 alpha 堆到饱和 → 一圈**硬边白箍**，一眼假。
 		//    径向渐变是连续的，厚薄亮暗全由色标说了算。
 		// 色标对着参考图量出来的形状：内缘 ~0.98R 起，峰在 1.08~1.10R（亮度 230~240），
-		// 1.28R 收干净；再往外是一道**暗缝**（参考图 1.35R 处只有 45~100，不是亮的）。
+		// **1.25R 之后必须收干净** —— 参考图 1.35R 处只有 45~100，是一道**暗缝**。
+		// ⚠️ 上一版把外沿铺到 1.44R，于是 1.3R 附近还挂着 0.14 的亮 —— 那道"暗缝"
+		//    被填平了，环就从"一道亮边"变成"一圈厚箍"。现在外沿收到 1.30R。
 		// `r0 = 0.94R` 顺带把视界里面留空 —— r < r0 的区域用 0 号色标（alpha 0）。
 		const ring = g.createRadialGradient(
 			hole.x,
@@ -674,48 +806,40 @@ export function createHoleLayer(): HoleLayer {
 			R * 0.94,
 			hole.x,
 			hole.y,
-			R * 1.44,
+			R * 1.3,
 		);
 		ring.addColorStop(0, `rgb(${GOLD[2].join(" ")} / 0)`);
 		ring.addColorStop(
-			0.12,
-			`rgb(${GOLD[1].join(" ")} / ${clamp(0.24 * lensBoost, 0, 0.32)})`,
+			0.17,
+			`rgb(${GOLD[1].join(" ")} / ${clamp(0.22 * lensBoost, 0, 0.3)})`,
 		);
 		ring.addColorStop(
-			0.3,
-			`rgb(${GOLD[0].join(" ")} / ${clamp(0.8 * lensBoost, 0, 0.92)})`,
+			0.44,
+			`rgb(${GOLD[0].join(" ")} / ${clamp(0.62 * lensBoost, 0, 0.75)})`,
 		);
 		ring.addColorStop(
-			0.46,
-			`rgb(${GOLD[1].join(" ")} / ${clamp(0.44 * lensBoost, 0, 0.56)})`,
+			0.72,
+			`rgb(${GOLD[1].join(" ")} / ${clamp(0.26 * lensBoost, 0, 0.34)})`,
 		);
-		ring.addColorStop(
-			0.68,
-			`rgb(${GOLD[2].join(" ")} / ${clamp(0.14 * lensBoost, 0, 0.2)})`,
-		);
-		ring.addColorStop(1, `rgb(${GOLD[3].join(" ")} / 0)`);
+		ring.addColorStop(1, `rgb(${GOLD[2].join(" ")} / 0)`);
 		g.fillStyle = ring;
 		g.beginPath();
-		g.arc(hole.x, hole.y, R * 1.44, 0, TAU);
+		g.arc(hole.x, hole.y, R * 1.3, 0, TAU);
 		g.fill();
 		// 下缘更厚更亮（盘在下面那一侧绕过来的光更多）：再叠一层**偏下**的柔环。
 		// 参考图的下方 0.95~1.25R 都是亮的（150~230），上方只有 1.05~1.18R 一段。
 		g.save();
 		g.translate(hole.x, hole.y + R * 0.1);
-		const ring2 = g.createRadialGradient(0, 0, R * 0.95, 0, 0, R * 1.36);
+		const ring2 = g.createRadialGradient(0, 0, R * 0.95, 0, 0, R * 1.22);
 		ring2.addColorStop(0, `rgb(${GOLD[2].join(" ")} / 0)`);
 		ring2.addColorStop(
-			0.3,
-			`rgb(${GOLD[1].join(" ")} / ${clamp(0.34 * lensBoost, 0, 0.45)})`,
-		);
-		ring2.addColorStop(
-			0.62,
-			`rgb(${GOLD[2].join(" ")} / ${clamp(0.12 * lensBoost, 0, 0.18)})`,
+			0.45,
+			`rgb(${GOLD[1].join(" ")} / ${clamp(0.22 * lensBoost, 0, 0.3)})`,
 		);
 		ring2.addColorStop(1, `rgb(${GOLD[3].join(" ")} / 0)`);
 		g.fillStyle = ring2;
 		g.beginPath();
-		g.arc(0, 0, R * 1.36, 0, TAU);
+		g.arc(0, 0, R * 1.22, 0, TAU);
 		g.fill();
 		g.restore();
 		g.restore();
@@ -728,8 +852,40 @@ export function createHoleLayer(): HoleLayer {
 		//      参考图里穿过视界的只有**一根头发丝**，所以那根单独画（见 ⑧）。
 		g.save();
 		g.globalCompositeOperation = "lighter";
-		drawDisk(g, hole, KD * 3.2, s, t, true, diskBoost * 0.34, "out", 3);
-		drawDisk(g, hole, KD, s, t, true, diskBoost, "out");
+		drawDisk(g, hole, KD * 3.2, true, diskBoost * 0.34, "out", 3);
+		drawDisk(g, hole, KD, true, diskBoost, "out");
+		g.restore();
+
+		// ⑦b 盘上的**几团亮点**：它们绕着盘跑，是"盘在转"的读数。
+		//     🔴 这里**不能再画环**（上一版在盘上铺了两圈 72 段的弧，读成行星环，
+		//     是"线条太杂"的头号来源，而且每帧 576 笔）。斑块的笔画数是 4，还能真的动。
+		//     ⚠️ 画在近半之后、且**不挖球内**：它们都在 1.4R 外，本来就挨不到视界。
+		g.save();
+		g.globalCompositeOperation = "lighter";
+		g.translate(hole.x, hole.y);
+		g.scale(1, KD);
+		for (let i = 0; i < 4; i++) {
+			// 速率略大于盘本身（1.15×）：盘面物质的角速度本来就不是刚体
+			const ph = s.spin * 1.15 + (i * TAU) / 4 + 0.35;
+			const rad = R * (1.45 + 0.4 * (0.5 + 0.5 * Math.sin(i * 2.3)));
+			const sx = Math.cos(ph) * rad;
+			const sy = Math.sin(ph) * rad;
+			const br = R * (0.2 + 0.06 * (i % 2));
+			const blob = g.createRadialGradient(sx, sy, 0, sx, sy, br);
+			blob.addColorStop(
+				0,
+				`rgb(255 244 214 / ${clamp(0.22 * diskBoost, 0, 0.3)})`,
+			);
+			blob.addColorStop(
+				0.5,
+				`rgb(255 226 176 / ${clamp(0.1 * diskBoost, 0, 0.14)})`,
+			);
+			blob.addColorStop(1, "rgb(214 152 72 / 0)");
+			g.fillStyle = blob;
+			g.beginPath();
+			g.arc(sx, sy, br, 0, TAU);
+			g.fill();
+		}
 		g.restore();
 
 		// ⑧ 横穿视界的那道细线：盘的内缘在视界前面掠过去。
@@ -796,13 +952,13 @@ export function createHoleLayer(): HoleLayer {
 	 *   ④ 盘上的明暗沿角度用 cos **连续**变化 —— 既给出"盘在转"的信息，也不会出现硬边。
 	 *      ⚠️ 别写成 `0.3 + 0.7·side` 那种"按前后给系数"：两趟会各自把**整圈**点一遍，
 	 *      alpha 与亮度双双翻倍、前后梯度被互相填平（实测画出过三条荧光白圈）。
+	 *   ⑤ **盘体自己不带任何"环"**。"盘在转"这件事由 `draw()` 的 ⑦b（几团绕着盘跑的
+	 *      亮点）负责 —— 在盘上补一圈圈亮度结，画出来一定是两条细椭圆，读成行星环。
 	 */
 	function drawDisk(
 		g: CanvasRenderingContext2D,
 		hole: Hole,
 		k: number,
-		s: Shared,
-		t: number,
 		near: boolean,
 		boost: number,
 		/** 只要球外那两段（`out`）、只要穿过球的那一段（`in`）、还是整张（`all`） */
@@ -866,27 +1022,12 @@ export function createHoleLayer(): HoleLayer {
 		g.arc(0, 0, R * 1.02, 0, TAU, true); // 反向 → 中间挖空
 		g.fill();
 
-		// 两圈亮度的"结"：给盘一点结构，否则只剩一团糊。亮度沿角度连续起伏 —— 转才看得见。
-		g.lineCap = "round";
-		const segs = 72;
-		for (const [rr, wd, a] of [
-			[1.72, 0.022, 0.32],
-			[2.62, 0.014, 0.16],
-		] as const) {
-			if (rr > reach) continue;
-			const spin = s.spin * (1 - rr * 0.1) + t * 0.05;
-			g.lineWidth = R * wd;
-			g.strokeStyle = `rgb(${H1})`;
-			for (let i = 0; i < segs; i++) {
-				const a0 = (TAU * i) / segs;
-				const a1 = (TAU * (i + 1)) / segs;
-				const shade = 0.5 + 0.5 * Math.cos((a0 + a1) / 2 - spin);
-				g.globalAlpha = clamp(a * boost * (0.4 + 0.6 * shade), 0, 0.6);
-				g.beginPath();
-				g.arc(0, 0, R * rr, a0, a1);
-				g.stroke();
-			}
-		}
+		// 🔴 这里原来有"两圈亮度的结"：在 1.72R 与 2.62R 上各画一圈 **72 段的弧**，
+		//    亮度沿角度起伏。量出来没问题，但**画出来是两条完整的细椭圆** ——
+		//    绕在洞口外像行星环 / 靶环，正是神说的「黑洞周围的线条太杂了」的头号来源。
+		//    而且它是每帧最大的一笔开销：2 圈 × 72 段 × 4 趟 = **576 次 stroke**。
+		//    现在整块删掉，"盘在转"这件事改由 `draw()` 里几团**绕着盘跑的亮点**来给
+		//    （不是线，是斑：更少的笔画 + 真的在动）。见 ⑦b。
 		g.restore();
 	}
 
@@ -894,6 +1035,7 @@ export function createHoleLayer(): HoleLayer {
 		resize(view: View, s: Shared) {
 			rebake(view, s);
 			dust = [];
+			filament = [];
 		},
 		rebake,
 		drawBg,

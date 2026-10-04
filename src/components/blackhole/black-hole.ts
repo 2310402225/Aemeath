@@ -125,7 +125,9 @@ export function createBlackHoleApp(): BlackHoleApp {
 
 		// 指针靠近：吸积盘提速、星尘偏转（spec §二 黑洞基础交互）
 		s.hover = approach(s.hover, hoverOf(s, view, hole), 5, dt);
-		s.spin += dt * (0.16 + 0.42 * s.hover) * (s.calm ? 0.4 : 1);
+		// 静止基速 0.16 → 0.20：绕洞的活丝、盘上的亮点、上下细弧**都读这一个量**，
+		// 提一档整页立刻"活"起来（神上一版的原话是「没有动感，太死了」）。
+		s.spin += dt * (0.2 + 0.42 * s.hover) * (s.calm ? 0.4 : 1);
 
 		// 黑洞钉死在页面中心（`relayout` 里写死）。原来这里有一步"松手后弹回中心"的弹簧，
 		// 现在没有东西会把它推开，弹簧就只剩下一堆每帧的空转计算 —— 一起去掉。
