@@ -19,8 +19,14 @@ import {
 } from "./state";
 
 const TAU = Math.PI * 2;
-/** 吸积盘三色（spec §二）：暗紫、幽青、钴蓝 */
-const DISK: [number, number, number][] = [
+/**
+ * 吸积盘的三条光带（内 → 外）：暗紫、幽青、钴蓝。
+ * 🔴 这里踩过一次大的：**加色混合（lighter）下 alpha 会累加**。原来每条带 `0.1+0.26*hot`、
+ *    带又厚（0.42R），再把透镜做成"0.34 白 + 2.8R 大方块" —— 三样叠在一起直接顶到 255，
+ *    整颗黑洞渲染成一个**纯白甜甜圈**，离"暗宇宙里一点冷光"差了十万八千里。
+ *    现在的配方：盘是**暗的**（单段峰值 ≤0.2），亮只留给视界外那一圈细的光子环。
+ */
+const BANDS: [number, number, number][] = [
 	[176, 108, 255],
 	[86, 220, 226],
 	[88, 132, 255],
@@ -71,11 +77,12 @@ export function createHoleLayer(): HoleLayer {
 		g.fillStyle = base;
 		g.fillRect(0, 0, view.w, view.h);
 
-		// 两团极淡的星云（暗紫 / 钴蓝），只给背景一点呼吸
+		// 两团极淡的星云（暗紫 / 钴蓝）+ 一小团冷青，只给背景一点呼吸
 		const rand = rngOf(20261004);
 		for (const [nx, ny, nr, rgb] of [
-			[0.22, 0.28, 0.55, [92, 46, 160]],
-			[0.82, 0.72, 0.48, [40, 62, 150]],
+			[0.2, 0.24, 0.5, [92, 46, 160]],
+			[0.84, 0.72, 0.44, [40, 62, 150]],
+			[0.52, 0.86, 0.3, [30, 96, 112]],
 		] as const) {
 			const grd = g.createRadialGradient(
 				view.w * nx,
@@ -85,14 +92,15 @@ export function createHoleLayer(): HoleLayer {
 				view.h * ny,
 				Math.max(view.w, view.h) * nr,
 			);
-			grd.addColorStop(0, `rgb(${rgb.join(" ")} / 0.11)`);
+			grd.addColorStop(0, `rgb(${rgb.join(" ")} / 0.17)`);
 			grd.addColorStop(1, `rgb(${rgb.join(" ")} / 0)`);
 			g.fillStyle = grd;
 			g.fillRect(0, 0, view.w, view.h);
 		}
 
-		// 星野：越靠中心越稀（黑洞附近会被"吸走"观感），外圈密
-		const count = view.w < 760 ? 240 : 620;
+		// 星野：越靠中心越稀（黑洞附近会被"吸走"观感），外圈密。
+		// ⚠️ 星数/亮度/点径是一起看的：只加星数会让画面"脏"，只加亮度会让星变"糊点"。
+		const count = view.w < 760 ? 420 : 1200;
 		for (let i = 0; i < count; i++) {
 			const x = rand() * view.w;
 			const y = rand() * view.h;
@@ -100,13 +108,22 @@ export function createHoleLayer(): HoleLayer {
 			const cy = Math.abs(y - view.h * 0.5) / (view.h * 0.5);
 			const near = 1 - clamp(Math.hypot(cx, cy), 0, 1);
 			if (rand() < near * 0.72) continue; // 中心留空给黑洞
-			const r = 0.3 + rand() * 1.1;
-			g.globalAlpha = 0.16 + rand() * 0.62;
-			g.fillStyle =
-				rand() < 0.12 ? "#ffe6c0" : rand() < 0.4 ? "#cfe0ff" : "#ffffff";
+			const bright = rand();
+			const r = 0.35 + bright * bright * 1.55;
+			const warm = rand() < 0.12;
+			const cool = !warm && rand() < 0.34;
+			g.globalAlpha = 0.2 + bright * 0.7;
+			g.fillStyle = warm ? "#ffe6c0" : cool ? "#cfe0ff" : "#ffffff";
 			g.beginPath();
 			g.arc(x, y, r, 0, TAU);
 			g.fill();
+			// 最亮的那一小撮给一层柔光，星野才有"深"的感觉（不加色，只提亮一圈）
+			if (bright > 0.86) {
+				g.globalAlpha = 0.1;
+				g.beginPath();
+				g.arc(x, y, r * 3.6, 0, TAU);
+				g.fill();
+			}
 		}
 		g.globalAlpha = 1;
 	}
@@ -139,28 +156,29 @@ export function createHoleLayer(): HoleLayer {
 
 		if (dust.length === 0) {
 			const rand = rngOf(4242);
-			for (let i = 0; i < (view.w < 760 ? 26 : 54); i++) {
+			for (let i = 0; i < (view.w < 760 ? 44 : 96); i++) {
 				dust.push({
 					a: rand() * TAU,
 					r: R * (1.7 + rand() * 2.6),
 					sp: (rand() < 0.5 ? -1 : 1) * (0.06 + rand() * 0.12),
-					size: 0.5 + rand() * 1.1,
+					size: 0.6 + rand() * 1.5,
 				});
 			}
 		}
 
-		// ① 暗雾：低透明暗紫，从视界边缘缓慢往外扩（吞噬感）
+		// ① 暗雾：低透明暗紫，从视界边缘缓慢往外扩（吞噬感）。
+		//    这是"氛围层"，不是主体 —— 亮了会把盘和星野一起糊掉。
 		g.save();
 		g.globalCompositeOperation = "lighter";
-		for (let i = 0; i < 5; i++) {
-			const a = t * 0.06 * calm + (i * TAU) / 5;
-			const rr = R * (1.6 + 0.5 * Math.sin(t * 0.2 + i));
+		for (let i = 0; i < 6; i++) {
+			const a = t * 0.05 * calm + (i * TAU) / 6;
+			const rr = R * (1.4 + 0.45 * Math.sin(t * 0.2 + i));
 			const x = hole.x + Math.cos(a) * rr;
 			const y = hole.y + Math.sin(a) * rr * k;
-			const rad = R * (2.4 + 0.4 * Math.sin(t * 0.17 + i * 2));
+			const rad = R * (1.9 + 0.5 * Math.sin(t * 0.17 + i * 2));
 			const grd = g.createRadialGradient(x, y, 0, x, y, rad);
-			grd.addColorStop(0, "rgb(120 62 190 / 0.055)");
-			grd.addColorStop(1, "rgb(120 62 190 / 0)");
+			grd.addColorStop(0, "rgb(126 66 196 / 0.09)");
+			grd.addColorStop(1, "rgb(126 66 196 / 0)");
 			g.fillStyle = grd;
 			g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
 		}
@@ -174,7 +192,7 @@ export function createHoleLayer(): HoleLayer {
 			d.r = lerp(d.r, target, 1 - Math.exp(-1.6 * dt));
 			const x = hole.x + Math.cos(d.a) * d.r;
 			const y = hole.y + Math.sin(d.a) * d.r * k;
-			g.globalAlpha = 0.32 + 0.3 * Math.sin(t * 1.4 + d.a);
+			g.globalAlpha = 0.42 + 0.34 * Math.sin(t * 1.4 + d.a);
 			g.fillStyle = "#dfe8ff";
 			g.beginPath();
 			g.arc(x, y, d.size, 0, TAU);
@@ -182,7 +200,7 @@ export function createHoleLayer(): HoleLayer {
 		}
 		g.restore();
 
-		const diskBoost = 1 + 0.4 * s.pulse;
+		const diskBoost = 1 + 0.35 * s.pulse;
 		const rimBoost = 1 + 0.9 * s.pulse;
 
 		// ③ 吸积盘远半（压在核心下面）
@@ -191,33 +209,34 @@ export function createHoleLayer(): HoleLayer {
 		drawDisk(g, hole, k, s, t, false, diskBoost);
 		g.restore();
 
-		// ④ 引力透镜：贴着视界外的一条冷白细环 + 上下两道被弯折的弧
+		// ④ 引力透镜：**只贴视界一圈**的冷白辉光 + 上下两道被弯折的细弧。
+		//    原来是 0.34 白铺满 2.8R 的一个方框 —— 那是把整个中心区提亮，等于给黑洞糊了一手电筒。
 		g.save();
 		g.globalCompositeOperation = "lighter";
 		const ring = g.createRadialGradient(
 			hole.x,
 			hole.y,
-			R * 0.92,
+			R * 0.9,
 			hole.x,
 			hole.y,
-			R * 1.34,
+			R * 1.16,
 		);
-		ring.addColorStop(0, `rgb(240 248 255 / ${0.34 * rimBoost})`);
-		ring.addColorStop(0.35, `rgb(190 214 255 / ${0.12 * rimBoost})`);
-		ring.addColorStop(1, "rgb(160 190 255 / 0)");
+		ring.addColorStop(0, `rgb(226 238 255 / ${0.2 * rimBoost})`);
+		ring.addColorStop(0.55, `rgb(150 186 255 / ${0.07 * rimBoost})`);
+		ring.addColorStop(1, "rgb(120 160 255 / 0)");
 		g.fillStyle = ring;
-		g.fillRect(hole.x - R * 1.4, hole.y - R * 1.4, R * 2.8, R * 2.8);
+		g.fillRect(hole.x - R * 1.2, hole.y - R * 1.2, R * 2.4, R * 2.4);
 		for (const dir of [-1, 1]) {
-			g.globalAlpha = 0.3 + 0.35 * s.pulse;
-			g.strokeStyle = "#e8f2ff";
-			g.lineWidth = 1.3;
+			g.globalAlpha = 0.16 + 0.3 * s.pulse;
+			g.strokeStyle = "#dce9ff";
+			g.lineWidth = 1.1;
 			g.beginPath();
 			// 上方被"抬"起来的光弧，下方对称 —— 引力的味道就在这两道弧上
 			g.ellipse(
 				hole.x,
 				hole.y - dir * R * 0.06,
-				R * 1.16,
-				R * 1.16 * 0.4,
+				R * 1.12,
+				R * 1.12 * 0.4,
 				0,
 				dir > 0 ? Math.PI * 1.05 : Math.PI * 0.05,
 				dir > 0 ? Math.PI * 1.95 : Math.PI * 0.95,
@@ -230,26 +249,31 @@ export function createHoleLayer(): HoleLayer {
 		// ⑤ 核心：近乎纯黑的圆（事件视界之内什么都没有）
 		const core = g.createRadialGradient(hole.x, hole.y, 0, hole.x, hole.y, R);
 		core.addColorStop(0, "#000000");
-		core.addColorStop(0.72, "#030308");
-		core.addColorStop(1, "#07070d");
+		core.addColorStop(0.74, "#020206");
+		core.addColorStop(1, "#06060c");
 		g.fillStyle = core;
 		g.beginPath();
 		g.arc(hole.x, hole.y, R, 0, TAU);
 		g.fill();
-		// 事件视界细环（极细冷白）
+		// 光子环：紧贴视界的一圈冷白细线 —— 这一页真正"亮"的东西只有它。
 		g.save();
 		g.globalCompositeOperation = "lighter";
-		g.strokeStyle = `rgb(236 246 255 / ${clamp(0.5 * rimBoost, 0, 1)})`;
-		g.lineWidth = 0.9;
+		g.strokeStyle = `rgb(236 246 255 / ${clamp(0.42 * rimBoost, 0, 0.85)})`;
+		g.lineWidth = 1.5;
 		g.beginPath();
-		g.arc(hole.x, hole.y, R, 0, TAU);
+		g.arc(hole.x, hole.y, R * 1.012, 0, TAU);
+		g.stroke();
+		g.strokeStyle = `rgb(198 224 255 / ${clamp(0.14 * rimBoost, 0, 0.4)})`;
+		g.lineWidth = 3.4;
+		g.beginPath();
+		g.arc(hole.x, hole.y, R * 1.02, 0, TAU);
 		g.stroke();
 		g.restore();
 
-		// ⑥ 吸积盘近半（压在核心上面）
+		// ⑥ 吸积盘近半（压在核心上面，暗一档 —— 它只是"从前面过"，不是主角）
 		g.save();
 		g.globalCompositeOperation = "lighter";
-		drawDisk(g, hole, k, s, t, true, diskBoost);
+		drawDisk(g, hole, k, s, t, true, diskBoost * 0.85);
 		g.restore();
 
 		// ⑦ 吞噬反馈的引力波：一圈极淡的冷白往外扩
@@ -268,7 +292,10 @@ export function createHoleLayer(): HoleLayer {
 		}
 	}
 
-	/** 吸积盘：三色光带，各自转速不同；`near` = 只画靠近镜头的半圈。 */
+	/**
+	 * 吸积盘：三条细光带，各自转速不同；`near` = 只画靠近镜头的半圈。
+	 * 亮度是**压着调的**：单段峰值 0.2 上下，整圈叠起来最深的一条带也就 0.3 —— 暗盘。
+	 */
 	function drawDisk(
 		g: CanvasRenderingContext2D,
 		hole: Hole,
@@ -279,13 +306,13 @@ export function createHoleLayer(): HoleLayer {
 		boost: number,
 	) {
 		const R = hole.r;
-		for (let band = 0; band < DISK.length; band++) {
-			const rgb = DISK[band];
+		for (let band = 0; band < BANDS.length; band++) {
+			const rgb = BANDS[band];
 			if (!rgb) continue;
-			const inner = R * (1.26 + band * 0.34);
-			const outer = inner + R * (0.42 + band * 0.2);
+			const inner = R * (1.2 + band * 0.3);
+			const outer = inner + R * (0.22 + band * 0.18);
 			const spin = s.spin * (1 - band * 0.22) + t * 0.05 * (1 - band * 0.3);
-			const segs = 40;
+			const segs = 44;
 			for (let i = 0; i < segs; i++) {
 				const a0 = spin + (TAU * i) / segs;
 				const a1 = spin + (TAU * (i + 1)) / segs;
@@ -293,13 +320,13 @@ export function createHoleLayer(): HoleLayer {
 				const front = Math.sin(mid) >= 0;
 				if (front !== near) continue;
 				// 前面的亮、后面的暗（薄光边缘 + 深阴影）
-				const depth = front ? 1 : 0.42;
+				const depth = front ? 1 : 0.4;
 				// 靠视界那一侧更亮（"光源来自黑洞方向"）
 				const hot = 0.5 + 0.5 * Math.cos(mid);
-				const alpha = clamp((0.1 + 0.26 * hot) * depth * boost, 0, 1);
+				const alpha = clamp((0.035 + 0.15 * hot) * depth * boost, 0, 0.42);
 				g.strokeStyle = `rgb(${rgb.join(" ")})`;
 				g.globalAlpha = alpha;
-				g.lineWidth = (outer - inner) * (front ? 1 : 0.85);
+				g.lineWidth = (outer - inner) * (front ? 1 : 0.8);
 				g.beginPath();
 				g.ellipse(
 					hole.x,
@@ -312,13 +339,6 @@ export function createHoleLayer(): HoleLayer {
 				);
 				g.stroke();
 			}
-			// 内缘高光：一条更细更亮的冷白弧
-			g.globalAlpha = clamp(0.16 * boost * (near ? 1 : 0.4), 0, 1);
-			g.strokeStyle = "#eef5ff";
-			g.lineWidth = 1.1;
-			g.beginPath();
-			g.ellipse(hole.x, hole.y, inner, inner * k, 0, 0, TAU);
-			g.stroke();
 		}
 		g.globalAlpha = 1;
 	}
@@ -336,10 +356,12 @@ export function createHoleLayer(): HoleLayer {
 
 /** 事件视界半径：跟着视口走，但**永远留给法阵**（不许因此挡住整页）。 */
 export function holeOf(s: Shared, view: View): Hole {
+	// ⚠️ 0.062 在 1258×566 的视口上只有 35px —— "黑洞是视觉中心"当场落空，
+	//    整页看起来是一颗远处的白点。0.098 实测才撑得住：视界 56px、吸积盘直径 ~270px。
 	const r = clamp(
-		Math.min(view.w, view.h) * (view.w < 760 ? 0.075 : 0.062),
-		26,
-		92,
+		Math.min(view.w, view.h) * (view.w < 760 ? 0.115 : 0.098),
+		32,
+		118,
 	);
 	return { x: s.hx, y: s.hy, r };
 }

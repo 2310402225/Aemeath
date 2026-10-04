@@ -419,8 +419,8 @@ export function createRites(): Rites {
 		cooldown = 0.26;
 		// 点得离黑洞近 → 从黑洞中心向外展开（spec §三）
 		const near = Math.hypot(x - hole.x, y - hole.y) < Math.min(v.w, v.h) * 0.42;
-		const cx = near ? hole.x : x;
-		const cy = near ? hole.y : y;
+		let cx = near ? hole.x : x;
+		let cy = near ? hole.y : y;
 		// 同一时间最多三座：最旧的那座优先进入解体（spec §三 参数约束）
 		if (rites.length >= 3) {
 			const oldest = rites[0];
@@ -447,6 +447,17 @@ export function createRites(): Rites {
 		const nodes = [6, 8, 12, 16][Math.floor(rand() * 4)] ?? 8;
 		const R = Math.min(v.w, v.h) * 0.34 * (0.72 + rand() * 0.28);
 		const liteCap = s.lite ? 0.72 : 1;
+		// 升起高度分低/中/高三档（spec §八）
+		const riseH =
+			R * ([0.22, 0.36, 0.52][Math.floor(rand() * 3)] ?? 0.36) * liteCap;
+		// 🔴 钳回可视区。外圈投影到屏幕上是一个**横半轴 R、纵半轴 R*k** 的椭圆，而
+		//    `生成法阵` 按钮给的落点是 y = h/2 + sin(a)·h·0.24 —— 在 1258×566 上，
+		//    法阵有半个身子落在画布外，看起来就是"法阵被截断了"（其实是中心算到了外面）。
+		//    两个入口（点击 / 按钮）都从这里过，所以钳在 spawn 里最省事。
+		const padX = R * 0.94;
+		const padY = R * v.k * 0.94 + riseH * 0.45;
+		cx = clamp(cx, padX, Math.max(padX, v.w - padX));
+		cy = clamp(cy, padY, Math.max(padY, v.h - padY));
 		const rite: Rite = {
 			id: nextId++,
 			name: KINDS[kind] ?? "法阵",
@@ -454,8 +465,7 @@ export function createRites(): Rites {
 			cx,
 			cy,
 			R,
-			// 升起高度分低/中/高三档（spec §八）
-			riseH: R * ([0.22, 0.36, 0.52][Math.floor(rand() * 3)] ?? 0.36) * liteCap,
+			riseH,
 			speed: rand() < 0.45 ? 1.25 : 1,
 			spin: rand() * TAU,
 			spinV: (rand() < 0.5 ? -1 : 1) * (0.06 + rand() * 0.05),
@@ -802,7 +812,11 @@ export function createRites(): Rites {
 		alpha: number,
 	) {
 		const n = w.pts.length / 2;
-		if (n < 1) return;
+		// ⚠️ 这里是 `2` 不是 `1`。符文节点是**单点** wire（`[x,y]`），只有 1 个点 ——
+		//    按 `n<1` 放过去的话，`at(r,w,1)` 会读到不存在的 pts[2]/pts[3]（→0），
+		//    于是每一颗符文都会**多画一条从节点连到法阵中心**的放射线。十几个节点就是十几条，
+		//    整座阵"脏"得很，而这是纯粹的绘制 bug，不是设计。
+		if (n < 2) return;
 		const [ox, oy] = [r.cx, r.cy];
 		const k = view.k;
 		const z = w.z * lift;
@@ -825,11 +839,19 @@ export function createRites(): Rites {
 			g.lineTo(x1, y1);
 		}
 		if (!drawing) return;
-		const depth =
-			0.42 + 0.58 * clamp(0.5 + (w.pts[1] ?? 0) / Math.max(1, r.R), 0, 1);
-		g.globalAlpha = clamp(alpha * depth * w.base, 0, 1);
+		// 前后分层：两趟画（前半 y≥0 / 后半 y<0）本来就是为了让"靠近镜头的那半"亮一档。
+		// 原来这里拿 `w.pts[1]`（起点的局部 y）当深度 —— 整圈圆环起点固定在 0°，永远算出同一个值，
+		// 两层看着一样亮，"立体"就没了。直接按 half 给，才是这两趟画的意义。
+		const depth = half > 0 ? 0.95 : 0.45;
+		const core = clamp(alpha * depth * w.base, 0, 1);
 		g.strokeStyle = tintCss(r, w.tint);
-		g.lineWidth = 1 + w.base * 0.9;
+		// 两趟描同一条路径：先一圈宽的当辉光，再一圈窄的当芯。
+		// 想用 shadowBlur 一把梭？每帧上百条折线（外圈一条就是 96 段），那一项直接吃掉整页预算。
+		g.globalAlpha = core * 0.16;
+		g.lineWidth = (1.5 + w.base * 1.7) * 2.6;
+		g.stroke();
+		g.globalAlpha = core;
+		g.lineWidth = 1.5 + w.base * 1.7;
 		g.stroke();
 		g.globalAlpha = 1;
 	}
@@ -858,9 +880,36 @@ export function createRites(): Rites {
 								? 0
 								: 1;
 			const rev = r.phase === "generating" ? r.u : 1;
-			const fadeIn = r.phase === "generating" ? clamp(r.u * 4, 0, 1) : 1;
+			const fadeIn = r.phase === "generating" ? clamp(r.u * 5, 0, 1) : 1;
 			const fadeOut = r.phase === "dissolving" ? 1 - r.u * 0.55 : 1;
 			const alpha = r.phase === "absorbing" ? 0.3 : fadeIn * fadeOut;
+
+			// ⚠️ 成形那一段在 spec 里是**四拍**，不是"一整段一起淡进来"：
+			//    ①种子点亮 → ②核心符文 → ③由内向外扩展 → ④结构锁定。
+			//    四拍的进度全部从同一个 `u` 上切（再存一份进度迟早和它不同步）。
+			const gen = r.phase === "generating";
+			const gp = r.u;
+			const seedT = clamp(gp / 0.14, 0, 1); // ① 种子长大
+			const seedFade = 1 - clamp((gp - 0.12) / 0.22, 0, 1); // ② 核心亮起时让位
+			const coreT = clamp((gp - 0.12) / 0.24, 0, 1); // ② 核心符文
+			const outT = clamp((gp - 0.32) / 0.52, 0, 1); // ③ 由内向外
+			const lockT = clamp((gp - 0.86) / 0.14, 0, 1); // ④ 结构锁定
+
+			// ① 种子：中心先亮起一点，然后被核心符文接手
+			if (gen && seedFade > 0.01) {
+				g.save();
+				g.globalCompositeOperation = "lighter";
+				const rad = 7 + 18 * seedT;
+				const g0 = g.createRadialGradient(r.cx, r.cy, 0, r.cx, r.cy, rad);
+				g0.addColorStop(0, `rgb(${COLD.join(" ")} / ${0.85 * seedFade})`);
+				g0.addColorStop(0.42, `rgb(${r.rgb.join(" ")} / ${0.4 * seedFade})`);
+				g0.addColorStop(1, `rgb(${r.rgb.join(" ")} / 0)`);
+				g.fillStyle = g0;
+				g.beginPath();
+				g.arc(r.cx, r.cy, rad, 0, TAU);
+				g.fill();
+				g.restore();
+			}
 
 			// 升起时的中心光柱（spec §五 1）：先立柱子，圆环再往上抬
 			if (r.phase === "rising" && r.u > 0.05) {
@@ -883,8 +932,17 @@ export function createRites(): Rites {
 			for (const half of [-1, 1] as const) {
 				for (const w of r.wires) {
 					if (w.broke) continue;
-					// 由内向外：这个图元自己的展开窗口（spec §四 阶段三）
-					const win = clamp((rev - w.rank * 0.55) / 0.45, 0, 1);
+					// ② 核心符文先亮（只有内圈），③ 再由内向外把外圈依次点亮
+					const win = gen
+						? clamp(
+								Math.max(
+									coreT * (1 - w.rank * 2.2),
+									(outT - w.rank * 0.55) / 0.45,
+								),
+								0,
+								1,
+							)
+						: clamp((rev - w.rank * 0.55) / 0.45, 0, 1);
 					if (win <= 0) continue;
 					// 微弱轨迹先铺一层，再让能量把它填满
 					if (win < 1) {
@@ -926,6 +984,21 @@ export function createRites(): Rites {
 						g.restore();
 					}
 				}
+			}
+
+			// ④ 结构锁定：整座阵一次短促的"上锁"闪光（spec §四 阶段四）。
+			//    少了这一下，成形就只是"淡进来了"，立不住。
+			if (gen && lockT > 0) {
+				const a = (1 - lockT) * 0.5;
+				const rr = r.R * (1 + lockT * 0.24);
+				g.save();
+				g.globalCompositeOperation = "lighter";
+				g.strokeStyle = `rgb(${COLD.join(" ")} / ${a})`;
+				g.lineWidth = 2.6 * (1 - lockT) + 0.6;
+				g.beginPath();
+				g.ellipse(r.cx, r.cy, rr, rr * v.k, 0, 0, TAU);
+				g.stroke();
+				g.restore();
 			}
 		}
 

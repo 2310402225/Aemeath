@@ -22,15 +22,16 @@ import { url } from "@/utils/url-utils";
 		<canvas id="bh-sparks" class="bh-layer" aria-hidden="true"></canvas>
 		<canvas id="bh-hole" class="bh-layer" aria-hidden="true"></canvas>
 
-		<!-- 首屏文案：第一次真正动手之后退场。压在画面下沿，绝不盖黑洞 -->
+		<!-- 首屏文案：第一次真正动手之后退场。
+		     ⚠️ 挂在**顶部居中**，不是底部 —— 底部那一带是黑洞本体 + 吸积盘 + 生成按钮 + credit，
+		     挤在一起谁都看不清；顶部只有左右两个角被读数与退回按钮占着，中间是空的。 -->
 		<div class="bh-intro" id="bh-intro">
 			<p class="bh-kicker">载尘望星 · 交互长卷</p>
 			<h1 class="bh-h1">黑洞法阵</h1>
 			<p class="bh-sub">时空仪式</p>
 			<p class="bh-enter">
 				<span><b>点画面</b>任意处起一座法阵 · 离黑洞近就从黑洞里长出来</span>
-				<span><b>看闭环</b>由内向外成形 → 立体升起 → 顶峰停留 → 解体 → 被引力卷进黑洞</span>
-				<span><b>拖黑洞</b>它会被你挪开，松手弹回中心 · <b>拖法阵</b>松手后它会自己飘向黑洞</span>
+				<span><b>拖黑洞</b>可挪开，松手弹回中心 · <b>拖法阵</b>松手后它自己飘向黑洞</span>
 			</p>
 		</div>
 	</div>
@@ -218,7 +219,8 @@ import { url } from "@/utils/url-utils";
 		position: absolute;
 		left: 0;
 		right: 0;
-		bottom: clamp(4.2rem, 11vh, 7.5rem);
+		/* 顶部居中：底部那一带已经排了黑洞 / 按钮 / credit，再挤就互相打架 */
+		top: clamp(4rem, 10vh, 6.2rem);
 		z-index: 7;
 		text-align: center;
 		pointer-events: none;
@@ -260,7 +262,7 @@ import { url } from "@/utils/url-utils";
 		display: flex;
 		flex-direction: column;
 		gap: 0.3rem;
-		margin: 1.5rem auto 0;
+		margin: 1.1rem auto 0;
 		max-width: min(92%, 34rem);
 		font-size: 0.68rem;
 		line-height: 1.85;
@@ -429,13 +431,14 @@ import { url } from "@/utils/url-utils";
 		display: none;
 	}
 
+	/* 挪到左下角：底部正中那一格是"生成法阵"按钮，credit 原来压在按钮下沿上，
+	   两者都是居中、都贴着底，谁也读不清。左下角与右上角的读数正好对称。 */
 	.bh-credit {
 		position: absolute;
-		left: 50%;
-		bottom: 0.55rem;
+		left: var(--bh-float-x);
+		bottom: var(--bh-float-y);
 		z-index: 8;
 		margin: 0;
-		transform: translateX(-50%);
 		font-size: 0.56rem;
 		letter-spacing: 0.08em;
 		color: rgb(178 190 224 / 0.6);
@@ -479,7 +482,7 @@ import { url } from "@/utils/url-utils";
 		}
 
 		.bh-intro {
-			bottom: clamp(5rem, 14vh, 8rem);
+			top: clamp(3.4rem, 12vh, 5rem);
 		}
 
 		.bh-readout {
@@ -508,6 +511,14 @@ import { url } from "@/utils/url-utils";
 		.bh-help {
 			width: min(92vw, 24rem);
 			max-height: 48svh;
+		}
+	}
+
+	/* 矮屏（横屏手机 / 半屏笔记本）：首屏那两行提示会与黑洞撞在一起，直接收掉 ——
+	   同样的内容在"操作说明"面板和正文里都有，不必在这里重复一遍。 */
+	@media (max-height: 640px) {
+		.bh-enter {
+			display: none;
 		}
 	}
 

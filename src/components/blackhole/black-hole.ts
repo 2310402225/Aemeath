@@ -72,6 +72,8 @@ export function createBlackHoleApp(): BlackHoleApp {
 	let last = 0;
 	let drawAcc = 0;
 	let movedFar = false;
+	/** 这一次按下有没有落在画布内（onUp 生成法阵前要再确认一次） */
+	let downInStage = false;
 	let downPos = { x: 0, y: 0 };
 	/** 按下时认定要抓的东西（误触阈值见头注释） */
 	let pending: { kind: "hole" } | { kind: "rite"; index: number } | null = null;
@@ -189,7 +191,10 @@ export function createBlackHoleApp(): BlackHoleApp {
 		// 浮层控件（按钮、说明面板）自己处理
 		if (el?.closest("button,a,input,label,select,.bh-help")) return;
 		const { x, y } = at(e);
+		// 越界连状态机都不进：否则 onUp 会拿着一个画布外的坐标去生成法阵
+		// （画在看不见的地方，但读数照变 —— 排查时极难意识到）
 		if (x < 0 || y < 0 || x > view.w || y > view.h) return;
+		downInStage = true;
 		s.px = x;
 		s.py = y;
 		hideIntro();
@@ -246,22 +251,23 @@ export function createBlackHoleApp(): BlackHoleApp {
 		if (s.op === "drag_rite" && dragIdx >= 0) rites.drag(dragIdx, x, y);
 	}
 
-	function onUp(e: PointerEvent) {
+	function onUp() {
 		if (!alive) return;
-		const { x, y } = at(e);
 		const wasOp = s.op;
+		// 🔴 主交互就在这里。原写法是 `if (wasOp !== "idle") { s.op = "idle"; return; }` ——
+		//    而按下时 op 已经变成 "pressing"，于是**每一次干净的点击都在这一行被吞掉**：
+		//    点画面永远不生成法阵，只剩右下角那个按钮能生成。
+		//    正确的判据是「按下过 ∧ 没有拖动」，不是「op 还是 idle」。
+		const tap = wasOp === "pressing" && !movedFar && downInStage;
 		pending = null;
+		downInStage = false;
 		if (wasOp === "drag_rite" && dragIdx >= 0) {
 			// 松手法阵：它会自己慢慢飘向黑洞，并在漂移中解体（spec §七 3）
 			rites.release(dragIdx);
 			dragIdx = -1;
 		}
-		if (wasOp !== "idle") {
-			s.op = "idle";
-			return;
-		}
-		// 点一下 = 生成一座法阵（同一个位置连点会被 spawn 自身的冷却挡掉）
-		if (!movedFar) rites.spawn(x, y, s, view, holeOf(s, view));
+		s.op = "idle";
+		if (tap) rites.spawn(downPos.x, downPos.y, s, view, holeOf(s, view));
 	}
 
 	function onLeave() {
