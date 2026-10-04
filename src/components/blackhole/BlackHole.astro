@@ -1,0 +1,525 @@
+---
+import { url } from "@/utils/url-utils";
+// 黑洞法阵外壳：一片深空、一颗稳定黑洞、四张画布（背景 / 法阵 / 粒子 / 黑洞本体），正文走 <slot />。
+//
+// 为什么需要这个 .astro（和时间走马灯、丝缕四面体、月下灯市同一个理由）：fullBleed 分支绕开
+// MainGridLayout，站点的樱花／壁纸／顶部渐变／欢迎条会一起糊在宇宙上。压掉它们只能用全局样式 ——
+// 而 <style is:global> 必须用 :has(#bh-stage) 钉住作用域，否则会被打进全站 CSS 误伤别的页面。
+//
+// 层序（z-index 是按"谁压谁"排的，不是按重绘预算；重绘预算见 black-hole.ts 的降帧）：
+//   1 背景星野 → 2 法阵 → 3 粒子 → 4 黑洞本体
+// 黑洞在最上：spec 要求它**始终是视觉中心、不被法阵遮挡**；被牵引的粒子也就自然消失在盘后。
+---
+
+<section
+	class="bh-stage"
+	id="bh-stage"
+	tabindex="0"
+	aria-label="黑洞法阵交互画面：点画面任意处生成法阵，按回车同样可以生成">
+	<div class="bh-scene">
+		<canvas id="bh-bg" class="bh-layer" aria-hidden="true"></canvas>
+		<canvas id="bh-rite" class="bh-layer" aria-hidden="true"></canvas>
+		<canvas id="bh-sparks" class="bh-layer" aria-hidden="true"></canvas>
+		<canvas id="bh-hole" class="bh-layer" aria-hidden="true"></canvas>
+
+		<!-- 首屏文案：第一次真正动手之后退场。压在画面下沿，绝不盖黑洞 -->
+		<div class="bh-intro" id="bh-intro">
+			<p class="bh-kicker">载尘望星 · 交互长卷</p>
+			<h1 class="bh-h1">黑洞法阵</h1>
+			<p class="bh-sub">时空仪式</p>
+			<p class="bh-enter">
+				<span><b>点画面</b>任意处起一座法阵 · 离黑洞近就从黑洞里长出来</span>
+				<span><b>看闭环</b>由内向外成形 → 立体升起 → 顶峰停留 → 解体 → 被引力卷进黑洞</span>
+				<span><b>拖黑洞</b>它会被你挪开，松手弹回中心 · <b>拖法阵</b>松手后它会自己飘向黑洞</span>
+			</p>
+		</div>
+	</div>
+
+	<!-- 读数：当前阶段、法阵名、已吞噬数。低透明度但不糊（正文对比度按 AA 算过） -->
+	<p class="bh-readout" id="bh-readout">
+		<span class="bh-dot" aria-hidden="true"></span>
+		<span id="bh-state">虚空静默</span>
+		<span class="bh-sep" aria-hidden="true">·</span>
+		<span>已吞噬 <span id="bh-count">0</span> 座</span>
+	</p>
+
+	<a class="bh-home bh-btn" href={url("/")} aria-label="退回博客首页">
+		<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+			<path
+				d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.6"
+				stroke-linecap="round"
+				stroke-linejoin="round"></path>
+			<path
+				d="M3 10a2 2 0 0 1 .7-1.5l7-6a2 2 0 0 1 2.6 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.6"
+				stroke-linecap="round"
+				stroke-linejoin="round"></path>
+		</svg>
+		<span>退回博客</span>
+	</a>
+
+	<!-- 唯一的动作按钮：画布点得到，键盘也要走得到（触屏与键鼠等价） -->
+	<div class="bh-actions">
+		<button type="button" class="bh-btn bh-btn-primary" id="bh-make">生成法阵</button>
+	</div>
+
+	<div class="bh-help-wrap">
+		<button
+			type="button"
+			class="bh-btn"
+			id="bh-help-toggle"
+			aria-expanded="false"
+			aria-controls="bh-help">
+			<span>操作说明</span>
+		</button>
+		<div class="bh-help" id="bh-help" hidden>
+			<section>
+				<h3>法阵</h3>
+				<ul>
+					<li><b>生成</b>点画面任意处 · 随机七种阵型之一，由内向外逐圈亮起来</li>
+					<li><b>靠近</b>点得离黑洞近 · 法阵从黑洞中心向外展开</li>
+					<li><b>共存</b>最多三座 · 第四座来时最旧的那座先解体</li>
+					<li><b>拖动</b>按住成形后的法阵 · 松手它自己慢慢飘向黑洞并解体</li>
+				</ul>
+			</section>
+			<section>
+				<h3>黑洞</h3>
+				<ul>
+					<li><b>靠近</b>指针挨近 · 吸积盘转得更快，星尘向内偏</li>
+					<li><b>拖动</b>按住拖 · 挪开一点，松手平滑弹回画面中心</li>
+					<li><b>吞噬</b>法阵碎片被卷进去 · 事件视界闪一圈，吸积盘亮一档</li>
+				</ul>
+			</section>
+			<p class="bh-help-foot">回车同样可以生成 · Esc 收起这块说明</p>
+		</div>
+	</div>
+
+	<p class="bh-credit">星野、吸积盘、法阵、引力，全部当场算出来 · Canvas 2D</p>
+</section>
+
+<article class="bh-article">
+	<div class="bh-article-inner prose prose-base dark:prose-invert max-w-none!">
+		<slot />
+	</div>
+</article>
+
+<script>
+	import { createBlackHoleApp, type BlackHoleApp } from "./black-hole";
+
+	// swup 客户端导航时本页可能是换内容进来而不是整页加载 —— 模块只执行一次，
+	// 所以挂载写成幂等的，并在内容被换掉前把上一个实例拆干净。
+	let app: BlackHoleApp | null = null;
+
+	function boot() {
+		// 挂载点由模块自己从 document 里找（不吃外来的根元素）：querySelector 只搜后代
+		// 不搜自己，传 #bh-stage 进去第一句就是 null。
+		if (app || !document.getElementById("bh-stage")) return;
+		app = createBlackHoleApp();
+	}
+
+	function teardown() {
+		app?.destroy();
+		app = null;
+	}
+
+	boot();
+	document.addEventListener("swup:contentReplaced", boot);
+	document.addEventListener("swup:page:view", boot);
+	document.addEventListener("swup:willReplaceContent", teardown);
+</script>
+
+<style is:global>
+	/* 首屏是深空，站点的樱花／壁纸／顶部渐变／欢迎条会糊在上面。
+	     用 :has() 钉住作用域（页面里有 #bh-stage 时才生效），否则这份 global 样式
+	     会被打进全站 CSS，在别的页面误伤。
+	     ⚠️ 清单里的 `.top-gradient-highlight` 必须带点：它是 class，写成类型选择器
+	     永远不匹配、也不报错，只是在画面上多一层浅灰。 */
+	html:has(#bh-stage) #canvas_sakura,
+	html:has(#bh-stage) welcome-toast,
+	html:has(#bh-stage) #page-background-decoration,
+	html:has(#bh-stage) .top-gradient-highlight,
+	html:has(#bh-stage) #wallpaper-wrapper {
+		display: none !important;
+	}
+
+	/* 页面外的部分仍是站点底色，刷成深空同色，否则窄屏滚到正文会看到接缝。
+	   ⚠️ 这里必须写字面量：自定义属性只向下继承，在 `html` 这一层取不到 → 整条声明被丢掉。 */
+	html:has(#bh-stage) {
+		background: #05050a;
+	}
+</style>
+
+<style>
+	.bh-stage {
+		--bh-cold: #e8f2ff;
+		/* ⚠️ 算出来的，不是挑出来的：#b9c2da 压在 #05050a 上是 11.6:1，
+		   连"低透明度"的提示文字也稳过 AA 那条 4.5:1。 */
+		--bh-text: #b9c2da;
+		--bh-line: rgb(255 255 255 / 0.14);
+		--bh-panel: rgb(9 9 16 / 0.7);
+		--bh-panel-light: rgb(16 16 26 / 0.82);
+		--bh-gold: #d8ae64;
+		--bh-float-x: clamp(0.9rem, 3vw, 2rem);
+		--bh-float-y: clamp(0.9rem, 3vh, 1.8rem);
+		position: relative;
+		height: 100svh;
+		min-height: 34rem;
+		overflow: hidden;
+		color: var(--bh-text);
+		background: #05050a;
+	}
+
+	.bh-stage:focus-visible {
+		outline: 2px solid var(--bh-cold);
+		outline-offset: -4px;
+	}
+
+	.bh-scene {
+		position: absolute;
+		inset: 0;
+	}
+
+	.bh-layer {
+		position: absolute;
+		inset: 0;
+		display: block;
+		width: 100%;
+		height: 100%;
+		/* 点画面、拖黑洞、拖法阵都要吃掉手势，不能让页面跟着滚 */
+		touch-action: none;
+	}
+
+	#bh-bg {
+		z-index: 1;
+	}
+
+	/* 法阵在背景之上、粒子与黑洞之下 */
+	#bh-rite {
+		z-index: 2;
+	}
+
+	#bh-sparks {
+		z-index: 3;
+	}
+
+	/* 黑洞永远在最上面：spec 要求它不被法阵遮挡 */
+	#bh-hole {
+		z-index: 4;
+	}
+
+	/* ---------------------------------------------------------- 首屏文案 */
+
+	.bh-intro {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: clamp(4.2rem, 11vh, 7.5rem);
+		z-index: 7;
+		text-align: center;
+		pointer-events: none;
+		transition: opacity 900ms ease;
+	}
+
+	.bh-intro.is-gone {
+		opacity: 0;
+	}
+
+	.bh-kicker {
+		margin: 0 0 0.5rem;
+		font-size: 0.6rem;
+		letter-spacing: 0.36em;
+		text-indent: 0.36em;
+		color: rgb(190 202 232 / 0.72);
+	}
+
+	.bh-h1 {
+		margin: 0;
+		font-size: clamp(1.7rem, 4vw, 2.7rem);
+		font-weight: 500;
+		line-height: 1.12;
+		letter-spacing: 0.32em;
+		text-indent: 0.32em;
+		color: #f2f5ff;
+		text-shadow: 0 0 28px rgb(150 190 255 / 0.3);
+	}
+
+	.bh-sub {
+		margin: 0.55rem 0 0;
+		font-size: 0.68rem;
+		letter-spacing: 0.46em;
+		text-indent: 0.46em;
+		color: rgb(178 190 224 / 0.72);
+	}
+
+	.bh-enter {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		margin: 1.5rem auto 0;
+		max-width: min(92%, 34rem);
+		font-size: 0.68rem;
+		line-height: 1.85;
+		letter-spacing: 0.06em;
+		color: rgb(186 196 226 / 0.78);
+	}
+
+	.bh-enter b {
+		color: var(--bh-gold);
+		font-weight: 500;
+	}
+
+	/* ---------------------------------------------------------- 浮层控件 */
+
+	.bh-readout {
+		position: absolute;
+		left: var(--bh-float-x);
+		top: var(--bh-float-y);
+		z-index: 8;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0;
+		font-size: 0.7rem;
+		letter-spacing: 0.14em;
+		color: var(--bh-text);
+		pointer-events: none;
+		text-shadow: 0 1px 12px rgb(0 0 0 / 0.8);
+	}
+
+	.bh-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 999px;
+		background: var(--bh-cold);
+		box-shadow: 0 0 10px rgb(200 226 255 / 0.8);
+	}
+
+	.bh-sep {
+		opacity: 0.4;
+	}
+
+	.bh-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.45rem;
+		height: 44px;
+		padding: 0 1.1rem;
+		border: 1px solid var(--bh-line);
+		border-radius: 999px;
+		background: var(--bh-panel);
+		-webkit-backdrop-filter: blur(10px);
+		backdrop-filter: blur(10px);
+		color: #eef2ff;
+		/* ⚠️ button 不继承字体，a 继承。少了这一行，同一排的两个按钮字体对不上。 */
+		font: inherit;
+		font-size: 0.72rem;
+		letter-spacing: 0.14em;
+		text-decoration: none;
+		white-space: nowrap;
+		cursor: pointer;
+		transition:
+			border-color 220ms ease,
+			transform 220ms ease,
+			background-color 220ms ease;
+	}
+
+	.bh-btn:hover {
+		border-color: rgb(200 226 255 / 0.5);
+		transform: translateY(-2px);
+	}
+
+	.bh-btn:focus-visible {
+		outline: 2px solid var(--bh-cold);
+		outline-offset: 3px;
+	}
+
+	.bh-btn-primary {
+		border-color: rgb(200 226 255 / 0.28);
+		background: var(--bh-panel-light);
+		box-shadow: 0 0 24px rgb(120 160 255 / 0.16);
+	}
+
+	.bh-home {
+		position: absolute;
+		right: var(--bh-float-x);
+		top: var(--bh-float-y);
+		z-index: 8;
+	}
+
+	.bh-actions {
+		position: absolute;
+		left: 50%;
+		bottom: var(--bh-float-y);
+		z-index: 8;
+		transform: translateX(-50%);
+	}
+
+	.bh-help-wrap {
+		position: absolute;
+		right: var(--bh-float-x);
+		bottom: var(--bh-float-y);
+		z-index: 9;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0.6rem;
+	}
+
+	.bh-help {
+		width: min(90vw, 24rem);
+		max-height: 62svh;
+		overflow: auto;
+		padding: 0.9rem 1.1rem 0.85rem;
+		border: 1px solid var(--bh-line);
+		border-radius: 0.9rem;
+		background: var(--bh-panel);
+		-webkit-backdrop-filter: blur(12px);
+		backdrop-filter: blur(12px);
+		color: var(--bh-text);
+		font-size: 0.68rem;
+		line-height: 1.95;
+	}
+
+	.bh-help h3 {
+		margin: 0 0 0.3rem;
+		font-size: 0.72rem;
+		font-weight: 500;
+		letter-spacing: 0.18em;
+		color: var(--bh-cold);
+	}
+
+	.bh-help section + section {
+		margin-top: 0.7rem;
+		padding-top: 0.7rem;
+		border-top: 1px solid rgb(255 255 255 / 0.12);
+	}
+
+	.bh-help ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.bh-help li {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.bh-help b {
+		flex: 0 0 3.6rem;
+		color: #fff;
+		font-weight: 500;
+	}
+
+	.bh-help-foot {
+		margin: 0.7rem 0 0;
+		padding-top: 0.6rem;
+		border-top: 1px solid rgb(255 255 255 / 0.12);
+		color: rgb(178 190 224 / 0.72);
+	}
+
+	/* ⚠️ 上面给了 display，[hidden] 就压不住了，必须显式写回来 */
+	.bh-help[hidden] {
+		display: none;
+	}
+
+	.bh-credit {
+		position: absolute;
+		left: 50%;
+		bottom: 0.55rem;
+		z-index: 8;
+		margin: 0;
+		transform: translateX(-50%);
+		font-size: 0.56rem;
+		letter-spacing: 0.08em;
+		color: rgb(178 190 224 / 0.6);
+		pointer-events: none;
+		white-space: nowrap;
+	}
+
+	/* ---------------------------------------------------------- 正文 */
+
+	.bh-article {
+		position: relative;
+		z-index: 1;
+		background: #07070d;
+	}
+
+	.bh-article-inner {
+		width: min(760px, calc(100% - 2.5rem));
+		margin: 0 auto;
+		padding: clamp(2.4rem, 6vh, 4.4rem) 0 clamp(4rem, 10vh, 7rem);
+	}
+
+	.bh-article-inner h2 {
+		margin-top: 2.6em;
+	}
+
+	.bh-article-inner h2:first-child {
+		margin-top: 0;
+	}
+
+	/* ---------------------------------------------------------- 窄屏 */
+
+	@media (max-width: 760px) {
+		.bh-h1 {
+			letter-spacing: 0.2em;
+			text-indent: 0.2em;
+		}
+
+		.bh-enter {
+			margin-top: 1rem;
+			font-size: 0.64rem;
+		}
+
+		.bh-intro {
+			bottom: clamp(5rem, 14vh, 8rem);
+		}
+
+		.bh-readout {
+			font-size: 0.62rem;
+			letter-spacing: 0.08em;
+		}
+
+		.bh-home span {
+			/* 只留图标，把顶栏让给画面 —— aria-label 仍在，读屏读得到 */
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip: rect(0, 0, 0, 0);
+		}
+
+		.bh-home {
+			padding: 0;
+			width: 44px;
+		}
+
+		.bh-credit {
+			display: none;
+		}
+
+		.bh-help {
+			width: min(92vw, 24rem);
+			max-height: 48svh;
+		}
+	}
+
+	/* 尊重系统的「减少动态效果」：CSS 这一侧关过渡，canvas 那侧读同一个查询 */
+	@media (prefers-reduced-motion: reduce) {
+		.bh-intro,
+		.bh-btn {
+			transition-duration: 1ms;
+		}
+
+		.bh-btn:hover {
+			transform: none;
+		}
+	}
+</style>
