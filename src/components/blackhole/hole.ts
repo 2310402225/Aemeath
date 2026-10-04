@@ -203,10 +203,12 @@ export function createHoleLayer(): HoleLayer {
 		const diskBoost = 1 + 0.35 * s.pulse;
 		const rimBoost = 1 + 0.9 * s.pulse;
 
-		// ③ 吸积盘远半（压在核心下面）
+		// ③ 吸积盘。**一趟画完**：盘的内缘在视界之外，和核心不重叠，
+		//    所以不需要"远半压在核心下、近半压在核心上"那套 —— 那两趟正是上一版
+		//    把 alpha 叠成荧光白圈的原因（见 drawDisk 的注释）。
 		g.save();
 		g.globalCompositeOperation = "lighter";
-		drawDisk(g, hole, k, s, t, false, diskBoost);
+		drawDisk(g, hole, k, s, t, diskBoost);
 		g.restore();
 
 		// ④ 引力透镜：**只贴视界一圈**的冷白辉光 + 上下两道被弯折的细弧。
@@ -221,8 +223,8 @@ export function createHoleLayer(): HoleLayer {
 			hole.y,
 			R * 1.16,
 		);
-		ring.addColorStop(0, `rgb(226 238 255 / ${0.2 * rimBoost})`);
-		ring.addColorStop(0.55, `rgb(150 186 255 / ${0.07 * rimBoost})`);
+		ring.addColorStop(0, `rgb(226 238 255 / ${0.13 * rimBoost})`);
+		ring.addColorStop(0.55, `rgb(150 186 255 / ${0.05 * rimBoost})`);
 		ring.addColorStop(1, "rgb(120 160 255 / 0)");
 		g.fillStyle = ring;
 		g.fillRect(hole.x - R * 1.2, hole.y - R * 1.2, R * 2.4, R * 2.4);
@@ -256,27 +258,24 @@ export function createHoleLayer(): HoleLayer {
 		g.arc(hole.x, hole.y, R, 0, TAU);
 		g.fill();
 		// 光子环：紧贴视界的一圈冷白细线 —— 这一页真正"亮"的东西只有它。
+		// ⚠️ 它必须**细而弱**。画粗一点（3.4px、0.42 白）配上扁平的盘，观感就成了
+		//    "一个白圆泡泡套在黑球外面"——因为盘是压扁的椭圆、环是正圆，两者不在一个平面感里。
+		//    现在只留发丝一圈，读起来才是"视界的边"。
 		g.save();
 		g.globalCompositeOperation = "lighter";
-		g.strokeStyle = `rgb(236 246 255 / ${clamp(0.42 * rimBoost, 0, 0.85)})`;
-		g.lineWidth = 1.5;
+		g.strokeStyle = `rgb(236 246 255 / ${clamp(0.3 * rimBoost, 0, 0.62)})`;
+		g.lineWidth = 1.2;
 		g.beginPath();
-		g.arc(hole.x, hole.y, R * 1.012, 0, TAU);
+		g.arc(hole.x, hole.y, R * 1.008, 0, TAU);
 		g.stroke();
-		g.strokeStyle = `rgb(198 224 255 / ${clamp(0.14 * rimBoost, 0, 0.4)})`;
-		g.lineWidth = 3.4;
+		g.strokeStyle = `rgb(198 224 255 / ${clamp(0.09 * rimBoost, 0, 0.26)})`;
+		g.lineWidth = 2.6;
 		g.beginPath();
-		g.arc(hole.x, hole.y, R * 1.02, 0, TAU);
+		g.arc(hole.x, hole.y, R * 1.016, 0, TAU);
 		g.stroke();
 		g.restore();
 
-		// ⑥ 吸积盘近半（压在核心上面，暗一档 —— 它只是"从前面过"，不是主角）
-		g.save();
-		g.globalCompositeOperation = "lighter";
-		drawDisk(g, hole, k, s, t, true, diskBoost * 0.85);
-		g.restore();
-
-		// ⑦ 吞噬反馈的引力波：一圈极淡的冷白往外扩
+		// ⑥ 吞噬反馈的引力波：一圈极淡的冷白往外扩
 		if (s.wave >= 0) {
 			const u = clamp(s.wave / 1.5, 0, 1);
 			const rr = R * 1.1 + u * Math.min(view.w, view.h) * 0.42;
@@ -293,13 +292,17 @@ export function createHoleLayer(): HoleLayer {
 	}
 
 	/**
-	 * 吸积盘：一层很淡的椭圆辉光 + 三条**细**光带。
-	 * 🔴 这里是最容易翻车的一处，两条规矩：
-	 *   ① 盘必须是细的。带一厚（原来 0.4R 那种）在加色混合下就变成不透明的彩色盘子，
-	 *      三带再一叠 —— 整颗黑洞成了一坨饱和的蓝环，跟"暗宇宙里一点冷光"毫不沾边。
-	 *   ② 前后**不许二值切**。`front !== near → continue` 会在切点留下一道笔直的接缝
-	 *      （厚带上尤其明显，看着像被刀切开），而且切点那一圈的 alpha 还是满的。
-	 *      改成按 sin(角度) 连续加权：两趟各自在切点收到最低，谁也不留硬边。
+	 * 吸积盘：一层很淡的椭圆辉光 + 三条细光带。
+	 * 🔴 这里翻过两次车，三条规矩：
+	 *   ① 盘必须是**细**的。带一厚（0.4R 那种）在加色混合下就成了不透明的彩色盘子，
+	 *      三条一叠 → 一坨饱和的蓝环，跟"暗宇宙里一点冷光"毫不沾边。
+	 *   ② **一趟画整圈**。曾经按 `front !== near → continue` 拆前后两趟：切点处留一道
+	 *      笔直的接缝（薄视角下像被刀切开）。改成连续加权又踩了第二个坑 —— 两趟各自都把
+	 *      **整圈**点了一遍，alpha 与亮度等于翻倍，画出来是三条荧光白圈，而且前后梯度被
+	 *      两趟互相填平，看着依然均匀。现在只画一趟，前后亮度由 `sin(角度)` 单值决定：
+	 *      既没有接缝，也不会叠两次。（盘的内缘在视界之外，本来就不需要靠"画在核心前后"
+	 *      来分遮挡 —— 那两趟的存在意义从一开始就没有。）
+	 *   ③ 每条带描两遍：宽而淡的当软边、窄而亮的当芯，才有"燃"的边而不是一条塑料线。
 	 */
 	function drawDisk(
 		g: CanvasRenderingContext2D,
@@ -307,53 +310,54 @@ export function createHoleLayer(): HoleLayer {
 		k: number,
 		s: Shared,
 		t: number,
-		near: boolean,
 		boost: number,
 	) {
 		const R = hole.r;
 
-		// 远半那趟顺带铺一层椭圆辉光 —— 用 scale 把圆形渐变压成椭圆，不必手搓椭圆渐变
-		if (!near) {
-			g.save();
-			g.translate(hole.x, hole.y);
-			g.scale(1, k);
-			const halo = g.createRadialGradient(0, 0, R * 1.02, 0, 0, R * 2.6);
-			halo.addColorStop(0, "rgb(160 200 255 / 0)");
-			halo.addColorStop(
-				0.32,
-				`rgb(126 168 255 / ${clamp(0.06 * boost, 0, 0.1)})`,
-			);
-			halo.addColorStop(1, "rgb(96 132 255 / 0)");
-			g.fillStyle = halo;
-			g.beginPath();
-			g.arc(0, 0, R * 2.6, 0, TAU);
-			g.fill();
-			g.restore();
-		}
+		// 椭圆辉光：盘的"体积感"靠这一层，不靠加厚光带。
+		// 用 translate + scale 把圆形渐变压成椭圆 —— 省得手搓椭圆渐变。
+		g.save();
+		g.translate(hole.x, hole.y);
+		g.scale(1, k);
+		const halo = g.createRadialGradient(0, 0, R, 0, 0, R * 2.7);
+		halo.addColorStop(0, "rgb(160 200 255 / 0)");
+		halo.addColorStop(
+			0.3,
+			`rgb(120 162 255 / ${clamp(0.07 * boost, 0, 0.12)})`,
+		);
+		halo.addColorStop(1, "rgb(88 124 250 / 0)");
+		g.fillStyle = halo;
+		g.beginPath();
+		g.arc(0, 0, R * 2.7, 0, TAU);
+		g.fill();
+		g.restore();
 
 		g.lineCap = "round";
 		for (let band = 0; band < BANDS.length; band++) {
 			const rgb = BANDS[band];
 			if (!rgb) continue;
-			// 带与带之间留出空隙：细是这一层的全部意义
-			const rr = R * (1.34 + band * 0.42);
-			const thick = R * (0.05 + band * 0.022);
+			const rr = R * (1.36 + band * 0.42); // 1.36R / 1.78R / 2.20R：带间留空隙
+			const thick = R * (0.08 + band * 0.03);
 			const spin = s.spin * (1 - band * 0.22) + t * 0.05 * (1 - band * 0.3);
-			const segs = 84;
-			g.lineWidth = thick;
+			const gain = 1 - band * 0.3; // 内圈最亮：光源在视界那一侧
+			const segs = 72;
 			g.strokeStyle = `rgb(${rgb.join(" ")})`;
-			for (let i = 0; i < segs; i++) {
-				const a0 = spin + (TAU * i) / segs;
-				const a1 = spin + (TAU * (i + 1)) / segs;
-				const mid = (a0 + a1) / 2 - spin;
-				const face = Math.sin(mid); // +1 靠镜头 / −1 绕到背后
-				// 连续加权：本趟只认自己这一侧的 face，切点处自动收到 0.3 → 没有硬接缝
-				const w = 0.3 + 0.7 * (near ? Math.max(0, face) : Math.max(0, -face));
-				const hot = 0.5 + 0.5 * Math.cos(mid); // 一侧略亮，盘才有方向感
-				g.globalAlpha = clamp((0.05 + 0.3 * hot) * w * boost, 0, 0.42);
-				g.beginPath();
-				g.ellipse(hole.x, hole.y, rr, rr * k, 0, a0, a1);
-				g.stroke();
+			for (const [wScale, aScale] of [
+				[1, 0.3],
+				[0.44, 1],
+			] as const) {
+				g.lineWidth = thick * wScale;
+				for (let i = 0; i < segs; i++) {
+					const a0 = spin + (TAU * i) / segs;
+					const a1 = spin + (TAU * (i + 1)) / segs;
+					const face = Math.sin((a0 + a1) / 2 - spin);
+					// 靠镜头那半亮、绕到背后那半暗，沿 sin 连续过渡
+					const lit = 0.34 + 0.66 * (0.5 + 0.5 * face);
+					g.globalAlpha = clamp(0.24 * lit * gain * boost * aScale, 0, 0.3);
+					g.beginPath();
+					g.ellipse(hole.x, hole.y, rr, rr * k, 0, a0, a1);
+					g.stroke();
+				}
 			}
 		}
 		g.globalAlpha = 1;
