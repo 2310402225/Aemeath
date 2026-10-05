@@ -1358,7 +1358,10 @@ export function createRites(): Rites {
 				}
 			}
 
-			r.spin += r.spinV * dt;
+			// ⚠️ 自转要读 `calm`（`prefers-reduced-motion`）：这一页黑洞层、双位面都读了，
+			//    法阵层原来漏了 —— 而法阵**永远在自转**（`spinV` 0.06~0.11 rad/s），
+			//    是这一层里唯一的持续动画，恰恰是最该被降速的那一个。
+			r.spin += r.spinV * dt * (s.calm ? 0.25 : 1);
 
 			// 吞噬完成：该阵的碎片全没了才算（粒子不带归属，用 `hasOwnSparks` 近似判断）
 			if (r.phase === "absorbing" && r.t > r.dur && !hasOwnSparks(r)) {
@@ -1663,6 +1666,9 @@ export function createRites(): Rites {
 		// 🔴 视界脉冲扫过全场时，所有法阵**一起亮一下**（spec §2.2"同步共振发光"）。
 		//    这是唯一一处"法阵的亮度不由自己决定" —— 也是"脉冲扫过全场"看得见的原因。
 		const reson = 1 + clamp(s.pulse, 0, 1.35) * 0.55;
+		// ⚠️ 符文晶体的呼吸脉动是这一层里唯一"没有信息、纯装饰"的循环动画，
+		//    `prefers-reduced-motion` 下直接停住（冻结在相位 0，不是变慢）。
+		const pulseT = s.calm ? 0 : time;
 		for (const r of rites) {
 			const lift =
 				r.phase === "generating"
@@ -1767,7 +1773,7 @@ export function createRites(): Rites {
 						// ⚠️ 晶体高度按**法阵半径**给。写死 4+10px 的话，法阵一大一小
 						//    （R 从 40 到 160）晶体就不成比例了。
 						const h = r.R * (0.05 + 0.1 * lift);
-						const pulse = 1 + 0.35 * Math.sin(time * 2.4 + w.rank * 9);
+						const pulse = 1 + 0.35 * Math.sin(pulseT * 2.4 + w.rank * 9);
 						const deth = back ? 0.55 : 1;
 						g.save();
 						g.globalAlpha = clamp(
