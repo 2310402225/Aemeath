@@ -14,6 +14,7 @@ import {
 	lerp,
 	type Phase,
 	project,
+	RITE_K,
 	rngOf,
 	type Shared,
 	type Stage,
@@ -77,19 +78,34 @@ const BASE_KINDS = [0, 2, 3, 6] as const;
 const densityK = (stage: Stage) => (stage >= 8 ? 2 : stage >= 2 ? 1.5 : 1);
 
 /**
- * 台面高度剖面：内高外低、**四层阶梯**。单位 = 升起高度 `riseH`（见 `Wire.z`）。
- * 🔴 参考图里那些法阵都是"一圈套一圈、越往里越高的台"。平滑地线性上升会读成**一顶帽子**，
- *    反过来（外高内低）读成**一只碗** —— 只有阶梯才读成"多层法阵盘"。
+ * 台面高度剖面：**几乎同一高度**（0.94~1.0，单位是升起高度 `riseH`）。
+ * 🔴 原来是 0.04~0.84 的四层大台阶 —— 那样确实"立体"，但同心环、星形、弦网会被抬得
+ *    互相错位，整座法阵读不成**一个图形**（"法阵不还原"就是这个）。
+ *    设定图里那些法阵全是**同一平面上的完整曼陀罗**，所以盘面必须基本共面。
+ *    立体感改由**盘厚**给：外圈一圈侧壁 ＋ 一圈立齿（见 `skirt` / `fins`）。
  */
 function tierOf(rank: number): number {
-	if (rank >= 0.9) return 0.04;
-	if (rank >= 0.68) return 0.3;
-	if (rank >= 0.42) return 0.58;
-	return 0.84;
+	if (rank >= 0.9) return 0.94;
+	if (rank >= 0.68) return 0.96;
+	if (rank >= 0.42) return 0.98;
+	return 1;
 }
+
+/** 盘面高度：占 `riseH` 的比例。盘面上的一切都在这一层。 */
+const DECK = 1;
+/** 盘底高度：外圈侧壁往下走这么深 —— `DECK - BODY` 就是"盘有多厚"。 */
+const BODY = 0.58;
 
 /** 折线的 tint：0 主色 / 1 副色（冷白） / 2 猩红（只给裂纹用，少量） */
 type Tint = 0 | 1 | 2;
+
+/** 附带细纹（`Wire.extra` 的元素）：一条独立子折线 ＋ 它自己的逐点高度。 */
+type Sub = {
+	/** 扁平坐标，与 `Wire.pts` 同一套局部坐标（原点在法阵中心） */
+	p: number[];
+	/** 逐点高度（占 `riseH` 的比例），省则用主折线的 `z` */
+	zs?: number[];
+};
 
 type Wire = {
 	/** 扁平坐标 [x0,y0,x1,y1,…]，原点在法阵中心、单位像素 */
@@ -102,10 +118,20 @@ type Wire = {
 	 */
 	z: number;
 	/**
-	 * 逐点高度（可省），给了就覆盖 `z`：两端不同 = 一道**坡**（把上下两层台阶连起来），
-	 * 两端同 x/y 不同高 = 一片**竖刃**。这是"立体"能读出来的两条主要来源。
+	 * 逐点高度（可省），给了就覆盖 `z`：两端不同 = 一道**坡**，
+	 * 两端同 x/y 不同高 = 一片**竖刃**（投影里就是一条竖线 = 有厚度）。
 	 */
 	zs?: number[];
+	/**
+	 * 一起描的**附带细纹**（可省）：`strokeWire` 把它们与主折线塞进**同一个 path**，
+	 * 最后只 `stroke()` **一次**。
+	 * 🔴 这是"密度"唯一的正确来源。设定图里每张法阵都有几百条细纹（外圈齿、放射线、
+	 *    一圈小节点），逐条描就是几百次 `stroke()`（还会在 `lighter` 下把端点叠成珠子）。
+	 * **一批同色同宽同高的细纹永远合成一条。**
+	 */
+	extra?: Sub[];
+	/** 闭合**填充**（菱形/三角/星面）。有它就只 `fill()` 不描边 —— 线给"形"，面给"量"。 */
+	fill?: boolean;
 	/** 占外圈半径的比例 0..1：由内向外展开、由外向内解体都读它 */
 	rank: number;
 	tint: Tint;
@@ -467,19 +493,20 @@ export function createRites(): Rites {
 	};
 
 	/**
-	 * 把一条**平躺**的曲线按"离中心多远"披到台阶上去（逐点高度 `zs`）。
-	 * 🔴 给螺旋线用：一圈一圈收进去的涡线如果整条躺在同一层，投影里就会读成
-	 *    **一圈同心圆环**（"看起来杂"的头号来源，见 hole.ts 头注释）；披到台阶上之后
-	 *    它变成一条**绕着台阶盘上去的旋转楼梯** —— 同一个形状，立刻读得出层次。
-	 * ⚠️ 台阶是**阶梯函数**，所以这条线上会出现几段近乎竖直的短跳 —— 那不是瑕疵，
-	 *    那正是"走到台阶边缘要抬一步"读出来的东西。
+	 * 把一条**平躺**的曲线往里抬成一座浅漏斗（逐点高度 `zs`）。
+	 * 🔴 原来是"披到台阶上"（`tierOf(离中心多远)`）—— 那是台面还是四层大阶梯的时候写的。
+	 *    盘面改成基本共面之后 `tierOf` 只给 0.94~1.0 的起伏，`drape` 等于**什么都没做**，
+	 *    于是涡线整条躺在同一层、投影里读成**一圈套一圈的同心圆**（"看起来杂"的头号来源）。
+	 *    现在改成"中心高、外圈低"的**锥面**（0.86 → 1.0）：涡线有了"往中心旋进去"的深度，
+	 *    同一个形状立刻读得出层次。⚠️ 0.14 是上限 —— 再深涡线会从盘面里戳出来。
 	 */
 	const drape = (w: Wire, R: number): Wire => {
 		const zs: number[] = [];
 		for (let i = 0; i < w.pts.length / 2; i++) {
 			const x = w.pts[i * 2] ?? 0;
 			const y = w.pts[i * 2 + 1] ?? 0;
-			zs.push(tierOf(Math.hypot(x, y) / R));
+			const t = clamp(1 - Math.hypot(x, y) / R, 0, 1);
+			zs.push(0.86 + 0.14 * t);
 		}
 		return { ...w, zs };
 	};
@@ -615,16 +642,17 @@ export function createRites(): Rites {
 	// ─────────────────────────────────────────── 阵型配方
 
 	/**
-	 * 阵型配方（十三个）。共用同一套骨架：**外圈贴地 → 内圈抬高的四层台**
-	 * ＋ 一圈立起来的节点 ＋ 一个中心核。骨架一样，变的是台面上刻什么。
+	 * 阵型配方（十三个）。共用同一套骨架（见 `frame`）：**盘面 ＋ 盘厚 ＋ 外圈密齿
+	 * ＋ 满盘放射骨 ＋ 一圈小节点 ＋ 顶上刻什么**。
 	 *
 	 * 三条规矩（都是在这一页翻过车之后定下的）：
-	 *   ① 高度一律走 `tierOf(rank)`：外圈贴地、内圈抬高，读成"多层法阵盘"；
-	 *      线性上升读成帽子，反过来读成碗（见 `tierOf`）。
-	 *   ② 加任何东西之前先问"**它会不会读成一圈同心圆**" —— 同心圆环是"看起来杂"
-	 *      的头号来源（见 hole.ts 头注释）。所以环只留有功能的那几圈：外圈、刻度带、轨道。
-	 *   ③ 一个阵型控制在 **≤60 条 wire**。每条要描两趟（辉光 + 芯），同屏三座就是
-	 *      三百多次 `stroke()`；过了 70 条开始掉帧。各阵型的线数在文件末尾记着。
+	 *   ① 盘面**必须基本共面**（`tierOf` 只给 0.94~1.0 的微小起伏）。设定图里的法阵全是
+	 *      同一平面上的完整曼陀罗；盘面一抬高，同心环/星形/弦网就互相错位、读不成一个图形
+	 *      —— 这是"法阵不还原"的第二个原因（第一个是 `RITE_K`）。
+	 *   ② 加任何东西之前先问两件事：「**它会不会读成一圈同心圆**」（同心圆是"看起来杂"
+	 *      的头号来源）和「**它该不该走 `extra` 合成一条**」（成批的短纹一律打包）。
+	 *   ③ 一个阵型控制在 **≤60 条 wire**。每条要描两趟（辉光 + 芯），同屏三座就是三倍。
+	 *      各阵型的线数在文件末尾记着。
 	 */
 	function buildSigil(
 		kind: number,
@@ -637,50 +665,167 @@ export function createRites(): Rites {
 		const T = tierOf;
 
 		/**
-		 * 阶梯剖面：每个方向**一笔**画出"从外圈走进中心"跨过的所有台阶 ——
-		 * 每层都是「水平的 tread ＋ 竖直的 riser」，逐点高度 `zs` 让一笔自己折出台阶。
-		 * 🔴 这是"立体感"里最省笔画的一条：**一笔 = 一整条剖面的侧影**，八个方向各一笔，
-		 *    整座台子立刻从"一张贴纸"变成"一座有厚度的多层盘"。
-		 * ⚠️ riser 必须是**同一 (x,y) 上的两个点**（投影里就是一条竖线）。写成"斜着爬上去"
-		 *    的话整条会读成一根撑杆，"有几层台阶"就看不出来了。
-		 * ⚠️ 四个分界半径（1 / 0.9 / 0.68 / 0.42）与高度取自 `tierOf` 的同一张表 ——
-		 *    改 `tierOf` 的阈值就必须回来改这里。
+		 * 一批**一起描**的细纹：主折线留空，全部走 `extra` —— 一个阵型里成批的短纹
+		 * （外圈齿、放射线、一圈小节点）都从这类图元出。
+		 * 🔴 `stroke()` 只调一次。48 颗齿逐条描就是 48 次描边，`lighter` 下还会在端点叠成珠子。
 		 */
-		const stairs = (n: number, rot: number, rOuter = 1, base = 0.6): Wire[] => {
-			const radii = [1, 0.9, 0.9, 0.68, 0.68, 0.42, 0.42, 0.08];
-			const zs = [
-				T(1),
-				T(1),
-				T(0.89),
-				T(0.89),
-				T(0.67),
-				T(0.67),
-				T(0.41),
-				T(0.41),
-			];
-			const out2: Wire[] = [];
+		const bundle = (
+			subs: Sub[],
+			z: number,
+			rank: number,
+			tint: Tint,
+			base: number,
+		): Wire => ({ ...wire([], z, rank, tint, base), extra: subs });
+
+		/** 外圈一圈**密齿**（罗盘那圈"尺"）。48 条 = 1 条 wire、1 次 `stroke()`。 */
+		const teeth = (
+			r0: number,
+			r1: number,
+			n: number,
+			rot: number,
+			tint: Tint = 1,
+			base = 0.45,
+		): Wire =>
+			bundle(
+				Array.from({ length: n }, (_, i) => {
+					const a = rot + (TAU * i) / n;
+					const c = Math.cos(a);
+					const s = Math.sin(a);
+					return { p: [c * r0, s * r0, c * r1, s * r1] };
+				}),
+				T(0.95),
+				0.95,
+				tint,
+				base,
+			);
+
+		/** 从 r0 到 r1 的**放射骨**（满盘的那些细线）。32 条 = 1 条 wire。 */
+		const radial = (
+			r0: number,
+			r1: number,
+			n: number,
+			rot: number,
+			base = 0.22,
+			tint: Tint = 0,
+		): Wire =>
+			bundle(
+				Array.from({ length: n }, (_, i) => {
+					const a = rot + (TAU * i) / n;
+					const c = Math.cos(a);
+					const s = Math.sin(a);
+					return { p: [c * r0, s * r0, c * r1, s * r1] };
+				}),
+				T(0.6),
+				0.6,
+				tint,
+				base,
+			);
+
+		/** 一圈小节点圆（设定图里每颗星尖、每条齿根上那粒点）。24 颗 = 1 条 wire。 */
+		const dots = (r: number, n: number, size: number, rot: number): Wire =>
+			bundle(
+				Array.from({ length: n }, (_, i) => {
+					const a = rot + (TAU * i) / n;
+					return {
+						p: move(circle(size, 8), Math.cos(a) * r, Math.sin(a) * r),
+					};
+				}),
+				T(0.9),
+				0.9,
+				1,
+				0.5,
+			);
+
+		/** 一圈**菱形面**（设定图里星尖、齿端那种小菱）。8 片 = 1 条 wire ＋ 1 次 `fill()`。 */
+		const rhombs = (
+			r: number,
+			n: number,
+			len: number,
+			rot: number,
+			tint: Tint = 1,
+			base = 0.5,
+		): Wire => ({
+			...bundle(
+				Array.from({ length: n }, (_, i) => {
+					const a = rot + (TAU * i) / n;
+					const c = Math.cos(a);
+					const s = Math.sin(a);
+					const w = len * 0.42;
+					// 沿半径方向的菱形：外尖 → 侧尖 → 内尖 → 另一侧尖 → 回到外尖
+					return {
+						p: [
+							c * (r + len),
+							s * (r + len),
+							c * r - s * w,
+							s * r + c * w,
+							c * (r - len),
+							s * (r - len),
+							c * r + s * w,
+							s * r - c * w,
+							c * (r + len),
+							s * (r + len),
+						],
+					};
+				}),
+				T(0.95),
+				0.95,
+				tint,
+				base,
+			),
+			fill: true,
+		});
+
+		/**
+		 * 盘厚：外圈一圈**侧壁**（下沿整圈 ＋ 一圈竖直母线）。
+		 * 🔴 一个圆盘看起来"是实体"而不是"一张贴纸"，唯一的依据就是**它的厚度**。
+		 *    盘面本身必须共面（见 `tierOf`），所以立体感的预算全部给到这里。
+		 * ⚠️ 48 条母线一律走 `extra` → 两条 wire、两次 `stroke()`。
+		 *    前后分层交给 `half`：远半圈会被压到 0.45 亮度，正好读成"背面的边"。
+		 */
+		const skirt = (rOuter: number): Wire[] => {
+			const rr = R * rOuter;
+			const n = 48;
+			const vlines: Sub[] = [];
 			for (let i = 0; i < n; i++) {
-				const a = rot + (TAU * i) / n;
-				const c = Math.cos(a);
-				const s = Math.sin(a);
-				const pts: number[] = [];
-				for (const rr of radii)
-					pts.push(c * R * rOuter * rr, s * R * rOuter * rr);
-				out2.push(wire(pts, zs[0] ?? 0, 0.7, 0, base, zs));
+				const a = (TAU * i) / n;
+				const x = Math.cos(a) * rr;
+				const y = Math.sin(a) * rr;
+				vlines.push({ p: [x, y, x, y], zs: [BODY, DECK] });
 			}
-			return out2;
+			const ring = circle(rr, 108);
+			return [
+				wire(
+					ring,
+					BODY,
+					1,
+					1,
+					0.7,
+					ring.map(() => BODY),
+				),
+				bundle(vlines, BODY, 1, 1, 0.5),
+			];
 		};
 
-		/** 共用骨架：外圈 ＋ 一圈立起来的节点 ＋ 八道阶梯剖面的侧影。 */
-		const frame = (nNode: number, nStair: number, rOuter = 1) => {
-			out.push(wire(circle(R * rOuter, 108), T(1), 1, 0, 0.9));
-			out.push(...glyphs(R * rOuter * 0.99, nNode, 0.25, T(1), 1));
-			out.push(...stairs(nStair, 0.12, rOuter));
+		/**
+		 * 共用骨架（**还原的地基**）：盘面外圈 ＋ 盘厚 ＋ 外圈密齿 ＋ 满盘放射骨
+		 * ＋ 一圈小节点 ＋ 一圈立起来的符文晶体。
+		 * 🔴 设定图里每张法阵都是「一圈外框 + 一圈齿 + 满盘放射线 + 一圈节点 + 顶上刻什么」，
+		 *    变的是顶上刻什么，不是这个骨架。原来骨架只有"外圈 + 几个节点 + 几根斜撑"，
+		 *    所以一眼看着就"不像"。
+		 * ⚠️ 密度全靠 `bundle` 系列（一批细纹一次 `stroke()`），wire 数只有 6 + nNode。
+		 */
+		const frame = (nNode: number, rOuter = 1) => {
+			out.push(wire(circle(R * rOuter, 108), DECK, 1, 0, 0.9));
+			out.push(...skirt(rOuter));
+			out.push(teeth(R * rOuter * 0.9, R * rOuter * 0.985, 48, 0));
+			out.push(radial(R * rOuter * 0.14, R * rOuter * 0.88, 32, 0.05));
+			out.push(dots(R * rOuter * 0.86, 24, R * rOuter * 0.012, 0.02));
+			out.push(...glyphs(R * rOuter * 0.99, nNode, 0.25, DECK, 1));
 		};
 
 		// ── 0 三重圆环阵（基础）：三圈同心环 ＋ 外圈内侧一圈"尺" ＋ 中心小花
 		if (kind === 0) {
-			frame(nodes, 8);
+			frame(nodes);
 			for (let i = 0; i < rings; i++) {
 				const rk = lerp(0.44, 0.8, i / Math.max(1, rings - 1));
 				out.push(wire(circle(R * rk, 96), T(rk), rk, 0, 0.85));
@@ -693,10 +838,11 @@ export function createRites(): Rites {
 
 		// ── 1 六芒星几何阵：一笔六芒 ＋ 内六边形弦网 ＋ 六个顶点各立一刃
 		if (kind === 1) {
-			frame(12, 8);
+			frame(12);
 			out.push(wire(poly(R * 0.62, 6, 0.3), T(0.62), 0.62, 1, 0.7));
 			out.push(...web(R * 0.62, 6, 2, 0.3, T(0.62), 0.62, 1, 0.5));
 			out.push(...stars(R * 0.88, 6, 2, 0.3, T(0.88), 0.88, 0, 0.95));
+			out.push(rhombs(R * 0.88, 6, R * 0.1, 0.3, 0, 0.55));
 			out.push(...fins(R * 0.88, 6, 0.24, 0.3, 0.88, 0, 0.8, T(0.9)));
 			out.push(wire(circle(R * 0.24, 48), T(0.24), 0.24, 1, 0.85));
 			out.push(...petals(R * 0.36, 6, R * 0.1, 0.3, 0.36, 1, 0.6));
@@ -704,7 +850,7 @@ export function createRites(): Rites {
 
 		// ── 2 月相仪式阵：两枚交错的月轨 ＋ 八枚月牙 ＋ 一圈密刻
 		if (kind === 2) {
-			frame(8, 8);
+			frame(8);
 			out.push(
 				wire(ellipse(R * 0.82, R * 0.34, -0.3, 96), T(0.82), 0.82, 0, 0.8),
 			);
@@ -720,7 +866,7 @@ export function createRites(): Rites {
 
 		// ── 3 裂纹封印阵：方框封印 ＋ 锯齿裂纹 ＋ 四角立碑
 		if (kind === 3) {
-			frame(8, 8);
+			frame(8);
 			out.push(wire(poly(R * 0.86, 4, Math.PI / 4), T(0.86), 0.86, 0, 0.85));
 			out.push(wire(poly(R * 0.62, 4, 0), T(0.62), 0.62, 1, 0.6));
 			const n = 5 + Math.floor(rand() * 3);
@@ -744,7 +890,7 @@ export function createRites(): Rites {
 
 		// ── 4 时空折叠阵：四层错位椭圆叠成"折扇" ＋ 折轴上的立刃
 		if (kind === 4) {
-			frame(8, 8);
+			frame(8);
 			for (let i = 0; i < 4; i++) {
 				const rk = 0.46 + i * 0.14;
 				out.push(
@@ -767,8 +913,9 @@ export function createRites(): Rites {
 
 		// ── 5 幽青八芒阵：一笔八芒 ＋ 两个正方 ＋ 八颗卫星盘
 		if (kind === 5) {
-			frame(16, 8);
+			frame(16);
 			out.push(...stars(R * 0.9, 8, 3, 0.2, T(0.9), 0.9, 0, 0.95));
+			out.push(rhombs(R * 0.9, 8, R * 0.085, 0.2, 1, 0.5));
 			out.push(wire(poly(R * 0.6, 4, 0.2), T(0.6), 0.6, 1, 0.65));
 			out.push(wire(poly(R * 0.6, 4, 0.2 + Math.PI / 4), T(0.6), 0.6, 1, 0.65));
 			out.push(...satellites(R * 0.9, 8, R * 0.05, 0.2, 0.9, 1, 0.8));
@@ -780,7 +927,7 @@ export function createRites(): Rites {
 
 		// ── 6 暗金星轨阵：两条反向的扁轨道 ＋ 十二道星轨斜撑 ＋ 轨道上的行星
 		if (kind === 6) {
-			frame(12, 8);
+			frame(12);
 			out.push(
 				wire(ellipse(R * 0.94, R * 0.2, 0.5, 96), T(0.94), 0.94, 0, 0.65),
 			);
@@ -795,7 +942,7 @@ export function createRites(): Rites {
 
 		// ── 7 太极八卦阵（参考图 09 罗盘）：双环 ＋ 外圈刻度 ＋ 八卦爻线 ＋ 太极核
 		if (kind === 7) {
-			frame(8, 4);
+			frame(8);
 			out.push(wire(circle(R * 0.86, 108), T(0.86), 0.86, 0, 0.85));
 			out.push(wire(circle(R * 0.66, 96), T(0.66), 0.66, 1, 0.65));
 			// ⚠️ 刻度只给 8 条。这套"8 组 ×三爻 + 断爻拆两段"本身就有 32 条 wire，
@@ -840,7 +987,7 @@ export function createRites(): Rites {
 
 		// ── 8 莲花法阵（参考图 08 / 12）：内外两圈花瓣错开 22.5° ＋ 中心莲台
 		if (kind === 8) {
-			frame(8, 6);
+			frame(8);
 			out.push(wire(circle(R * 0.88, 108), T(0.88), 0.88, 1, 0.7));
 			out.push(...band(R * 0.9, R * 0.98, 12, 0.1, T(0.94), 0.94, 0.45));
 			out.push(...petals(R * 0.66, 8, R * 0.19, 0.3, 0.7, 0, 0.85));
@@ -856,7 +1003,7 @@ export function createRites(): Rites {
 
 		// ── 9 符文卫星阵（参考图 10 / 13）：四个卫星盘挂在 45° 对角上
 		if (kind === 9) {
-			frame(8, 6);
+			frame(8);
 			out.push(wire(poly(R * 0.64, 4, Math.PI / 4), T(0.64), 0.64, 0, 0.85));
 			out.push(wire(poly(R * 0.46, 4, 0), T(0.46), 0.46, 1, 0.65));
 			out.push(...stars(R * 0.34, 8, 3, Math.PI / 8, T(0.34), 0.34, 0, 0.8));
@@ -868,14 +1015,17 @@ export function createRites(): Rites {
 
 		// ── 10 玫瑰涡阵（参考图 11）：五条涡线错开起角，沿台阶盘上去
 		if (kind === 10) {
-			frame(8, 6);
+			frame(8);
 			for (let i = 0; i < 5; i++) {
 				out.push(
 					drape(
 						spiral(
-							R * 0.92,
-							R * 0.18,
-							1.5,
+							R * 0.94,
+							R * 0.14,
+							// ⚠️ 圈数**不能多**：1.5 圈缩到中心时每圈半径变化很小，
+							//    投影里就退化成一圈套一圈的**同心圆**（看着像"层"不像"涡"）。
+							//    0.8 圈才是"一边转一边明显往里收"的旋涡。
+							0.8,
 							(TAU * i) / 5,
 							0.9,
 							i % 2 ? 1 : 0,
@@ -885,9 +1035,8 @@ export function createRites(): Rites {
 					),
 				);
 			}
-			// ⚠️ 涡线披到台阶上之后**不再需要**这条 0.66R 的环 ——
-			//    留着它就正好凑成"一圈同心圆环"（原来它存在是因为涡线本身太扁，
-			//    现在涡线自己有层次了）。省下的 1 条换给 `fins`。
+			// ⚠️ 涡线自己有层次了之后**不再需要**那条 0.66R 的环 ——
+			//    留着它就正好凑成"一圈同心圆环"。省下的 1 条换给 `fins`。
 			out.push(...band(R * 0.9, R * 0.98, 12, 0.1, T(0.94), 0.94, 0.45));
 			out.push(...fins(R * 0.94, 5, 0.2, 0.1, 0.94, 0, 0.6, T(0.96)));
 			out.push(spiral(R * 0.15, R * 0.02, 1.1, 0.5, 0.2, 1, 0.9));
@@ -896,12 +1045,13 @@ export function createRites(): Rites {
 
 		// ── 11 尖芒星阵（参考图 14）：内外两圈长短星刺 ＋ 八芒 ＋ 一圈节点
 		if (kind === 11) {
-			frame(8, 6, 0.96);
+			frame(8, 0.96);
 			out.push(...spikes(R * 0.96, R * 1.16, 8, 0.2, 0.04, 0.6));
 			out.push(
 				...spikes(R * 0.96, R * 1.06, 12, 0.2 + Math.PI / 12, 0.04, 0.4),
 			);
 			out.push(...stars(R * 0.78, 8, 3, 0.2, T(0.78), 0.78, 0, 0.9));
+			out.push(rhombs(R * 0.9, 8, R * 0.07, 0.2, 1, 0.5));
 			out.push(...band(R * 0.8, R * 0.88, 12, 0.2, T(0.84), 0.84, 0.45));
 			out.push(...glyphs(R * 0.68, 8, 0.1, T(0.7), 0.7, 0.7));
 			out.push(wire(circle(R * 0.16, 40), T(0.16), 0.16, 1, 0.9));
@@ -909,9 +1059,10 @@ export function createRites(): Rites {
 
 		// ── 12 星网阵列（参考图 02 / 06）：五芒 ＋ 内层十边形弦网（"星里再分格"）
 		if (kind === 12) {
-			frame(10, 6, 0.94);
+			frame(10, 0.94);
 			out.push(wire(poly(R * 0.94, 5, 0.3), T(0.94), 0.94, 1, 0.6));
 			out.push(...stars(R * 0.94, 5, 2, 0.3, T(0.94), 0.94, 0, 0.95));
+			out.push(rhombs(R * 0.94, 10, R * 0.06, 0.3, 1, 0.45));
 			out.push(...web(R * 0.42, 10, 3, 0.3, T(0.44), 0.44, 1, 0.45));
 			out.push(...web(R * 0.42, 10, 4, 0.3, T(0.44), 0.44, 1, 0.35));
 			// ⚠️ 这里**不再**补第二圈 glyphs：`frame` 已经在 0.93R 上立了 10 颗，
@@ -969,25 +1120,28 @@ export function createRites(): Rites {
 		if (!pal) return false;
 		const rings = 2 + Math.floor(rand() * 3);
 		const nodes = [6, 8, 12, 16][Math.floor(rand() * 4)] ?? 8;
-		const R = Math.min(v.w, v.h) * 0.34 * (0.72 + rand() * 0.28);
+		// ⚠️ 半径比原来小了一档（0.34 → 0.27）：法阵从"压扁 0.42 的躺盘"改成"几乎正视的
+		//    浮盘"之后，**纵向占的屏幕高度翻了近一倍**（`R·RITE_K` vs `R·0.42`），
+		//    再按 0.34 给的话同屏三座会糊成一片、还容易压到黑洞身上。
+		const R = Math.min(v.w, v.h) * 0.27 * (0.74 + rand() * 0.26);
 		const liteCap = s.lite ? 0.72 : 1;
-		// 升起高度分低/中/高三档（spec §八）。两处觉醒加成：
+		// 悬浮高度分低/中/高三档（spec §八）。两处觉醒加成：
 		//   · 4 阶曜变：整体 +20%
 		//   · 8 阶归墟：**自动提升一档**（低→中、中→高、高封顶）—— 与 +20% 是叠加的
+		// ⚠️ 三档也整体调小了（原 0.22/0.36/0.52）：这个数现在是**盘面离地多高**，
+		//    不是"台面升多高"。盘厚是它的 `BODY`（0.58）倍，太高的话整座阵会飘到画面上半区。
 		const tier = Math.min(2, Math.floor(rand() * 3) + (s.stage >= 8 ? 1 : 0));
 		const riseH =
-			R *
-			([0.22, 0.36, 0.52][tier] ?? 0.36) *
-			liteCap *
-			(s.stage >= 4 ? 1.2 : 1);
+			R * ([0.2, 0.3, 0.42][tier] ?? 0.3) * liteCap * (s.stage >= 4 ? 1.2 : 1);
 		// 🔴 钳回可视区。外圈投影到屏幕上是一个**横半轴 R、纵半轴 R*k** 的椭圆，而
 		//    `生成法阵` 按钮给的落点是 y = h/2 + sin(a)·h·0.24 —— 在 1258×566 上，
 		//    法阵有半个身子落在画布外，看起来就是"法阵被截断了"（其实是中心算到了外面）。
 		//    两个入口（点击 / 按钮）都从这里过，所以钳在 spawn 里最省事。
-		// ⚠️ 留边按 **1.02R** 而不是 0.94R：尖芒星阵的刺探到 1.16R（唯一一个越过外圈的阵型），
+		// ⚠️ 留边按 **RITE_K** 算（法阵自己的压缩率，不是黑洞那层的 `v.k`）：纵向半高是
+		//    `R · RITE_K`，再往上还要留出悬浮的 `riseH`。尖芒星的刺探到 1.16R，
 		//    按 0.94 算的话落在画布边上就被切掉一截 —— "刺"变成"平头"。
 		const padX = R * 1.02;
-		const padY = R * v.k * 1.02 + riseH * 0.45;
+		const padY = R * RITE_K * 1.02 + riseH;
 		cx = clamp(cx, padX, Math.max(padX, v.w - padX));
 		cy = clamp(cy, padY, Math.max(padY, v.h - padY));
 		const rite: Rite = {
@@ -1048,7 +1202,7 @@ export function createRites(): Rites {
 			});
 			// 先落在法阵外圈上，升起时顺着边缘往上飘
 			p.x = rite.cx + Math.cos(a) * rite.R * (0.5 + rand() * 0.5);
-			p.y = rite.cy + Math.sin(a) * rite.R * (0.5 + rand() * 0.5) * view.k;
+			p.y = rite.cy + Math.sin(a) * rite.R * (0.5 + rand() * 0.5) * RITE_K;
 			p.vx = (rand() - 0.5) * 14;
 			p.vy = -(10 + rand() * 26);
 		}
@@ -1072,7 +1226,7 @@ export function createRites(): Rites {
 			const a = rite.spin;
 			const rx = lx * Math.cos(a) - ly * Math.sin(a);
 			const ry = lx * Math.sin(a) + ly * Math.cos(a);
-			const [sx, sy] = project(rite.cx, rite.cy, rx, ry, z, view.k);
+			const [sx, sy] = project(rite.cx, rite.cy, rx, ry, z, RITE_K);
 			// 初速度：**切向 + 一点点向内**，绝不允许向外飘（spec §六 视觉细节 1）
 			const d = Math.hypot(rx, ry) || 1;
 			const tx = -ry / d;
@@ -1319,7 +1473,10 @@ export function createRites(): Rites {
 		for (let i = 0; i < rites.length; i++) {
 			const r = rites[i];
 			if (!r) continue;
-			const d = Math.hypot(x - r.cx, y - r.cy);
+			// ⚠️ 命中区是一个**抬起来、压扁了的椭圆**：盘面浮在 `riseH` 高处、纵向按
+			//    `RITE_K` 压。用"到 (cx,cy) 的圆距离"判的话，只有盘心附近点得到，
+			//    "点边上那圈齿"会整片落空 —— 而且越是宽屏（R 越大、riseH 越大）越明显。
+			const d = Math.hypot(x - r.cx, (y - (r.cy - r.riseH)) / RITE_K);
 			// 只抓"成形之后"的法阵：还在从里往外飞的时候，位置全是中间态
 			const solid = r.phase === "active" || r.phase === "dissolving";
 			if (solid && d < r.R * 1.05 && d < bestD) {
@@ -1363,6 +1520,9 @@ export function createRites(): Rites {
 	/**
 	 * 画一条折线。`half` 控制只画前半（y≥0，靠近镜头）/ 后半（y<0），
 	 * 这是在**一个平面里做深度分层**，比 z-index 靠谱。
+	 *
+	 * ⚠️ `Wire.extra` 里的附带细纹会和主折线塞进**同一个 path**，最后一次 `stroke()` ——
+	 *    所以这里不能按"主折线有几段"来决定要不要描边。
 	 */
 	function strokeWire(
 		g: CanvasRenderingContext2D,
@@ -1374,48 +1534,107 @@ export function createRites(): Rites {
 		alpha: number,
 	) {
 		const n = w.pts.length / 2;
-		// ⚠️ 这里是 `2` 不是 `1`。符文节点是**单点** wire（`[x,y]`），只有 1 个点 ——
+		const subs = w.extra ?? [];
+		// ⚠️ 判据是 `2` 不是 `1`。符文节点是**单点** wire（`[x,y]`），只有 1 个点 ——
 		//    按 `n<1` 放过去的话，`at(r,w,1)` 会读到不存在的 pts[2]/pts[3]（→0），
-		//    于是每一颗符文都会**多画一条从节点连到法阵中心**的放射线。十几个节点就是十几条，
-		//    整座阵"脏"得很，而这是纯粹的绘制 bug，不是设计。
-		if (n < 2) return;
+		//    于是每一颗符文都会**多画一条从节点连到法阵中心**的放射线。十几个节点就是十几条。
+		// ⚠️ 而且**主折线为空不代表没事做**：`bundle` 出来的细纹就只有 `extra`。
+		if (n < 2 && subs.length === 0) return;
 		const [ox, oy] = [r.cx, r.cy];
-		const k = view.k;
+		// 🔴 法阵走**自己的**压缩率（`RITE_K` = 0.84，几乎正视），不是黑洞那一层的 `view.k`。
+		const k = RITE_K;
 		// 🔴 高度 = "占 riseH 的比例" × 升起高度 × 升起进度。**少了 `r.riseH` 这一项**，
-		//    高度就退化成 0.1~1.0 像素 —— 整座法阵看起来完全是平的（之前的症状）。
+		//    高度就退化成 0.1~1.0 像素 —— 整座法阵看起来完全是平的。
 		const zBase = r.riseH * lift;
 		const perVertex = !!w.zs;
-		// 逐段画：每段自己的亮度由"深度"决定（前面的亮、后面的暗）
-		const total = Math.max(1, Math.round((n - 1) * progress));
+		const ca = Math.cos(r.spin);
+		const sa = Math.sin(r.spin);
+		const inHalf = (v: number) => (half < 0 ? v < 0 : v >= 0);
 		g.beginPath();
+		// 🔴 **两个标志，不能合并**：`drawing` 管"当前子折线还连不连着"（决定 `lineTo` 还是
+		//    `moveTo`），`any` 管"这条 path 里到底有没有东西"（决定要不要 `stroke()`）。
+		//    合并成一个的后果**不是"多一条线"，是"整条 wire 被丢掉"**：一圈 97 点的圆环
+		//    在第 95 段跨出本 half 被 `continue` 时把 `drawing` 置回 false，循环正好结束，
+		//    于是 `if (!drawing) return` 直接放弃 —— 实测 49 段明明都 `moveTo`/`lineTo`
+		//    过了，却一次都没描。症状就是"法阵只剩一半"（整个上半圈空白）。
 		let drawing = false;
-		for (let i = 0; i < total; i++) {
-			const a = at(r, w, i);
-			const b = at(r, w, i + 1);
-			// 逐点高度：有 `zs` 就是一道坡（或一片竖刃），没有就是一层平台阶
-			const za = zBase * (perVertex ? (w.zs?.[i] ?? w.z) : w.z);
-			const zb = zBase * (perVertex ? (w.zs?.[i + 1] ?? w.z) : w.z);
-			const [x0, y0] = project(ox, oy, a.rx, a.ry, za, k);
-			const [x1, y1] = project(ox, oy, b.rx, b.ry, zb, k);
-			const inHalf = (v: number) => (half < 0 ? v < 0 : v >= 0);
-			if (!inHalf(a.ry) && !inHalf(b.ry)) continue;
-			if (drawing) g.lineTo(x0, y0);
-			else {
-				g.moveTo(x0, y0);
-				drawing = true;
+		let any = false;
+		if (n >= 2) {
+			const total = Math.max(1, Math.round((n - 1) * progress));
+			for (let i = 0; i < total; i++) {
+				const a = at(r, w, i);
+				const b = at(r, w, i + 1);
+				// 逐点高度：有 `zs` 就是一道坡（或一片竖刃），没有就是盘面
+				const za = zBase * (perVertex ? (w.zs?.[i] ?? w.z) : w.z);
+				const zb = zBase * (perVertex ? (w.zs?.[i + 1] ?? w.z) : w.z);
+				const [x0, y0] = project(ox, oy, a.rx, a.ry, za, k);
+				const [x1, y1] = project(ox, oy, b.rx, b.ry, zb, k);
+				// 🔴 段被跳过时必须**断开续接**（`drawing = false`）。否则下一段仍然 `lineTo`，
+				//    就从"上一段的终点"（可能属于另一个 half、甚至在盘的另一侧）一条直线连到
+				//    本段起点 —— 一圈 108 段的圆环只要跨过一次 half 边界，就会横贯全盘拉出
+				//    一条 ~400px 的直线。正确做法：跳过的段之后重新 `moveTo`。
+				if (!inHalf(a.ry) && !inHalf(b.ry)) {
+					drawing = false;
+					continue;
+				}
+				if (drawing) g.lineTo(x0, y0);
+				else {
+					g.moveTo(x0, y0);
+					drawing = true;
+				}
+				g.lineTo(x1, y1);
+				any = true;
 			}
-			g.lineTo(x1, y1);
 		}
-		if (!drawing) return;
+		// 附带细纹：**整条**一起判深度（它们都很短，逐段没意义），同一 path 一次描边。
+		// ⚠️ 只在展开的最后一段露面（`progress > 0.85`）—— 细纹是刻上去的，不该比结构先到。
+		if (progress > 0.85) {
+			for (const sub of subs) {
+				const m = sub.p.length / 2;
+				if (m < 2) continue;
+				let sx = 0;
+				let sy = 0;
+				for (let i = 0; i < m; i++) {
+					sx += sub.p[i * 2] ?? 0;
+					sy += sub.p[i * 2 + 1] ?? 0;
+				}
+				if (!inHalf((sx / m) * sa + (sy / m) * ca)) continue;
+				for (let i = 0; i < m; i++) {
+					const px = sub.p[i * 2] ?? 0;
+					const py = sub.p[i * 2 + 1] ?? 0;
+					const [x, y] = project(
+						ox,
+						oy,
+						px * ca - py * sa,
+						px * sa + py * ca,
+						zBase * (sub.zs?.[i] ?? w.z),
+						k,
+					);
+					if (i === 0) g.moveTo(x, y);
+					else g.lineTo(x, y);
+				}
+				drawing = true;
+				any = true;
+			}
+		}
+		if (!any) return;
 		// 前后分层：两趟画（前半 y≥0 / 后半 y<0）本来就是为了让"靠近镜头的那半"亮一档。
 		// 原来这里拿 `w.pts[1]`（起点的局部 y）当深度 —— 整圈圆环起点固定在 0°，永远算出同一个值，
 		// 两层看着一样亮，"立体"就没了。直接按 half 给，才是这两趟画的意义。
 		const depth = half > 0 ? 0.95 : 0.45;
 		const core = clamp(alpha * depth * w.base, 0, 1);
+		// 面：**只填不描**。"亮"留给线、"量"交给面 —— 面一发光就顶到 255（见 hole.ts 头注释）。
+		if (w.fill) {
+			g.globalAlpha = core * 0.3;
+			g.fillStyle = tintCss(r, w.tint);
+			g.fill();
+			g.globalAlpha = 1;
+			return;
+		}
 		g.strokeStyle = tintCss(r, w.tint);
 		const lw = Math.max(0.7, 1.5 + w.base * 1.7);
-		// 🔴 辉光那一趟只给"主要"的线（`base ≥ 0.5`）。刻度带、爻线、小卷这些细件
-		//    在一个阵型里占一半以上 —— 它们本来就不该发光，省下来的正好抵掉新增的图元。
+		// 🔴 辉光那一趟只给"主要"的线（`base ≥ 0.5`）。齿、放射骨、小节点这些细件
+		//    在一个阵型里占绝大多数 —— 它们本来就不该发光，省下来的正好抵掉新增的图元。
 		if (w.base >= 0.5) {
 			g.globalAlpha = core * 0.16;
 			g.lineWidth = lw * 2.6;
@@ -1531,21 +1750,28 @@ export function createRites(): Rites {
 					if (w.glyph && win > 0.6) {
 						// 符文节点：升起后变成立在环上的小晶体
 						const p = at(r, w, 0);
+						// 🔴 **一颗符文只许画一趟**。原来这段在 `for (half)` 里面，于是每颗符文
+						//    被前后两趟各画一次 —— 它在 `lighter` 下加色叠加，亮度直接翻倍顶上 255
+						//    （渲染里那圈节点是过曝的白点），而且和"前后半亮度分档"的规矩自相矛盾。
+						//    现在按它自己的 ry 判归哪一趟，并跟着压一档亮度。
+						const back = p.ry < 0;
+						if (back !== half < 0) continue;
 						const [x, y] = project(
 							r.cx,
 							r.cy,
 							p.rx,
 							p.ry,
 							w.z * r.riseH * lift,
-							v.k,
+							RITE_K,
 						);
 						// ⚠️ 晶体高度按**法阵半径**给。写死 4+10px 的话，法阵一大一小
 						//    （R 从 40 到 160）晶体就不成比例了。
 						const h = r.R * (0.05 + 0.1 * lift);
 						const pulse = 1 + 0.35 * Math.sin(time * 2.4 + w.rank * 9);
+						const deth = back ? 0.55 : 1;
 						g.save();
 						g.globalAlpha = clamp(
-							alpha * (win - 0.6) * (0.5 + 0.5 * lift),
+							alpha * (win - 0.6) * (0.5 + 0.5 * lift) * deth,
 							0,
 							1,
 						);
@@ -1558,7 +1784,7 @@ export function createRites(): Rites {
 						gs.save();
 						gs.globalCompositeOperation = "lighter";
 						gs.globalAlpha = clamp(
-							alpha * 0.5 * pulse * (0.35 + 0.65 * lift),
+							alpha * 0.5 * pulse * (0.35 + 0.65 * lift) * deth,
 							0,
 							1,
 						);
@@ -1574,6 +1800,7 @@ export function createRites(): Rites {
 
 			// ④ 结构锁定：整座阵一次短促的"上锁"闪光（spec §四 阶段四）。
 			//    少了这一下，成形就只是"淡进来了"，立不住。
+			//    ⚠️ 锁的是**盘面**那一圈，所以圆心要抬到 `DECK` 的高度上（不然闪在盘底）。
 			if (gen && lockT > 0) {
 				const a = (1 - lockT) * 0.5;
 				const rr = r.R * (1 + lockT * 0.24);
@@ -1582,7 +1809,7 @@ export function createRites(): Rites {
 				g.strokeStyle = `rgb(${COLD.join(" ")} / ${a})`;
 				g.lineWidth = 2.6 * (1 - lockT) + 0.6;
 				g.beginPath();
-				g.ellipse(r.cx, r.cy, rr, rr * v.k, 0, 0, TAU);
+				g.ellipse(r.cx, r.cy - r.riseH * lift, rr, rr * RITE_K, 0, 0, TAU);
 				g.stroke();
 				g.restore();
 			}
@@ -1663,18 +1890,21 @@ export function createRites(): Rites {
 }
 
 /**
- * 各阵型的 wire 数（离线无头试炼台实测，R ≈ 220~300px、完全升起那一帧）。
- * 🔴 这张表是**笔画预算**的唯一账本：每条线要描两趟（辉光 + 芯），同屏三座就是
- *    三倍；过 60 开始吃帧。加图元之前先看这里还剩多少。
+ * 各阵型的 wire 数 / 描边数（离线无头试炼台实测，1440×900、R ≈ 181~239px、
+ * 完全升起那一帧）。
+ * 🔴 这张表是**笔画预算**的唯一账本：每条线最多描两趟（辉光 + 芯）× 前后两个 half，
+ *    同屏三座就是三倍；wire 数过 60 开始吃帧。加图元之前先看这里还剩多少。
  *
- *   k00 三重圆环阵  44~56（随 `nodes` 6/8/12/16、`rings` 2~4 变）
- *   k01 六芒星几何阵 43    k07 太极八卦阵 58 ← 最满的一个（八卦三爻 + 断爻拆两段 = 32 条）
- *   k02 月相仪式阵  45    k08 莲花法阵   54
- *   k03 裂纹封印阵  41~43 k09 符文卫星阵 39
- *   k04 时空折叠阵  34    k10 玫瑰涡阵   43
- *   k05 幽青八芒阵  49    k11 尖芒星阵   57
- *   k06 暗金星轨阵  52    k12 星网阵列   50
+ *   k00 三重圆环阵   52 / 120    k07 太极八卦阵 59 / 148 ← 最满的一个（八卦三爻 + 断爻拆两段）
+ *   k01 六芒星几何阵 41 / 108    k08 莲花法阵   53 / 120
+ *   k02 月相仪式阵   42 /  92    k09 符文卫星阵 38 /  88
+ *   k03 裂纹封印阵   39 /  88    k10 玫瑰涡阵   42 /  98
+ *   k04 时空折叠阵   31 /  84    k11 尖芒星阵   57 / 128
+ *   k05 幽青八芒阵   47 /  96    k12 星网阵列   50 / 108
+ *   k06 暗金星轨阵   49 / 108
  *
- * 满的那两个（k07 / k11）再想加东西，只能先砍：k07 把刻度带从 12 条降到 8 条、
+ * ⚠️ `subs`（`extra` 里那批一起描的细纹）每座约 **152~162 条**，但**一次 `stroke()`
+ *    都不多花** —— 这正是"密度"能白拿的原因。要加密度，加 `subs`，不要加 `wire`。
+ * 满的那两个（k07 / k11）再想加东西只能先砍：k07 把刻度带从 12 条降到 8 条、
  * k11 把第二圈星刺从 16 根降到 12 根，都是这么腾出来的。
  */
