@@ -25,7 +25,10 @@
 // 视界正上方一圈亮环 + 几根细弧，四周是暖褐尘埃。曾经是青蓝紫 —— 那是另一套东西了。
 
 import {
+	BURST_DUR,
 	clamp,
+	collapseDark,
+	collapseR,
 	type Hole,
 	rngOf,
 	type Shared,
@@ -34,6 +37,9 @@ import {
 } from "./state";
 
 const TAU = Math.PI * 2;
+
+/** 暗金（洞口符文那个色）。和吸积盘的暖金**不是**同一档：符文要偏绿偏沉，才不会跟盘糊在一起。 */
+const RUNE = "216 174 100";
 
 /**
  * 暖金四档（内 → 外）。整套观感只认这一条色轴：白炽 → 米金 → 琥珀 → 焦褐。
@@ -482,6 +488,178 @@ export function createHoleLayer(): HoleLayer {
 		g.restore();
 	}
 
+	/**
+	 * 洞口的**暗金古符文**：一圈小折线，跟着盘慢慢转。
+	 * 两处用：① 8 阶的**永久**符文环；② 坍缩脉冲峰值那一闪。
+	 *
+	 * 🔴 **`flat` 不能像盘那样压到 0.3**。视界是个**正圆**，而压扁的环在竖直方向的
+	 *    半径只有 `rr·flat` —— 想让这圈符文**落在球外**，必须 `rr·flat > 1`。
+	 *    按盘那种 0.32 压扁，`rr` 要 3.1R 以上才出得来，那已经不是"贴在洞口边缘"了。
+	 *    所以这里给 0.72~0.78（略扁、基本是个圆），既兜得住整个视界，又不读成"行星环"
+	 *    —— `rr·flat ≈ 1.1~1.2R`，正好压在爱因斯坦环外沿上：符文是"刻在那圈光上的"。
+	 *
+	 * 🔴 **所有符文塞进同一个 path，最后只 `stroke()` 一次**。逐颗 `stroke()` 会在
+	 *    加色混合下把相接处叠成一串珠子（这一页在细弧上踩过一模一样的坑）；
+	 *    代价是 `lineWidth` 只能整圈一个值 —— 在这层不需要粗细变化，正好。
+	 */
+	function drawRunes(
+		g: CanvasRenderingContext2D,
+		s: Shared,
+		hole: Hole,
+		alpha: number,
+		rr: number,
+		flat: number,
+		count: number,
+		dir: number,
+	) {
+		if (alpha < 0.02) return;
+		const R = hole.r;
+		g.save();
+		g.globalCompositeOperation = "lighter";
+		g.globalAlpha = clamp(alpha, 0, 0.7);
+		g.strokeStyle = `rgb(${RUNE})`;
+		g.lineCap = "round";
+		g.lineWidth = Math.max(1, R * 0.017);
+		g.beginPath();
+		const rot = s.spin * dir;
+		for (let i = 0; i < count; i++) {
+			const a = rot + (i / count) * TAU;
+			const ca = Math.cos(a);
+			const sa = Math.sin(a);
+			// 局部 (u 沿径向, v 沿切向)，单位 R
+			const at = (u: number, v: number) => {
+				const lx = (rr + u) * ca - v * sa;
+				const ly = (rr + u) * sa + v * ca;
+				return [hole.x + lx * R, hole.y + ly * R * flat] as const;
+			};
+			// 每颗是一道径向 + 一道斜的小折线。斜的角度按 i 变 —— 整圈读成"一段铭文"，
+			// 不是一圈规规矩矩的刻度（规整的刻度看着就是齿轮）。
+			const sk = 0.04 + 0.05 * ((i * 7) % 5) * 0.25;
+			const [ax, ay] = at(-0.09, 0);
+			const [bx, by] = at(0.09, 0);
+			const [cx2, cy2] = at(-0.05, -sk);
+			const [dx2, dy2] = at(0.05, sk);
+			g.moveTo(ax, ay);
+			g.lineTo(bx, by);
+			g.moveTo(cx2, cy2);
+			g.lineTo(dx2, dy2);
+		}
+		g.stroke();
+		g.restore();
+	}
+
+	/**
+	 * 阶数带来的**盘结构**（spec §2.3）。**每加一样都要先问"它会不会读成环"** ——
+	 * 这一页翻过的车全是"又加了一圈同心圆"。所以这里两条规矩：
+	 *   ① 新加的东西一律**躺在盘面里**（`scale(1, k)` 压到 0.3 上下），或者干脆是**会动的亮点**；
+	 *   ② 一律**一笔画完**（一个 path 一次 stroke/fill），不加逐段描边。
+	 *
+	 *   2 阶 · 荧动：外围一道细金属光环 + 4 颗绕盘光点
+	 *   4 阶 · 曜变：**反向**绕行的冷色光点（"双层反向旋转"里反的那一层）+ 光点增至 8 颗
+	 *   8 阶 · 归墟：再多一层更外的暖金光点（多层多色）+ 永久暗金符文环
+	 */
+	function drawStage(
+		g: CanvasRenderingContext2D,
+		s: Shared,
+		hole: Hole,
+		boost: number,
+	) {
+		const stage = s.stage;
+		if (stage < 2) return;
+		const R = hole.r;
+		g.save();
+		g.globalCompositeOperation = "lighter";
+
+		// ① 细金属光环不在这里 —— 它属于**盘面**，必须在核心之前画（见 `drawDiskRim`）：
+		//    压扁 0.32 的环在竖直方向只有 0.53R，那两段本来就该被视界吃掉。
+		// ② 绕盘的光点。**数量就是吞噬计数**（spec §2.4：不许出现阿拉伯数字，
+		//    用光点个数暗示）。⚠️ 压扁比给 **0.46**，不是盘的那种 0.3：
+		//    竖直半轴 = `rad·flat`，要 ≥ 1R 才兜在球外；0.3 的话上下两颗跑到黑球里面，
+		//    而那正是"数了几颗"的读数 —— 少两颗就把计数读错。一圈只 `fill()` 一次。
+		const layers: readonly (readonly [number, number, number, string])[] = [
+			// [颗数, 半径(R), 角速度系数(正负=方向), 颜色]
+			[stage >= 4 ? 8 : 4, 2.36, 1.7, "255 236 196"],
+			...(stage >= 4 ? ([[4, 2.24, -1.25, "150 214 255"]] as const) : []),
+			...(stage >= 8 ? ([[6, 3.1, 0.9, "255 208 150"]] as const) : []),
+		];
+		g.save();
+		g.translate(hole.x, hole.y);
+		g.scale(1, 0.46);
+		for (const [n, rad, spd, rgb] of layers) {
+			g.fillStyle = `rgb(${rgb} / ${clamp(0.92 * boost, 0, 1)})`;
+			g.beginPath();
+			for (let i = 0; i < n; i++) {
+				const a = s.spin * spd + (i / n) * TAU;
+				g.moveTo(Math.cos(a) * R * rad + R * 0.031, Math.sin(a) * R * rad);
+				g.arc(Math.cos(a) * R * rad, Math.sin(a) * R * rad, R * 0.031, 0, TAU);
+			}
+			g.fill();
+		}
+		g.restore();
+
+		// ③ 8 阶：**永久**暗金符文环（spec §2.3 归墟）。4 阶不给 —— 那是"终极形态"的记号。
+		//    `rr·flat ≈ 1.16R` → 刚好压在爱因斯坦环外沿，符文读成"刻在洞口那圈光上"。
+		if (stage >= 8) drawRunes(g, s, hole, 0.26 * boost, 1.52, 0.76, 26, 0.18);
+		g.restore();
+	}
+
+	/**
+	 * 2 阶的**细金属光环**。⚠️ 必须与**远半盘**同一趟调用（核心**之前**）：
+	 * 盘面里的东西绕到视界背后就该被挡掉，画在核心之后就变成"贴着黑球描的一条线"。
+	 * 压扁 0.32 → 竖直半轴只有 0.53R，于是上下两段自然被球吃掉，左右两肩留在外面。
+	 */
+	function drawDiskRim(
+		g: CanvasRenderingContext2D,
+		s: Shared,
+		hole: Hole,
+		boost: number,
+	) {
+		if (s.stage < 2) return;
+		const R = hole.r;
+		g.save();
+		g.globalCompositeOperation = "lighter";
+		g.translate(hole.x, hole.y);
+		g.scale(1, 0.32);
+		g.strokeStyle = `rgb(198 208 228 / ${clamp(0.16 * boost, 0, 0.28)})`;
+		g.lineWidth = Math.max(1, R * 0.016);
+		g.beginPath();
+		g.arc(0, 0, R * 1.66, 0, TAU);
+		g.stroke();
+		g.restore();
+	}
+
+	/**
+	 * 8 阶专属「过载喷发」（spec §2.3 专属机制）：层数烧掉之前**反向**甩出去的一波金光与光纹。
+	 * 🔴 整页只有这一处是"从洞里往外射" —— 别的全都在往里吸，所以它读起来是"过载"而不是
+	 *    "换了个特效"。线宽/长度沿时间收细、变长，方向铺满一圈但**压在盘面里**。
+	 */
+	function drawBurst(g: CanvasRenderingContext2D, s: Shared, hole: Hole) {
+		if (s.burst < 0) return;
+		const u = clamp(s.burst / BURST_DUR, 0, 1);
+		const R = hole.r;
+		const reach = R * (1.3 + 3.4 * u);
+		g.save();
+		g.globalCompositeOperation = "lighter";
+		g.globalAlpha = clamp((1 - u) ** 1.4 * 0.95, 0, 0.95);
+		g.strokeStyle = `rgb(${GOLD[1].join(" ")})`;
+		g.lineCap = "round";
+		g.lineWidth = Math.max(1.4, R * 0.03 * (1 - u * 0.6));
+		g.beginPath();
+		const n = 18;
+		for (let i = 0; i < n; i++) {
+			const a = (i / n) * TAU + 0.35;
+			const ca = Math.cos(a);
+			const sa = Math.sin(a);
+			// 🔴 起点走**正圆**（1.08R，一定在视界外），远端才压扁 0.45。
+			//    反过来写（两端都压扁 0.3）的话，竖直方向那些光纹的起点会落进黑球里 ——
+			//    等于在纯黑的球面上划了几道金线，读起来是"划痕"不是"喷发"。
+			g.moveTo(hole.x + ca * R * 1.08, hole.y + sa * R * 1.08);
+			g.lineTo(hole.x + ca * reach, hole.y + sa * reach * 0.45);
+		}
+		g.stroke();
+		g.restore();
+	}
+
 	function draw(
 		g: CanvasRenderingContext2D,
 		s: Shared,
@@ -495,15 +673,25 @@ export function createHoleLayer(): HoleLayer {
 		const R = hole.r;
 
 		// 这三条前面好几个层都要用（活丝层、盘、环、弧），所以提到最前面。
-		const diskBoost = 1 + 0.35 * s.pulse;
-		// 透镜那一套（爱因斯坦环 + 细弧 + 活丝）整体提一档：吞噬时"光被掰得更狠"
-		const lensBoost = 1 + 0.5 * s.pulse;
+		// 🔴 觉醒阶数就乘在**这两个 boost** 上，不另开一条"阶数分支"去各画各的：
+		//    盘、环、弧、活丝本来就都读它们，于是"提升亮度 / 增强引力透镜"这两条
+		//    spec 要求会自动落到每一个该亮的地方（改一处，六层一起变）。
+		const diskBoost = (1 + 0.35 * s.pulse) * (s.stage >= 2 ? 1.3 : 1);
+		// 透镜那一套（爱因斯坦环 + 细弧 + 活丝）整体提一档：吞噬时"光被掰得更狠"。
+		// ⚠️ 坍缩脉冲的亮度包络只乘在这里 —— 盘那一路要留着（见 `collapseDark`）。
+		const lensBoost =
+			(1 + 0.5 * s.pulse) *
+			collapseDark(s.collapse) *
+			(s.stage >= 4 ? 1.25 : 1);
 		/** 弧线的颜色。暖金第二档（米金），和盘体同一根色轴。 */
 		const ARC = `rgb(${GOLD[1].join(" ")})`;
 
+		// 暖尘池：**按 8 阶（最满）那一档一次抽满**，每帧只画前 `dustN` 条。
+		//    ⚠️ 别按阶数改数组长度 —— 那会每进一阶重抽一次，而重抽的瞬间整片尘埃
+		//    会原地换位置（一眼就看出是"重新生成"）。画前面一段就没有这个问题。
 		if (dust.length === 0) {
 			const rand = rngOf(4242);
-			for (let i = 0; i < (view.w < 760 ? 40 : 76); i++) {
+			for (let i = 0; i < (view.w < 760 ? 64 : 124); i++) {
 				dust.push({
 					a: rand() * TAU,
 					r: R * (1.6 + rand() * 2.8),
@@ -513,6 +701,11 @@ export function createHoleLayer(): HoleLayer {
 				});
 			}
 		}
+		/** 这一阶真正画几条：1 阶 45% → 2 阶 60% → 4 阶 75% → 8 阶全满。 */
+		const dustN = Math.round(
+			dust.length *
+				(s.stage >= 8 ? 1 : s.stage >= 4 ? 0.75 : s.stage >= 2 ? 0.6 : 0.45),
+		);
 
 		// 活丝：只在第一次（以及窗口尺寸变了之后）展开一次，之后**每帧重画同一份**。
 		// ⚠️ 半径一律存"真实半径 b"（单位 R），所以重展开只跟数量有关、跟分辨率无关。
@@ -586,8 +779,13 @@ export function createHoleLayer(): HoleLayer {
 		//    ⚠️ 别改成"绕圈打转"：原地转读不出引力，只有确确实实在往里掉才算数。
 		g.save();
 		g.globalCompositeOperation = "lighter";
-		for (const d of dust) {
-			const pull = 1 + s.hover * 2.2;
+		// 8 阶：背景星尘"持续向中心汇聚"（spec §2.3）—— 直接把它读成**掉得更快**，
+		// 而不是另铺一层星野。密度的差已经由 `dustN` 给了，这里只给速度。
+		const conv = s.stage >= 8 ? 1.55 : 1;
+		for (let di = 0; di < dustN; di++) {
+			const d = dust[di];
+			if (!d) continue;
+			const pull = (1 + s.hover * 2.2) * conv;
 			// 角速度随半径变小而变大 —— 螺旋收进去，不是直挺挺地往下栽
 			d.a +=
 				(d.sp * (1 + s.hover * 1.5) + (d.fall / Math.max(d.r, 1)) * 0.4) *
@@ -659,6 +857,7 @@ export function createHoleLayer(): HoleLayer {
 		// 参考图就是"一根细亮线泡在一片宽光里"；顺序反了针会被晕糊掉一层。
 		drawDisk(g, hole, KD * 3.2, false, diskBoost * 0.34, "all", 3);
 		drawDisk(g, hole, KD, false, diskBoost);
+		drawDiskRim(g, s, hole, diskBoost);
 		g.restore();
 
 		// ④ 引力透镜（一）：**上下两组细弧** —— 盘的后半被引力抬到视界上方/下方的二次像。
@@ -921,15 +1120,32 @@ export function createHoleLayer(): HoleLayer {
 		g.stroke();
 		g.restore();
 
-		// ⑧ 吞噬反馈的引力波：一圈暖金往外扩
+		// ⑦c 觉醒形态带来的盘结构（金属环 / 绕盘光点 / 永久符文环）。见 `drawStage`。
+		drawStage(g, s, hole, diskBoost);
+
+		// ⑦d 坍缩脉冲的暗金符文：**只在中段闪一下**（收缩期还没有它，回弹时才浮现）。
+		if (s.collapse >= 0) {
+			const c = s.collapse;
+			const ra =
+				smoothstep((c - 0.16) / 0.16) * (1 - smoothstep((c - 0.55) / 0.6));
+			drawRunes(g, s, hole, ra * 0.6, 1.34, 0.8, 20, -0.9);
+		}
+
+		// ⑦e 8 阶过载喷发：唯一一处"往外射"的东西。
+		drawBurst(g, s, hole);
+
+		// ⑧ 吞噬反馈的引力波：一圈暖金往外扩。
+		//    视界脉冲触发时它更强也更粗 —— 那是"强力引力波"，和吞噬一座法阵不是一回事。
 		if (s.wave >= 0) {
 			const u = clamp(s.wave / 1.5, 0, 1);
-			const rr = R * 1.1 + u * Math.min(view.w, view.h) * 0.42;
+			const strong = s.collapse >= 0;
+			const rr =
+				R * 1.1 + u * Math.min(view.w, view.h) * (strong ? 0.62 : 0.42);
 			g.save();
 			g.globalCompositeOperation = "lighter";
-			g.globalAlpha = (1 - u) * 0.17;
+			g.globalAlpha = (1 - u) * (strong ? 0.34 : 0.17);
 			g.strokeStyle = ARC;
-			g.lineWidth = 1 + (1 - u) * 2;
+			g.lineWidth = 1 + (1 - u) * (strong ? 5 : 2);
 			g.beginPath();
 			g.arc(hole.x, hole.y, rr, 0, TAU);
 			g.stroke();
@@ -1048,13 +1264,22 @@ export function holeOf(s: Shared, view: View): Hole {
 	// 参考图上视界半径占画面宽度的 0.147 —— 但那是**竖幅壁纸**（球在画面正中、占了
 	// 整张图的宽度）。搬到 16:10 的网页上按短边取 0.15 就太大了：1440×900 上 R=135、
 	// 直径 270px，黑洞把整页的视觉重心全吃掉，法阵没处放。
-	// 现在按短边 0.105（1440×900 → R=94.5、直径 189px）：仍然是视觉中心，
+	// 按短边 0.105（1440×900 → R=94.5、直径 189px）：仍然是视觉中心，
 	// 但四周留得下法阵、星野和尘埃，读起来才是"太空里的一个天体"。
-	const r = clamp(
+	//
+	// 🔴 这个 94.5 现在是 **8 阶（归墟）**的尺寸。神的要求是「黑洞初始时小一点，
+	//    最大也就目前大小」—— 所以 1 阶乘 0.76（≈72px），一路长到 8 阶才回到 94.5。
+	//    用的是 `s.rScale`（阶数系数的**平滑跟随值**，见 state.ts）而**不是** `STAGE_R[s.stage]`：
+	//    spec §2.4 要求换阶有过渡，直接读表会让半径在吞下第 4 座的那一帧跳 6%。
+	//    ⚠️ 半径调制（阶数 + 坍缩）都只在这里做一次：命中判定、法阵生成、四层绘制
+	//    全部走 `holeOf`，于是"缩进去的时候点不到洞口""碎片穿进了球里"这类错位
+	//    从设计上就不存在。
+	const base = clamp(
 		Math.min(view.w, view.h) * (view.w < 760 ? 0.115 : 0.105),
 		26,
 		150,
 	);
+	const r = base * s.rScale * collapseR(s.collapse);
 	return { x: s.hx, y: s.hy, r };
 }
 

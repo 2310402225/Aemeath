@@ -8,6 +8,13 @@
 //   ⚠️ 误触阈值：按下只记"抓到了什么"，拖过 6px 才真正认领 —— 不然"在法阵上点一下"
 //      也会占住 op，把同一时刻的生成/拖拽全挡掉。
 //
+// 两条互斥的主交互（spec §2.2）都从 `onDown` 的意向 + `onUp` 的"干净点击"判据上分流：
+//   点**空白** → 生成随机法阵；点**黑洞本体** → 视界坍缩脉冲（全场法阵当场献祭）。
+//   ⚠️ 判据是「按下过 ∧ 没拖动」，**不是**「op 还是 idle」—— 按下时 op 已经是 pressing 了，
+//      拿 idle 判会把每一次点击都吞掉（这一页最早就是这么死的，见 `onUp`）。
+//   ⚠️ 意向（`pending`）必须在 `onUp` 里**清空之前**读走，否则永远分不清点的是哪个。
+//   视界脉冲**不需要新的 op**：它是瞬时的（设几个共享量就完事），没有"进行中的手势"。
+//
 // 🔴 **黑洞是钉死在页面中心的**（`s.hx/s.hy` 只在 `relayout` 里写一次）。它曾经可以被
 //    拽着走、松手再弹回来，但那样整页的重心跟着指针跑，而引力透镜的中心是**烘在星野里**的
 //    （见 hole.ts 的 `lensWarp`）—— 一拖，被掰弯的那片天就跟黑球错开，像画歪了。
@@ -17,9 +24,14 @@ import { createHoleLayer, holeOf, hoverOf } from "./hole";
 import { createRites, type Rites } from "./rites";
 import {
 	approach,
+	BURST_DUR,
+	COLLAPSE_DUR,
 	createShared,
 	dprCap,
 	type Shared,
+	STAGE_R,
+	type Stage,
+	stageOf,
 	type View,
 } from "./state";
 
@@ -32,6 +44,19 @@ const PHASE_TEXT: Record<string, string> = {
 	active: "巅峰",
 	dissolving: "解体",
 	absorbing: "吞噬",
+};
+
+/**
+ * 觉醒四阶的名字。读数里用它**代替阿拉伯数字** ——
+ * spec §2.4 明令"全程不显示数字计数，层级通过形态与光点个数自然体现"，
+ * 所以原来那个"已吞噬 N 座"的计数必须拆掉。名字留着是因为它对可用性有帮助
+ * （"我按了半天到底在几阶"），而它并不违反"不显示数字"。
+ */
+const STAGE_TEXT: Record<Stage, string> = {
+	1: "初醒",
+	2: "荧动",
+	4: "曜变",
+	8: "归墟",
 };
 
 function need<T extends Element>(sel: string): T {
@@ -121,6 +146,39 @@ export function createBlackHoleApp(): BlackHoleApp {
 
 	function step(dt: number) {
 		s.now = Date.now();
+
+		// ── 觉醒四阶（spec §2.3）。阶数**只从 `swallowed` 派生**，不另存一份：
+		//    过载喷发把 `swallowed` 清零，"打回 1 阶"自己就发生了。
+		// ⚠️ 放在最前面：下面 `holeOf` 的半径要读它，这一帧就得是新的（晚一帧的话，
+		//    换阶那一瞬间"环还在旧半径上、球已经长大了"）。
+		const next = stageOf(s.swallowed);
+		if (next !== s.stage) {
+			s.stage = next;
+			// 🔴 换阶 = 换半径 = 换引力透镜的 θE。**星野是烘出来的，透镜只在烘那一步做一次**，
+			//    不重烘的话，活丝用的新 θE 与星野里的旧 θE 会分成两套几何（这一页的老坑）。
+			//    ⚠️ 只在换阶那一帧做 —— 重烘是百万级像素的循环，绝不能每帧。
+			bg.rebake(view, s);
+		}
+		// 半径**滑**到这一阶该有的大小，不跳（spec §2.4"形态过渡平滑不突兀"）。
+		// ⚠️ 上面那次 `rebake` 用的是 `holeOf` 的**当时**半径 —— 过渡期间星野里的 θE
+		//    会与新半径有一点点差（最多几 %），几帧内被吃掉，看不出来；
+		//    但落定之后两者是一致的，这才是要紧的那条。
+		s.rScale = approach(s.rScale, STAGE_R[s.stage], 3.2, dt);
+		// ── 视界坍缩脉冲（spec §2.2）。整条包络（半径、亮度、符文圈）都在 state.ts 里，
+		//    这里只推时间；`holeOf` 读它算出"正在收缩的"半径。
+		if (s.collapse >= 0) {
+			s.collapse += dt;
+			if (s.collapse > COLLAPSE_DUR) s.collapse = -1;
+		}
+		// 8 阶过载喷发：烧完把层数打回 1 阶（spec §2.3 专属机制）
+		if (s.burst >= 0) {
+			s.burst += dt;
+			if (s.burst > BURST_DUR) {
+				s.burst = -1;
+				s.swallowed = 0;
+			}
+		}
+
 		const hole = holeOf(s, view);
 
 		// 指针靠近：吸积盘提速、星尘偏转（spec §二 黑洞基础交互）
@@ -139,7 +197,7 @@ export function createBlackHoleApp(): BlackHoleApp {
 			if (s.wave > 1.6) s.wave = -1;
 		}
 
-		const eaten = rites.update(dt, view, hole);
+		const eaten = rites.update(dt, view, hole, s);
 		if (eaten > 0) {
 			s.swallowed += eaten;
 			s.pulse = Math.min(1.35, s.pulse + 0.42 * Math.min(2, eaten));
@@ -152,6 +210,25 @@ export function createBlackHoleApp(): BlackHoleApp {
 		s.focusName = top ? top.name : "";
 	}
 
+	/**
+	 * 视界坍缩脉冲（spec §2.2）。点**黑洞本体**触发 —— 和"点空白生成法阵"是两回事，
+	 * 判据在 `onDown`（按下就落在洞口里 → 记一个 `hole` 意向），`onUp` 确认是干净点击才执行。
+	 *
+	 * 三件事同时发生，缺一件就读不出"脉冲扫过全场"：
+	 *   ① 黑洞先缩后弹 —— 由 `s.collapse` 驱动，`holeOf` 兑现（所以命中判定跟着一起变）；
+	 *   ② 一圈**强力**引力波 —— `s.wave = 0` 重启，`s.pulse` 拉满让它比吞噬那圈更强更粗；
+	 *   ③ 全场法阵**主动献祭** —— `forceDissolve()` 跳过停留，一起解体。
+	 */
+	function pulse() {
+		s.collapse = 0;
+		s.pulse = 1.35;
+		s.wave = 0;
+		rites.forceDissolve();
+		// 8 阶专属「过载喷发」：这一记除了脉冲，还会**反向**甩出一波金光（见 hole.ts 的
+		// `drawBurst`），烧完之后层数重置回 1 阶。
+		if (s.stage >= 8) s.burst = 0;
+	}
+
 	// ────────────────────────────────────────── 渲染
 
 	function render(dt: number) {
@@ -160,7 +237,7 @@ export function createBlackHoleApp(): BlackHoleApp {
 		bg.drawBg(gBg, s, view);
 		clear(gRite);
 		clear(gSparks);
-		rites.draw(gRite, gSparks, view);
+		rites.draw(gRite, gSparks, view, s);
 		clear(gHole);
 		bg.draw(gHole, s, view, hole, dt);
 	}
@@ -172,9 +249,15 @@ export function createBlackHoleApp(): BlackHoleApp {
 		last = now;
 		// 物理永远按 rAF 走（时间不停），降的只是"画"
 		step(dt);
-		// 静止降帧：没有法阵、没有手势时 24fps 足够（吸积盘那么慢，看不出来）
+		// 静止降帧：没有法阵、没有手势时 24fps 足够（吸积盘那么慢，看不出来）。
+		// ⚠️ 坍缩脉冲 / 过载喷发期间不许降帧 —— 那两段是全页最快的一瞬，24fps 会看出跳。
 		drawAcc += dt;
-		const busy = rites.count() > 0 || s.op !== "idle" || s.hover > 0.02;
+		const busy =
+			rites.count() > 0 ||
+			s.op !== "idle" ||
+			s.hover > 0.02 ||
+			s.collapse >= 0 ||
+			s.burst >= 0;
 		if (busy || drawAcc >= 1 / 24) {
 			drawAcc = 0;
 			render(dt);
@@ -206,6 +289,16 @@ export function createBlackHoleApp(): BlackHoleApp {
 		downPos = { x, y };
 		movedFar = false;
 		dragIdx = -1;
+		// 🔴 命中次序 = **精度优先**，不是"谁画在上面谁先判"。洞口是一个**明确的圆**
+		//    （半径几十像素、位置固定），比随手一座法阵那圈稀疏的环窄得多，所以先判它 ——
+		//    法阵压到洞口上时，点下去应该是"视界脉冲"，不是"把这阵拖走"。
+		//    ⚠️ 半径取 `holeOf` 的实时值：脉冲收缩期间洞口真的变小了，命中区就该跟着小
+		//    （这正是"把半径调制写进 holeOf"换来的好处 —— 三处读者自动一致）。
+		const hole = holeOf(s, view);
+		if (Math.hypot(x - hole.x, y - hole.y) < hole.r * 1.12) {
+			pending = { kind: "hole" };
+			return;
+		}
 		const i = rites.grab(x, y);
 		if (i >= 0) {
 			pending = { kind: "rite", index: i };
@@ -248,6 +341,8 @@ export function createBlackHoleApp(): BlackHoleApp {
 		//    点画面永远不生成法阵，只剩右下角那个按钮能生成。
 		//    正确的判据是「按下过 ∧ 没有拖动」，不是「op 还是 idle」。
 		const tap = wasOp === "pressing" && !movedFar && downInStage;
+		// ⚠️ 意向必须在**清空之前**读走 —— `pending` 下面几行就被置 null 了。
+		const onHole = tap && pending?.kind === "hole";
 		pending = null;
 		downInStage = false;
 		if (wasOp === "drag_rite" && dragIdx >= 0) {
@@ -256,7 +351,10 @@ export function createBlackHoleApp(): BlackHoleApp {
 			dragIdx = -1;
 		}
 		s.op = "idle";
-		if (tap) rites.spawn(downPos.x, downPos.y, s, view, holeOf(s, view));
+		if (!tap) return;
+		// 点黑洞本体 = 视界坍缩脉冲；点空白 = 生成随机法阵。两条路从这里分开（spec §2.2）。
+		if (onHole) pulse();
+		else rites.spawn(downPos.x, downPos.y, s, view, holeOf(s, view));
 	}
 
 	function onLeave() {
@@ -267,18 +365,19 @@ export function createBlackHoleApp(): BlackHoleApp {
 	// ────────────────────────────────────────── UI
 
 	const readState = opt<HTMLElement>("#bh-state");
-	const readCount = opt<HTMLElement>("#bh-count");
+	const readTier = opt<HTMLElement>("#bh-tier");
 	const intro = opt<HTMLElement>("#bh-intro");
 	const helpBox = opt<HTMLElement>("#bh-help");
 	const btnHelp = opt<HTMLButtonElement>("#bh-help-toggle");
 	const btnMake = opt<HTMLButtonElement>("#bh-make");
+	const btnPulse = opt<HTMLButtonElement>("#bh-pulse");
 
 	function hideIntro() {
 		intro?.classList.add("is-gone");
 	}
 
 	let lastState = "";
-	let lastCount = "";
+	let lastTier = "";
 	function syncReadout() {
 		const txt = PHASE_TEXT[s.focusPhase] ?? "虚空静默";
 		// 比"拼好的整串"而不是比阶段名 —— 否则同一阶段换了一座法阵，名字不会更新
@@ -287,10 +386,12 @@ export function createBlackHoleApp(): BlackHoleApp {
 			readState.textContent = full;
 			lastState = full;
 		}
-		const c = String(s.swallowed);
-		if (readCount && c !== lastCount) {
-			readCount.textContent = c;
-			lastCount = c;
+		// 🔴 这里**只给阶名，不给数字**（spec §2.4：不显示阿拉伯数字计数）。
+		//    数量由洞口外围的光点个数暗示 —— 那是这一页读数的正主，文字只是个名字。
+		const tier = STAGE_TEXT[s.stage];
+		if (readTier && tier !== lastTier) {
+			readTier.textContent = tier;
+			lastTier = tier;
 		}
 	}
 
@@ -304,6 +405,12 @@ export function createBlackHoleApp(): BlackHoleApp {
 			view,
 			holeOf(s, view),
 		);
+		hideIntro();
+	});
+
+	// 键盘/触屏也走得到的那条明路（等价于"点黑洞本体"）
+	btnPulse?.addEventListener("click", () => {
+		pulse();
 		hideIntro();
 	});
 

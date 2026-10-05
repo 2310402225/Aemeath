@@ -16,6 +16,7 @@ import {
 	project,
 	rngOf,
 	type Shared,
+	type Stage,
 	smoothstep,
 	type View,
 } from "./state";
@@ -41,7 +42,10 @@ const PALETTE: { name: string; rgb: [number, number, number] }[] = [
 const COLD: [number, number, number] = [228, 240, 255];
 const CRIMSON: [number, number, number] = [206, 74, 78];
 
-/** 七种阵型（spec §三 的随机库）。 */
+/**
+ * 七种阵型（spec §三 的随机库）。**索引就是 `kind`**，`buildSigil` 按它分支 ——
+ * 所以下面那两张"哪几号属于哪一档"的表只能改内容、不能改顺序。
+ */
 const KINDS = [
 	"三重圆环阵",
 	"六芒星几何阵",
@@ -51,6 +55,16 @@ const KINDS = [
 	"幽青八芒阵",
 	"暗金星轨阵",
 ] as const;
+
+/**
+ * 法阵库分级（spec §三）：
+ *   基础库（1 阶就有）＝ 三重圆环阵 / 月相仪式阵 / 裂纹封印阵 / 暗金星轨阵
+ *   高阶库（**4 阶曜变**才解锁）＝ 六芒星几何阵 / 幽青八芒阵 / 时空折叠阵
+ * ⚠️ `KINDS` 的顺序是历史顺序（`buildSigil` 认它），所以这里用**索引表**而不是重排数组。
+ */
+const BASE_KINDS = [0, 2, 3, 6] as const;
+/** 粒子密度系数（spec §2.3：2 阶 +50%、8 阶翻倍）。法阵粒子与解体碎片共用。 */
+const densityK = (stage: Stage) => (stage >= 8 ? 2 : stage >= 2 ? 1.5 : 1);
 
 /** 折线的 tint：0 主色 / 1 副色（冷白） / 2 猩红（只给裂纹用，少量） */
 type Tint = 0 | 1 | 2;
@@ -113,13 +127,19 @@ export type Rites = {
 	/** 点一下生成一座法阵。位置太挤 / 冷却没到 → 返回 false。 */
 	spawn(x: number, y: number, s: Shared, view: View, hole: Hole): boolean;
 	/** 推进所有法阵与粒子。返回**本次被吞掉的法阵数**（交接线层去触发黑洞脉冲）。 */
-	update(dt: number, view: View, hole: Hole): number;
+	update(dt: number, view: View, hole: Hole, s: Shared): number;
 	/** 画法阵层与粒子层。深度分层靠"算深度"，两层都从 `project()` 出。 */
 	draw(
 		g: CanvasRenderingContext2D,
 		gs: CanvasRenderingContext2D,
 		view: View,
+		s: Shared,
 	): void;
+	/**
+	 * 视界坍缩脉冲的"主动献祭"：**跳过停留**，全场法阵一起进入解体（spec §2.2）。
+	 * 解体比自然那趟快一档 —— 全场同时塌才有"共振"的意思，各按各的节奏就散了。
+	 */
+	forceDissolve(): void;
 	/** 命中：返回最合适被拖的那座法阵下标（−1 = 没有）。精度优先见 `grab`。 */
 	grab(x: number, y: number): number;
 	drag(i: number, x: number, y: number): void;
@@ -416,7 +436,8 @@ export function createRites(): Rites {
 		hole: Hole,
 	): boolean {
 		if (cooldown > 0) return false;
-		cooldown = 0.26;
+		// 生成速度：2 阶起快 15%（spec §2.3 荧动）
+		cooldown = 0.26 / (s.stage >= 2 ? 1.15 : 1);
 		// 点得离黑洞近 → 从黑洞中心向外展开（spec §三）
 		const near = Math.hypot(x - hole.x, y - hole.y) < Math.min(v.w, v.h) * 0.42;
 		let cx = near ? hole.x : x;
@@ -440,16 +461,27 @@ export function createRites(): Rites {
 
 		nextSeed = (nextSeed * 1103515245 + 12345) >>> 0;
 		const rand = rngOf(nextSeed);
-		const kind = Math.floor(rand() * KINDS.length);
+		// 法阵库分级：4 阶曜变之前只从**基础四阵**里抽（spec §三）。高阶三种进了库之后，
+		// 抽法不变、只是候选变多 —— 所以"解锁"在观感上就是"突然会出现没见过的阵型"。
+		const kind =
+			s.stage >= 4
+				? Math.floor(rand() * KINDS.length)
+				: (BASE_KINDS[Math.floor(rand() * BASE_KINDS.length)] ?? 0);
 		const pal = PALETTE[Math.floor(rand() * PALETTE.length)] ?? PALETTE[0];
 		if (!pal) return false;
 		const rings = 2 + Math.floor(rand() * 3);
 		const nodes = [6, 8, 12, 16][Math.floor(rand() * 4)] ?? 8;
 		const R = Math.min(v.w, v.h) * 0.34 * (0.72 + rand() * 0.28);
 		const liteCap = s.lite ? 0.72 : 1;
-		// 升起高度分低/中/高三档（spec §八）
+		// 升起高度分低/中/高三档（spec §八）。两处觉醒加成：
+		//   · 4 阶曜变：整体 +20%
+		//   · 8 阶归墟：**自动提升一档**（低→中、中→高、高封顶）—— 与 +20% 是叠加的
+		const tier = Math.min(2, Math.floor(rand() * 3) + (s.stage >= 8 ? 1 : 0));
 		const riseH =
-			R * ([0.22, 0.36, 0.52][Math.floor(rand() * 3)] ?? 0.36) * liteCap;
+			R *
+			([0.22, 0.36, 0.52][tier] ?? 0.36) *
+			liteCap *
+			(s.stage >= 4 ? 1.2 : 1);
 		// 🔴 钳回可视区。外圈投影到屏幕上是一个**横半轴 R、纵半轴 R*k** 的椭圆，而
 		//    `生成法阵` 按钮给的落点是 y = h/2 + sin(a)·h·0.24 —— 在 1258×566 上，
 		//    法阵有半个身子落在画布外，看起来就是"法阵被截断了"（其实是中心算到了外面）。
@@ -482,7 +514,8 @@ export function createRites(): Rites {
 			drift: false,
 		};
 		rites.push(rite);
-		spawnRise(rite, s.lite ? 40 : 70, rand);
+		// 粒子密度分阶（spec §2.3）
+		spawnRise(rite, (s.lite ? 40 : 70) * densityK(s.stage), rand);
 		shock(x, y, 1);
 		return true;
 	}
@@ -585,11 +618,15 @@ export function createRites(): Rites {
 
 	// ─────────────────────────────────────────── 生命周期推进
 
-	function update(dt: number, v: View, hole: Hole): number {
+	function update(dt: number, v: View, hole: Hole, s: Shared): number {
 		view = v;
 		time += dt;
 		cooldown = Math.max(0, cooldown - dt);
 		let eaten = 0;
+		// 解体碎片密度分阶（spec §2.3）
+		const dk = densityK(s.stage);
+		// 吞噬速度：4 阶曜变起快 30%（spec §2.3）
+		const eatK = s.stage >= 4 ? 1.3 : 1;
 
 		for (let i = rites.length - 1; i >= 0; i--) {
 			const r = rites[i];
@@ -629,12 +666,19 @@ export function createRites(): Rites {
 				for (const w of r.wires) {
 					if (w.broke || r.u < (1 - w.rank) * 0.66) continue;
 					w.broke = true;
-					spawnShards(r, w.pts, w.z * (1 - r.u), 4, rand, hole);
+					spawnShards(
+						r,
+						w.pts,
+						w.z * (1 - r.u),
+						Math.round(4 * dk),
+						rand,
+						hole,
+					);
 				}
 				if (p >= 1) {
 					r.phase = "absorbing";
 					r.t = 0;
-					r.dur = (1.6 + Math.random() * 0.9) / r.speed;
+					r.dur = (1.6 + Math.random() * 0.9) / r.speed / eatK;
 					r.u = 0;
 				}
 			} else if (r.phase === "absorbing") {
@@ -673,6 +717,22 @@ export function createRites(): Rites {
 			if (shockRing.t > 1.1) shockRing = null;
 		}
 		return eaten;
+	}
+
+	/**
+	 * 视界坍缩脉冲的"主动献祭"（spec §2.2）：**跳过停留**，全场法阵一起进入解体。
+	 * ⚠️ 解体时长统一压到 0.55s（自然那趟是 0.9s）—— 全场同时塌才读得出"共振"，
+	 *    各按各的节奏各走各的，脉冲扫过去就只是"碰巧大家都在解体"。
+	 */
+	function forceDissolve() {
+		for (const r of rites) {
+			if (r.phase === "dissolving" || r.phase === "absorbing") continue;
+			r.phase = "dissolving";
+			r.t = 0;
+			r.u = 0;
+			r.dur = 0.55;
+			r.drift = false;
+		}
 	}
 
 	/** 这座法阵还有自己的粒子在场吗（有就不算吞干净）。 */
@@ -866,8 +926,12 @@ export function createRites(): Rites {
 		g: CanvasRenderingContext2D,
 		gs: CanvasRenderingContext2D,
 		v: View,
+		s: Shared,
 	) {
 		view = v;
+		// 🔴 视界脉冲扫过全场时，所有法阵**一起亮一下**（spec §2.2"同步共振发光"）。
+		//    这是唯一一处"法阵的亮度不由自己决定" —— 也是"脉冲扫过全场"看得见的原因。
+		const reson = 1 + clamp(s.pulse, 0, 1.35) * 0.55;
 		for (const r of rites) {
 			const lift =
 				r.phase === "generating"
@@ -882,7 +946,8 @@ export function createRites(): Rites {
 			const rev = r.phase === "generating" ? r.u : 1;
 			const fadeIn = r.phase === "generating" ? clamp(r.u * 5, 0, 1) : 1;
 			const fadeOut = r.phase === "dissolving" ? 1 - r.u * 0.55 : 1;
-			const alpha = r.phase === "absorbing" ? 0.3 : fadeIn * fadeOut;
+			// 共振那一下也把"不在场的"法阵带亮 —— 它本来就是"被那个脉冲照到的"
+			const alpha = (r.phase === "absorbing" ? 0.3 : fadeIn * fadeOut) * reson;
 
 			// ⚠️ 成形那一段在 spec 里是**四拍**，不是"一整段一起淡进来"：
 			//    ①种子点亮 → ②核心符文 → ③由内向外扩展 → ④结构锁定。
@@ -1061,6 +1126,7 @@ export function createRites(): Rites {
 		spawn,
 		update,
 		draw,
+		forceDissolve,
 		grab,
 		drag,
 		release,

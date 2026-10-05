@@ -31,17 +31,21 @@ import { url } from "@/utils/url-utils";
 			<p class="bh-sub">时空仪式</p>
 			<p class="bh-enter">
 				<span><b>点画面</b>任意处起一座法阵 · 离黑洞近就从黑洞里长出来</span>
+				<span><b>点黑洞</b>触发视界坍缩脉冲 · 全场法阵当场献祭</span>
 				<span><b>拖法阵</b>可挪位，松手后它自己飘向黑洞</span>
 			</p>
 		</div>
 	</div>
 
-	<!-- 读数：当前阶段、法阵名、已吞噬数。低透明度但不糊（正文对比度按 AA 算过） -->
+	<!-- 读数：当前阶段、法阵名、觉醒阶名。
+	     🔴 **没有数字**。spec §2.4 明令不显示计数 UI —— 吞了几座由洞口外围的
+	     **光点个数**暗示（1 阶 0 颗、2 阶 4 颗、4 阶起 8 颗），这里只留一个阶名，
+	     不然"我按了半天到底在几阶"完全没处问。 -->
 	<p class="bh-readout" id="bh-readout">
 		<span class="bh-dot" aria-hidden="true"></span>
 		<span id="bh-state">虚空静默</span>
 		<span class="bh-sep" aria-hidden="true">·</span>
-		<span>已吞噬 <span id="bh-count">0</span> 座</span>
+		<span class="bh-tier" id="bh-tier">初醒</span>
 	</p>
 
 	<a class="bh-home bh-btn" href={url("/")} aria-label="退回博客首页">
@@ -64,8 +68,11 @@ import { url } from "@/utils/url-utils";
 		<span>退回博客</span>
 	</a>
 
-	<!-- 唯一的动作按钮：画布点得到，键盘也要走得到（触屏与键鼠等价） -->
+	<!-- 两个动作按钮：画布点得到，键盘也要走得到（触屏与键鼠等价）。
+	     「视界脉冲」不是可有可无的重复入口 —— 它的画布入口是"点那个圆圆的黑球"，
+	     而那颗球看上去是**背景**不是**按钮**，没有这条明路，一部分人永远发现不了。 -->
 	<div class="bh-actions">
+		<button type="button" class="bh-btn" id="bh-pulse">视界脉冲</button>
 		<button type="button" class="bh-btn bh-btn-primary" id="bh-make">生成法阵</button>
 	</div>
 
@@ -82,7 +89,7 @@ import { url } from "@/utils/url-utils";
 			<section>
 				<h3>法阵</h3>
 				<ul>
-					<li><b>生成</b>点画面任意处 · 随机七种阵型之一，由内向外逐圈亮起来</li>
+					<li><b>生成</b>点画面任意处 · 随机阵型之一，由内向外逐圈亮起来</li>
 					<li><b>靠近</b>点得离黑洞近 · 法阵从黑洞中心向外展开</li>
 					<li><b>共存</b>最多三座 · 第四座来时最旧的那座先解体</li>
 					<li><b>拖动</b>按住成形后的法阵 · 松手它自己慢慢飘向黑洞并解体</li>
@@ -94,9 +101,19 @@ import { url } from "@/utils/url-utils";
 					<li><b>靠近</b>指针挨近 · 吸积盘转得更快，星尘向内偏</li>
 					<li><b>扭曲</b>洞口背后那片天被掰到环外 · 一直挂在那儿，不随指针动</li>
 					<li><b>吞噬</b>法阵碎片被卷进去 · 事件视界闪一圈，吸积盘亮一档</li>
+					<li><b>脉冲</b>点黑洞本体 · 先缩后弹、放出一圈强力引力波，全场法阵当场献祭</li>
 				</ul>
 			</section>
-			<p class="bh-help-foot">回车同样可以生成 · Esc 收起这块说明</p>
+			<section>
+				<h3>觉醒</h3>
+				<ul>
+					<li><b>初醒</b>一座 · 单圈吸积盘，基础四阵</li>
+					<li><b>荧动</b>二座 · 盘亮一档，多一道金属细环与四颗绕行光点</li>
+					<li><b>曜变</b>四座 · 洞体变大，多一层反向转的冷色光点，解锁高阶三阵</li>
+					<li><b>归墟</b>八座 · 洞体最大，永久暗金符文环；再点黑洞就是过载喷发，烧完回到初醒</li>
+				</ul>
+			</section>
+			<p class="bh-help-foot">回车生成 · Esc 收起说明</p>
 		</div>
 	</div>
 
@@ -307,6 +324,12 @@ import { url } from "@/utils/url-utils";
 		opacity: 0.4;
 	}
 
+	/* 阶名：暗金，和洞口符文同一个色。它是读数里唯一带"进度"意味的一项，
+	   所以给它一点颜色，其余仍是低透明度的银灰。 */
+	.bh-tier {
+		color: var(--bh-gold);
+	}
+
 	.bh-btn {
 		display: flex;
 		align-items: center;
@@ -361,6 +384,8 @@ import { url } from "@/utils/url-utils";
 		left: 50%;
 		bottom: var(--bh-float-y);
 		z-index: 8;
+		display: flex;
+		gap: 0.6rem;
 		transform: translateX(-50%);
 	}
 

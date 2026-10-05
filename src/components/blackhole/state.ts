@@ -36,6 +36,62 @@ export type View = {
 	k: number;
 };
 
+/**
+ * 觉醒四阶（spec §2.3）。阈值 1/2/4/8。
+ * 🔴 **由"已吞噬数"派生，不另存一份状态**。过载喷发要把层数打回 1 阶 ——
+ *    派生写法只要 `swallowed = 0`，形态、法阵库、反馈自己就全回来了；
+ *    置位写法得在"进阶"和"过载"两条路上各写一遍重置，迟早漏一条。
+ */
+export type Stage = 1 | 2 | 4 | 8;
+
+export function stageOf(swallowed: number): Stage {
+	if (swallowed >= 8) return 8;
+	if (swallowed >= 4) return 4;
+	if (swallowed >= 2) return 2;
+	return 1;
+}
+
+/** 阶数 → 黑洞半径系数。
+ * 🔴 神的要求：「黑洞初始时小一点，最大也就目前大小」→ **8 阶 = 1.0**（就是现在这个尺寸），
+ *    1 阶收到 0.76。spec 写的"体积 +15% / +30%"于是落在 4 阶 1.18×、8 阶 1.32×，对得上。 */
+export const STAGE_R: Record<Stage, number> = {
+	1: 0.76,
+	2: 0.84,
+	4: 0.9,
+	8: 1,
+};
+
+/** 坍缩脉冲的总时长（秒）。半径包络、亮度包络、符文圈都按它收尾。 */
+export const COLLAPSE_DUR = 1.15;
+/** 过载喷发的逆喷时长（秒）。烧完把层数打回 1 阶。 */
+export const BURST_DUR = 1.3;
+
+/**
+ * 坍缩脉冲的**半径**包络：先收进去（10~15%），再猛地弹出去，然后回落。
+ * ⚠️ 只在 `holeOf` 里用这一次 —— 命中判定、法阵生成、绘制全都从那里取半径，
+ *    所以"缩进去的那一瞬间点不到洞口"这类错位根本不会发生。
+ */
+export function collapseR(c: number): number {
+	if (c < 0) return 1;
+	const A = 0.14;
+	const B = 0.2;
+	if (c < 0.16) return 1 - A * smoothstep(c / 0.16);
+	if (c < 0.34) return 1 - A + (A + B) * smoothstep((c - 0.16) / 0.18);
+	return 1 + B * (1 - smoothstep((c - 0.34) / 0.5));
+}
+
+/**
+ * 坍缩脉冲的**亮度**包络（1 = 常态）：视界先变暗 → 回弹时过曝 → 落回常态。
+ * ⚠️ 只乘在透镜那一套（爱因斯坦环、细弧、活丝）上。**盘要留着** ——
+ *    全页一起暗下去读成"熄灯"，不是"那个天体自己在收缩"。
+ */
+export function collapseDark(c: number): number {
+	if (c < 0) return 1;
+	if (c < 0.18) return 1 - 0.6 * smoothstep(c / 0.18);
+	if (c < 0.55) return 0.4 + 0.85 * smoothstep((c - 0.18) / 0.37);
+	return 1.25 - 0.25 * smoothstep((c - 0.55) / 0.4);
+}
+
 export type Hole = {
 	x: number;
 	y: number;
@@ -57,8 +113,21 @@ export type Shared = {
 	pulse: number;
 	/** 指针靠近黑洞的程度 0..1（吸积盘提速、星尘偏转都读它） */
 	hover: number;
-	/** 已吞噬的法阵数（读数用） */
+	/** 已吞噬的法阵数（读数用）。🔴 也是觉醒阶数的**唯一来源**（`stageOf`）—— 过载喷发把它清零。 */
 	swallowed: number;
+	/** 觉醒阶数（由 `swallowed` 派生）。形态、法阵库、粒子密度、吞速都读它。 */
+	stage: Stage;
+	/**
+	 * 阶数系数的**平滑跟随值**（≈ `STAGE_R[stage]`，但不是真源 —— 真源是 `stage`）。
+	 * 🔴 存在的理由：spec §2.4 要求"阶数跃迁有短暂的形态过渡动画，平滑不突兀"。
+	 *    直接用 `STAGE_R[stage]` 的话，吞下第 4 座的那一帧半 radius 会**跳** 6% ——
+	 *    一眼就看得出是"换了个尺寸"，不是"长大了"。由接线层用指数趋近推它。
+	 */
+	rScale: number;
+	/** 视界坍缩脉冲计时（秒，<0 = 没有）。点击黑洞本体触发，唯一的写者是接线层。 */
+	collapse: number;
+	/** 8 阶过载喷发的逆喷计时（秒，<0 = 没有）。烧完把 `swallowed` 打回 0。 */
+	burst: number;
 	/** 引力波：从黑洞往外扩的圈，−1 = 没有 */
 	wave: number;
 	/** 读数用：最新那座法阵的名字与阶段 */
@@ -81,6 +150,10 @@ export function createShared(): Shared {
 		pulse: 0,
 		hover: 0,
 		swallowed: 0,
+		stage: 1,
+		rScale: STAGE_R[1],
+		collapse: -1,
+		burst: -1,
 		wave: -1,
 		focusName: "",
 		focusPhase: "idle",
