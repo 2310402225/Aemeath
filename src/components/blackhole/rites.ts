@@ -43,8 +43,9 @@ const COLD: [number, number, number] = [228, 240, 255];
 const CRIMSON: [number, number, number] = [206, 74, 78];
 
 /**
- * 七种阵型（spec §三 的随机库）。**索引就是 `kind`**，`buildSigil` 按它分支 ——
- * 所以下面那两张"哪几号属于哪一档"的表只能改内容、不能改顺序。
+ * 十三种阵型（spec §三 的随机库 + 照着 `blog/` 那 16 张设定图补的六个）。
+ * **索引就是 `kind`**，`buildSigil` 按它分支 —— 所以下面那张"哪几号属于哪一档"的
+ * 索引表只能改内容、不能改顺序。
  */
 const KINDS = [
 	"三重圆环阵",
@@ -54,6 +55,15 @@ const KINDS = [
 	"时空折叠阵",
 	"幽青八芒阵",
 	"暗金星轨阵",
+	// ↓ 后六个是照着 `blog/` 根目录那 16 张法阵设定图补的（星网 / 八卦罗盘 / 莲花 /
+	//   卫星盘 / 玫瑰涡 / 尖芒星）—— 前七号是原规格点名的库，顺序不能动，
+	//   所以新阵型一律**追加在尾部**，靠 `BASE_KINDS` 决定谁属于基础库。
+	"太极八卦阵",
+	"莲花法阵",
+	"符文卫星阵",
+	"玫瑰涡阵",
+	"尖芒星阵",
+	"星网阵列",
 ] as const;
 
 /**
@@ -66,14 +76,36 @@ const BASE_KINDS = [0, 2, 3, 6] as const;
 /** 粒子密度系数（spec §2.3：2 阶 +50%、8 阶翻倍）。法阵粒子与解体碎片共用。 */
 const densityK = (stage: Stage) => (stage >= 8 ? 2 : stage >= 2 ? 1.5 : 1);
 
+/**
+ * 台面高度剖面：内高外低、**四层阶梯**。单位 = 升起高度 `riseH`（见 `Wire.z`）。
+ * 🔴 参考图里那些法阵都是"一圈套一圈、越往里越高的台"。平滑地线性上升会读成**一顶帽子**，
+ *    反过来（外高内低）读成**一只碗** —— 只有阶梯才读成"多层法阵盘"。
+ */
+function tierOf(rank: number): number {
+	if (rank >= 0.9) return 0.04;
+	if (rank >= 0.68) return 0.3;
+	if (rank >= 0.42) return 0.58;
+	return 0.84;
+}
+
 /** 折线的 tint：0 主色 / 1 副色（冷白） / 2 猩红（只给裂纹用，少量） */
 type Tint = 0 | 1 | 2;
 
 type Wire = {
 	/** 扁平坐标 [x0,y0,x1,y1,…]，原点在法阵中心、单位像素 */
 	pts: number[];
-	/** 立体高度（像素），升起时按 lift 放大 */
+	/**
+	 * 立体高度，**单位 = 升起高度 `riseH`**（0 = 贴在台面、1 = 台顶）。升起时按 `lift` 放大。
+	 * 🔴 单位必须是"占 riseH 的比例"，不能写像素：这一页原来 `zOf` 返回 0.16~1.0 而
+	 *    绘制处只做 `w.z * lift`，于是高度是 **0.1~1.0 像素** —— 整座法阵在视觉上
+	 *    完全是平的（"立体感没体现"的根因就在这一行）。现在统一乘 `r.riseH`。
+	 */
 	z: number;
+	/**
+	 * 逐点高度（可省），给了就覆盖 `z`：两端不同 = 一道**坡**（把上下两层台阶连起来），
+	 * 两端同 x/y 不同高 = 一片**竖刃**。这是"立体"能读出来的两条主要来源。
+	 */
+	zs?: number[];
 	/** 占外圈半径的比例 0..1：由内向外展开、由外向内解体都读它 */
 	rank: number;
 	tint: Tint;
@@ -204,35 +236,329 @@ export function createRites(): Rites {
 		return pts;
 	};
 
-	/** 放射线：n 条从 r0 到 r1 的短线（各自是一条 wire）。 */
-	const spokes = (
+	/** 把一组局部点整体平移（拼合图形用）。 */
+	const move = (pts: number[], cx: number, cy: number): number[] => {
+		for (let i = 0; i < pts.length; i += 2) {
+			pts[i] = (pts[i] ?? 0) + cx;
+			pts[i + 1] = (pts[i + 1] ?? 0) + cy;
+		}
+		return pts;
+	};
+
+	/**
+	 * 星形折线：n 个顶点、每次跳 `step` 格。5/2 = 五芒、8/3 = 八芒 —— 这两种
+	 * `gcd(n,step)=1`，一笔连完，是**一条** wire。
+	 *
+	 * ⚠️ 但 6/2 这种 `gcd(n,step)=m>1` 的跳法**会走成 m 个各自闭合的小环**：
+	 *    从 0 出发只够到 {0,2,4}（一个正三角），跑完 n 步回到 0 就停了，
+	 *    {1,3,5} 那半圈**根本不经过** —— 于是"六芒星"画出来是一个三角形。
+	 *    正确做法是把 m 条闭合链分开走（六芒 = 两个三角，互错 60°），**合起来**才是六芒。
+	 *    `step` 与 `n` 互质时 m=1，与老写法完全一致。
+	 */
+	const stars = (
+		r: number,
+		n: number,
+		step: number,
+		rot: number,
+		z: number,
+		rank: number,
+		tint: Tint,
+		base: number,
+	): Wire[] => {
+		let g = n;
+		for (let b = step; b; ) {
+			const t = g % b;
+			g = b;
+			b = t;
+		}
+		const out: Wire[] = [];
+		const per = n / g;
+		for (let s = 0; s < g; s++) {
+			const pts: number[] = [];
+			let i = s;
+			for (let k = 0; k <= per; k++) {
+				const a = rot + (TAU * i) / n;
+				pts.push(Math.cos(a) * r, Math.sin(a) * r);
+				i = (i + step) % n;
+			}
+			out.push(wire(pts, z, rank, tint, base));
+		}
+		return out;
+	};
+
+	/** 弦网：把 n 边形顶点按 `step` 格两两连起来 —— 参考图里"星上再分格"的那种网。 */
+	const web = (
+		r: number,
+		n: number,
+		step: number,
+		rot: number,
+		z: number,
+		rank: number,
+		tint: Tint,
+		base: number,
+	): Wire[] => {
+		const out: Wire[] = [];
+		for (let i = 0; i < n; i++) {
+			const a0 = rot + (TAU * i) / n;
+			const a1 = rot + (TAU * (i + step)) / n;
+			out.push(
+				wire(
+					[
+						Math.cos(a0) * r,
+						Math.sin(a0) * r,
+						Math.cos(a1) * r,
+						Math.sin(a1) * r,
+					],
+					z,
+					rank,
+					tint,
+					base,
+				),
+			);
+		}
+		return out;
+	};
+
+	/** 刻度带：r0→r1 之间一圈短径向线（罗盘 / 表盘那圈"尺"）。 */
+	const band = (
 		r0: number,
 		r1: number,
 		n: number,
 		rot: number,
 		z: number,
 		rank: number,
+		base = 0.5,
+	): Wire[] => {
+		const out: Wire[] = [];
+		for (let i = 0; i < n; i++) {
+			const a = rot + (TAU * i) / n;
+			const c = Math.cos(a);
+			const s = Math.sin(a);
+			out.push(wire([c * r0, s * r0, c * r1, s * r1], z, rank, 1, base));
+		}
+		return out;
+	};
+
+	/** 坡道：r0(低) → r1(高) 的斜撑 —— 把上下两层台阶连起来，是"立体"的主要来源之一。 */
+	const ramps = (
+		r0: number,
+		r1: number,
+		z0: number,
+		z1: number,
+		n: number,
+		rot: number,
+		rank: number,
+		base = 0.7,
+	): Wire[] => {
+		const out: Wire[] = [];
+		for (let i = 0; i < n; i++) {
+			const a = rot + (TAU * i) / n;
+			const c = Math.cos(a);
+			const s = Math.sin(a);
+			out.push(
+				wire([c * r0, s * r0, c * r1, s * r1], z0, rank, 0, base, [z0, z1]),
+			);
+		}
+		return out;
+	};
+
+	/**
+	 * 立鳍 / 立碑：环上 n 处各立一片竖直的刃（平面位置相同、只差高度）。
+	 * 🔴 这是"立体感"最直接的来源之一 —— 一片竖起来的刃在投影里就是一条竖线，
+	 *    一眼就知道这东西有厚度，而平躺的环不管画多少圈都读成一张贴纸。
+	 */
+	const fins = (
+		r: number,
+		n: number,
+		h: number,
+		rot: number,
+		rank: number,
+		tint: Tint,
+		base = 0.75,
+		z0 = 0.28,
+	): Wire[] => {
+		const out: Wire[] = [];
+		for (let i = 0; i < n; i++) {
+			const a = rot + (TAU * i) / n;
+			const x = Math.cos(a) * r;
+			const y = Math.sin(a) * r;
+			out.push(wire([x, y, x, y], z0, rank, tint, base, [z0, z0 + h]));
+		}
+		return out;
+	};
+
+	/** 星刺：一圈朝外的尖芒（细长三角，读成"刺"而不是"线"）。 */
+	const spikes = (
+		r0: number,
+		r1: number,
+		n: number,
+		rot: number,
+		z: number,
+		base: number,
+	): Wire[] => {
+		const out: Wire[] = [];
+		const dA = 0.055;
+		for (let i = 0; i < n; i++) {
+			const a = rot + (TAU * i) / n;
+			out.push(
+				wire(
+					[
+						Math.cos(a - dA) * r0,
+						Math.sin(a - dA) * r0,
+						Math.cos(a) * r1,
+						Math.sin(a) * r1,
+						Math.cos(a + dA) * r0,
+						Math.sin(a + dA) * r0,
+					],
+					z,
+					1,
+					0,
+					base,
+				),
+			);
+		}
+		return out;
+	};
+
+	/** 卫星盘：一圈小圆盘（挂在环上的小法阵，参考图 10 / 13）。 */
+	const satellites = (
+		r: number,
+		n: number,
+		size: number,
+		rot: number,
+		rank: number,
+		tint: Tint,
+		base = 0.8,
+	): Wire[] => {
+		const out: Wire[] = [];
+		for (let i = 0; i < n; i++) {
+			const a = rot + (TAU * i) / n;
+			const cx = Math.cos(a) * r;
+			const cy = Math.sin(a) * r;
+			out.push(
+				wire(move(circle(size, 20), cx, cy), tierOf(rank), rank, tint, base),
+			);
+			const dot = wire([cx, cy], tierOf(rank), rank, 1, base);
+			dot.glyph = true;
+			out.push(dot);
+		}
+		return out;
+	};
+
+	/** 涡线：阿基米德螺线（参考图 11 那种一圈圈收进去的玫瑰涡）。 */
+	const spiral = (
+		r0: number,
+		r1: number,
+		turns: number,
+		rot: number,
+		rank: number,
+		tint: Tint,
+		base = 0.8,
+	): Wire => {
+		const n = Math.max(24, Math.round(turns * 34));
+		const pts: number[] = [];
+		for (let i = 0; i <= n; i++) {
+			const t = i / n;
+			const a = rot + t * turns * TAU;
+			const r = r0 + (r1 - r0) * t;
+			pts.push(Math.cos(a) * r, Math.sin(a) * r);
+		}
+		return wire(pts, tierOf(rank), rank, tint, base);
+	};
+
+	/**
+	 * 把一条**平躺**的曲线按"离中心多远"披到台阶上去（逐点高度 `zs`）。
+	 * 🔴 给螺旋线用：一圈一圈收进去的涡线如果整条躺在同一层，投影里就会读成
+	 *    **一圈同心圆环**（"看起来杂"的头号来源，见 hole.ts 头注释）；披到台阶上之后
+	 *    它变成一条**绕着台阶盘上去的旋转楼梯** —— 同一个形状，立刻读得出层次。
+	 * ⚠️ 台阶是**阶梯函数**，所以这条线上会出现几段近乎竖直的短跳 —— 那不是瑕疵，
+	 *    那正是"走到台阶边缘要抬一步"读出来的东西。
+	 */
+	const drape = (w: Wire, R: number): Wire => {
+		const zs: number[] = [];
+		for (let i = 0; i < w.pts.length / 2; i++) {
+			const x = w.pts[i * 2] ?? 0;
+			const y = w.pts[i * 2 + 1] ?? 0;
+			zs.push(tierOf(Math.hypot(x, y) / R));
+		}
+		return { ...w, zs };
+	};
+
+	/** 花瓣环：n 片朝外的花瓣（每片是一个小椭圆的整圈）。 */
+	const petals = (
+		r: number,
+		n: number,
+		len: number,
+		rot: number,
+		rank: number,
+		tint: Tint,
+		base = 0.75,
 	): Wire[] => {
 		const out: Wire[] = [];
 		for (let i = 0; i < n; i++) {
 			const a = rot + (TAU * i) / n;
 			out.push(
 				wire(
-					[
-						Math.cos(a) * r0,
-						Math.sin(a) * r0,
-						Math.cos(a) * r1,
-						Math.sin(a) * r1,
-					],
-					z,
+					move(
+						ellipse(len, len * 0.42, a, 20),
+						Math.cos(a) * r,
+						Math.sin(a) * r,
+					),
+					tierOf(rank),
 					rank,
-					0,
-					0.85,
+					tint,
+					base,
 				),
 			);
 		}
 		return out;
 	};
+
+	/** 卷草钩：n 处一枚小卷（参考图 05 / 08 那种边饰），沿切线方向卷出去。 */
+	const hooks = (
+		r: number,
+		n: number,
+		len: number,
+		rot: number,
+		rank: number,
+		tint: Tint,
+		base = 0.55,
+	): Wire[] => {
+		const out: Wire[] = [];
+		for (let i = 0; i < n; i++) {
+			const a = rot + (TAU * i) / n;
+			out.push(
+				wire(
+					move(
+						ellipse(len, len * 0.62, a + Math.PI / 2, 12, 4.0),
+						Math.cos(a) * r,
+						Math.sin(a) * r,
+					),
+					tierOf(rank),
+					rank,
+					tint,
+					base,
+				),
+			);
+		}
+		return out;
+	};
+
+	/** 短横（爻）：半径 r 上、角度 a0→a1 之间的一小段弦。八卦那三条爻就用它。 */
+	const bar = (
+		r: number,
+		a0: number,
+		a1: number,
+		z: number,
+		rank: number,
+	): Wire =>
+		wire(
+			[Math.cos(a0) * r, Math.sin(a0) * r, Math.cos(a1) * r, Math.sin(a1) * r],
+			z,
+			rank,
+			1,
+			0.8,
+		);
 
 	/** 裂纹：从 r0 锯齿状爬到 r1（封印被激活的样子）。 */
 	const crack = (
@@ -262,11 +588,12 @@ export function createRites(): Rites {
 		rot: number,
 		z: number,
 		rank: number,
+		base = 0.9,
 	): Wire[] => {
 		const out: Wire[] = [];
 		for (let i = 0; i < n; i++) {
 			const a = rot + (TAU * i) / n;
-			const w = wire([Math.cos(a) * r, Math.sin(a) * r], z, rank, 1, 0.9);
+			const w = wire([Math.cos(a) * r, Math.sin(a) * r], z, rank, 1, base);
 			w.glyph = true;
 			out.push(w);
 		}
@@ -279,12 +606,26 @@ export function createRites(): Rites {
 		rank: number,
 		tint: Tint,
 		base: number,
+		/** 逐点高度（可省）。给了就把这条折线读成坡 / 竖刃，见 `Wire.zs` */
+		zs?: number[],
 	): Wire {
-		return { pts, z, rank, tint, glyph: false, broke: false, base };
+		return { pts, z, rank, tint, glyph: false, broke: false, base, zs };
 	}
 
-	// ─────────────────────────────────────────── 七种阵型的配方
+	// ─────────────────────────────────────────── 阵型配方
 
+	/**
+	 * 阵型配方（十三个）。共用同一套骨架：**外圈贴地 → 内圈抬高的四层台**
+	 * ＋ 一圈立起来的节点 ＋ 一个中心核。骨架一样，变的是台面上刻什么。
+	 *
+	 * 三条规矩（都是在这一页翻过车之后定下的）：
+	 *   ① 高度一律走 `tierOf(rank)`：外圈贴地、内圈抬高，读成"多层法阵盘"；
+	 *      线性上升读成帽子，反过来读成碗（见 `tierOf`）。
+	 *   ② 加任何东西之前先问"**它会不会读成一圈同心圆**" —— 同心圆环是"看起来杂"
+	 *      的头号来源（见 hole.ts 头注释）。所以环只留有功能的那几圈：外圈、刻度带、轨道。
+	 *   ③ 一个阵型控制在 **≤60 条 wire**。每条要描两趟（辉光 + 芯），同屏三座就是
+	 *      三百多次 `stroke()`；过了 70 条开始掉帧。各阵型的线数在文件末尾记着。
+	 */
 	function buildSigil(
 		kind: number,
 		R: number,
@@ -293,136 +634,293 @@ export function createRites(): Rites {
 		nodes: number,
 	): Wire[] {
 		const out: Wire[] = [];
-		const zOf = (rank: number) => (0.16 + 0.84 * rank) * 1; // 外圈高 → 圆台
+		const T = tierOf;
 
-		if (kind === 0 || kind === 6) {
-			// 三重圆环阵 / 暗金星轨阵：同心环 + 刻度
+		/**
+		 * 阶梯剖面：每个方向**一笔**画出"从外圈走进中心"跨过的所有台阶 ——
+		 * 每层都是「水平的 tread ＋ 竖直的 riser」，逐点高度 `zs` 让一笔自己折出台阶。
+		 * 🔴 这是"立体感"里最省笔画的一条：**一笔 = 一整条剖面的侧影**，八个方向各一笔，
+		 *    整座台子立刻从"一张贴纸"变成"一座有厚度的多层盘"。
+		 * ⚠️ riser 必须是**同一 (x,y) 上的两个点**（投影里就是一条竖线）。写成"斜着爬上去"
+		 *    的话整条会读成一根撑杆，"有几层台阶"就看不出来了。
+		 * ⚠️ 四个分界半径（1 / 0.9 / 0.68 / 0.42）与高度取自 `tierOf` 的同一张表 ——
+		 *    改 `tierOf` 的阈值就必须回来改这里。
+		 */
+		const stairs = (n: number, rot: number, rOuter = 1, base = 0.6): Wire[] => {
+			const radii = [1, 0.9, 0.9, 0.68, 0.68, 0.42, 0.42, 0.08];
+			const zs = [
+				T(1),
+				T(1),
+				T(0.89),
+				T(0.89),
+				T(0.67),
+				T(0.67),
+				T(0.41),
+				T(0.41),
+			];
+			const out2: Wire[] = [];
+			for (let i = 0; i < n; i++) {
+				const a = rot + (TAU * i) / n;
+				const c = Math.cos(a);
+				const s = Math.sin(a);
+				const pts: number[] = [];
+				for (const rr of radii)
+					pts.push(c * R * rOuter * rr, s * R * rOuter * rr);
+				out2.push(wire(pts, zs[0] ?? 0, 0.7, 0, base, zs));
+			}
+			return out2;
+		};
+
+		/** 共用骨架：外圈 ＋ 一圈立起来的节点 ＋ 八道阶梯剖面的侧影。 */
+		const frame = (nNode: number, nStair: number, rOuter = 1) => {
+			out.push(wire(circle(R * rOuter, 108), T(1), 1, 0, 0.9));
+			out.push(...glyphs(R * rOuter * 0.99, nNode, 0.25, T(1), 1));
+			out.push(...stairs(nStair, 0.12, rOuter));
+		};
+
+		// ── 0 三重圆环阵（基础）：三圈同心环 ＋ 外圈内侧一圈"尺" ＋ 中心小花
+		if (kind === 0) {
+			frame(nodes, 8);
 			for (let i = 0; i < rings; i++) {
-				const rk = lerp(0.4, 1, i / Math.max(1, rings - 1));
-				const r = R * rk;
-				out.push(
-					wire(
-						circle(r, 96),
-						zOf(rk) * (i === rings - 1 ? 1 : 0.6),
-						rk,
-						0,
-						0.9,
-					),
-				);
+				const rk = lerp(0.44, 0.8, i / Math.max(1, rings - 1));
+				out.push(wire(circle(R * rk, 96), T(rk), rk, 0, 0.85));
 			}
-			out.push(...glyphs(R * 0.86, nodes, 0.2, zOf(0.86), 0.86));
+			out.push(...band(R * 0.82, R * 0.94, 16, 0.08, T(0.88), 0.88, 0.5));
+			out.push(wire(circle(R * 0.3, 64), T(0.3), 0.3, 1, 0.8));
+			out.push(...fins(R * 0.56, 4, 0.2, Math.PI / 4, 0.56, 0, 0.6, T(0.58)));
+			out.push(...petals(R * 0.2, 6, R * 0.1, 0.4, 0.24, 1, 0.75));
 		}
-		if (kind === 0 || kind === 3) {
-			out.push(wire(circle(R * 0.62, 72), zOf(0.62) * 0.5, 0.62, 1, 0.55));
+
+		// ── 1 六芒星几何阵：一笔六芒 ＋ 内六边形弦网 ＋ 六个顶点各立一刃
+		if (kind === 1) {
+			frame(12, 8);
+			out.push(wire(poly(R * 0.62, 6, 0.3), T(0.62), 0.62, 1, 0.7));
+			out.push(...web(R * 0.62, 6, 2, 0.3, T(0.62), 0.62, 1, 0.5));
+			out.push(...stars(R * 0.88, 6, 2, 0.3, T(0.88), 0.88, 0, 0.95));
+			out.push(...fins(R * 0.88, 6, 0.24, 0.3, 0.88, 0, 0.8, T(0.9)));
+			out.push(wire(circle(R * 0.24, 48), T(0.24), 0.24, 1, 0.85));
+			out.push(...petals(R * 0.36, 6, R * 0.1, 0.3, 0.36, 1, 0.6));
 		}
-		if (kind === 6) {
-			// 星轨：压得很扁的椭圆 + 放射刻度
-			out.push(
-				wire(
-					ellipse(R * 0.96, R * 0.2, 0.5, 96),
-					zOf(0.96) * 0.4,
-					0.96,
-					0,
-					0.5,
-				),
-			);
-			out.push(...spokes(R * 0.42, R * 0.72, 12, 0.1, zOf(0.6) * 0.4, 0.6));
-		}
-		if (kind === 1 || kind === 5 || kind === 3) {
-			// 六芒星 / 八芒：两个反向多边形叠起来
-			const sides = kind === 5 ? 4 : 3;
-			for (let s = 0; s < 2; s++) {
-				out.push(
-					wire(
-						poly(R * 0.66, sides, (s * Math.PI) / sides),
-						zOf(0.66) * 0.7,
-						0.66,
-						0,
-						0.8,
-					),
-				);
-			}
-			out.push(wire(circle(R * 0.92, 96), zOf(0.92), 0.92, 0, 0.6));
-		}
-		if (kind === 5) {
-			out.push(...spokes(R * 0.5, R, 8, 0.15, zOf(1) * 0.9, 1));
-			out.push(...glyphs(R, 8, 0.15, zOf(1), 1));
-		}
+
+		// ── 2 月相仪式阵：两枚交错的月轨 ＋ 八枚月牙 ＋ 一圈密刻
 		if (kind === 2) {
-			// 月相：节点上挂月牙（用两段弧线表示）
+			frame(8, 8);
 			out.push(
-				wire(
-					ellipse(R * 0.88, R * 0.4, -0.35, 96),
-					zOf(0.88) * 0.5,
-					0.88,
-					0,
-					0.6,
-				),
+				wire(ellipse(R * 0.82, R * 0.34, -0.3, 96), T(0.82), 0.82, 0, 0.8),
 			);
 			out.push(
-				wire(
-					ellipse(R * 0.88, R * 0.4, 0.35, 96),
-					zOf(0.88) * 0.5,
-					0.88,
-					1,
-					0.4,
-				),
+				wire(ellipse(R * 0.82, R * 0.34, 0.3, 96), T(0.82), 0.82, 1, 0.55),
 			);
-			for (let i = 0; i < nodes; i++) {
-				const a = 0.3 + (TAU * i) / nodes;
-				const r = R * 0.7;
-				const w = wire(
-					ellipse(0.11 * R, 0.11 * R, 0, 14, Math.PI * 1.15, a),
-					0,
-					r / R,
-					1,
-					0.95,
-				);
-				for (let k = 0; k < w.pts.length; k += 2) {
-					w.pts[k] += Math.cos(a) * r;
-					w.pts[k + 1] += Math.sin(a) * r;
-				}
-				w.z = zOf(r / R) * 0.8;
-				out.push(w);
-			}
+			out.push(wire(ellipse(R * 0.5, R * 0.22, 0.5, 72), T(0.5), 0.5, 1, 0.5));
+			out.push(...band(R * 0.86, R * 0.94, 12, 0, T(0.9), 0.9, 0.45));
+			out.push(...hooks(R * 0.68, 8, R * 0.085, 0.4, 0.68, 1, 0.85));
+			out.push(...fins(R * 0.42, 4, 0.18, Math.PI / 4, 0.42, 1, 0.6, T(0.44)));
+			out.push(wire(circle(R * 0.16, 40), T(0.16), 0.16, 1, 0.85));
 		}
+
+		// ── 3 裂纹封印阵：方框封印 ＋ 锯齿裂纹 ＋ 四角立碑
 		if (kind === 3) {
-			// 裂纹封印：几条锯齿裂纹，其中一两条是猩红
+			frame(8, 8);
+			out.push(wire(poly(R * 0.86, 4, Math.PI / 4), T(0.86), 0.86, 0, 0.85));
+			out.push(wire(poly(R * 0.62, 4, 0), T(0.62), 0.62, 1, 0.6));
 			const n = 5 + Math.floor(rand() * 3);
 			for (let i = 0; i < n; i++) {
 				out.push(
 					crack(
-						R * (0.28 + rand() * 0.12),
-						R * (0.9 + rand() * 0.1),
+						R * (0.24 + rand() * 0.1),
+						R * (0.86 + rand() * 0.12),
 						(TAU * i) / n + rand() * 0.3,
 						rand,
 						rand() < 0.35 ? 2 : 0,
-						zOf(0.9) * 0.3,
-						0.9,
+						T(0.88),
+						0.88,
 					),
 				);
 			}
+			out.push(...fins(R * 0.86, 4, 0.22, Math.PI / 4, 0.86, 0, 0.7, T(0.88)));
+			out.push(wire(circle(R * 0.2, 40), T(0.2), 0.2, 1, 0.8));
+			out.push(...band(R * 0.68, R * 0.78, 12, 0.2, T(0.72), 0.72, 0.45));
 		}
+
+		// ── 4 时空折叠阵：四层错位椭圆叠成"折扇" ＋ 折轴上的立刃
 		if (kind === 4) {
-			// 时空折叠：多层错位椭圆
-			for (let i = 0; i < 3; i++) {
-				const rk = 0.55 + i * 0.22;
+			frame(8, 8);
+			for (let i = 0; i < 4; i++) {
+				const rk = 0.46 + i * 0.14;
 				out.push(
 					wire(
-						ellipse(R * rk, R * rk * 0.42, i * 1.1, 96),
-						zOf(rk) * (0.35 + i * 0.3),
+						ellipse(R * rk, R * rk * 0.4, i * 1.0, 84),
+						T(rk),
 						rk,
-						i === 1 ? 1 : 0,
+						i === 1 || i === 3 ? 1 : 0,
 						0.7,
 					),
 				);
 			}
-			out.push(...glyphs(R * 0.55, nodes, 0.6, zOf(0.55), 0.55));
+			out.push(...fins(R * 0.92, 4, 0.28, 0.4, 0.92, 0, 0.7, T(0.94)));
+			out.push(
+				...fins(R * 0.5, 4, 0.18, 0.4 + Math.PI / 4, 0.5, 1, 0.6, T(0.54)),
+			);
+			out.push(...petals(R * 0.3, 4, R * 0.12, 0.4, 0.3, 1, 0.6));
+			out.push(wire(circle(R * 0.14, 36), T(0.14), 0.14, 1, 0.85));
 		}
-		// 每个阵都有一圈"节点"作为骨架，缺了会显得空
-		if (kind !== 5 && kind !== 2 && kind !== 6) {
-			out.push(...glyphs(R, nodes, 0.35, zOf(1), 1));
+
+		// ── 5 幽青八芒阵：一笔八芒 ＋ 两个正方 ＋ 八颗卫星盘
+		if (kind === 5) {
+			frame(16, 8);
+			out.push(...stars(R * 0.9, 8, 3, 0.2, T(0.9), 0.9, 0, 0.95));
+			out.push(wire(poly(R * 0.6, 4, 0.2), T(0.6), 0.6, 1, 0.65));
+			out.push(wire(poly(R * 0.6, 4, 0.2 + Math.PI / 4), T(0.6), 0.6, 1, 0.65));
+			out.push(...satellites(R * 0.9, 8, R * 0.05, 0.2, 0.9, 1, 0.8));
+			out.push(
+				...fins(R * 0.6, 4, 0.2, 0.2 + Math.PI / 4, 0.6, 0, 0.65, T(0.62)),
+			);
+			out.push(wire(circle(R * 0.2, 40), T(0.2), 0.2, 1, 0.85));
 		}
+
+		// ── 6 暗金星轨阵：两条反向的扁轨道 ＋ 十二道星轨斜撑 ＋ 轨道上的行星
+		if (kind === 6) {
+			frame(12, 8);
+			out.push(
+				wire(ellipse(R * 0.94, R * 0.2, 0.5, 96), T(0.94), 0.94, 0, 0.65),
+			);
+			out.push(wire(ellipse(R * 0.7, R * 0.3, -0.6, 84), T(0.7), 0.7, 1, 0.5));
+			out.push(
+				...ramps(R * 0.28, R * 0.88, T(0.4), T(0.92), 12, 0.1, 0.9, 0.5),
+			);
+			out.push(...satellites(R * 0.94, 4, R * 0.045, 0.5, 0.94, 0, 0.85));
+			out.push(wire(circle(R * 0.26, 48), T(0.26), 0.26, 0, 0.8));
+			out.push(...petals(R * 0.4, 8, R * 0.085, 0.2, 0.4, 1, 0.55));
+		}
+
+		// ── 7 太极八卦阵（参考图 09 罗盘）：双环 ＋ 外圈刻度 ＋ 八卦爻线 ＋ 太极核
+		if (kind === 7) {
+			frame(8, 4);
+			out.push(wire(circle(R * 0.86, 108), T(0.86), 0.86, 0, 0.85));
+			out.push(wire(circle(R * 0.66, 96), T(0.66), 0.66, 1, 0.65));
+			// ⚠️ 刻度只给 8 条。这套"8 组 ×三爻 + 断爻拆两段"本身就有 32 条 wire，
+			//    再叠三条环就破 60 了（见文件末尾的线数表）。
+			out.push(...band(R * 0.88, R * 0.96, 8, 0.06, T(0.92), 0.92, 0.5));
+			// 八卦：8 组、每组三条短横；断的那一爻拆成两段 —— 认得出是"卦"
+			for (let i = 0; i < 8; i++) {
+				const a = 0.4 + (TAU * i) / 8;
+				for (let k = 0; k < 3; k++) {
+					const rr = R * (0.5 + k * 0.056);
+					const dA = (R * 0.05) / Math.max(rr, 1);
+					if ((i * 3 + k) % 3 === 0) {
+						out.push(bar(rr, a - dA, a - dA * 0.28, T(0.6), 0.6));
+						out.push(bar(rr, a + dA * 0.28, a + dA, T(0.6), 0.6));
+					} else {
+						out.push(bar(rr, a - dA, a + dA, T(0.6), 0.6));
+					}
+				}
+			}
+			// 太极：圆 ＋ 一条 S（上下两段半圆拼出来）
+			const rc = R * 0.19;
+			out.push(wire(circle(rc, 56), T(0.2), 0.2, 0, 0.9));
+			out.push(
+				wire(
+					move(ellipse(rc / 2, rc / 2, 0, 24, Math.PI, 0), 0, -rc / 2),
+					T(0.2),
+					0.2,
+					1,
+					0.8,
+				),
+			);
+			out.push(
+				wire(
+					move(ellipse(rc / 2, rc / 2, 0, 24, Math.PI, Math.PI), 0, rc / 2),
+					T(0.2),
+					0.2,
+					1,
+					0.8,
+				),
+			);
+		}
+
+		// ── 8 莲花法阵（参考图 08 / 12）：内外两圈花瓣错开 22.5° ＋ 中心莲台
+		if (kind === 8) {
+			frame(8, 6);
+			out.push(wire(circle(R * 0.88, 108), T(0.88), 0.88, 1, 0.7));
+			out.push(...band(R * 0.9, R * 0.98, 12, 0.1, T(0.94), 0.94, 0.45));
+			out.push(...petals(R * 0.66, 8, R * 0.19, 0.3, 0.7, 0, 0.85));
+			out.push(
+				...petals(R * 0.4, 8, R * 0.12, 0.3 + Math.PI / 8, 0.45, 1, 0.7),
+			);
+			out.push(
+				...hooks(R * 0.52, 8, R * 0.06, 0.3 + Math.PI / 8, 0.52, 1, 0.5),
+			);
+			out.push(wire(poly(R * 0.3, 4, Math.PI / 4), T(0.3), 0.3, 0, 0.7));
+			out.push(wire(circle(R * 0.15, 40), T(0.15), 0.15, 1, 0.85));
+		}
+
+		// ── 9 符文卫星阵（参考图 10 / 13）：四个卫星盘挂在 45° 对角上
+		if (kind === 9) {
+			frame(8, 6);
+			out.push(wire(poly(R * 0.64, 4, Math.PI / 4), T(0.64), 0.64, 0, 0.85));
+			out.push(wire(poly(R * 0.46, 4, 0), T(0.46), 0.46, 1, 0.65));
+			out.push(...stars(R * 0.34, 8, 3, Math.PI / 8, T(0.34), 0.34, 0, 0.8));
+			out.push(...satellites(R * 0.66, 4, R * 0.14, Math.PI / 4, 0.7, 1, 0.85));
+			out.push(...fins(R * 0.62, 4, 0.24, Math.PI / 4, 0.62, 0, 0.7, T(0.66)));
+			out.push(...glyphs(R * 0.38, 8, 0, T(0.38), 0.38, 0.7));
+			out.push(wire(circle(R * 0.14, 36), T(0.14), 0.14, 1, 0.9));
+		}
+
+		// ── 10 玫瑰涡阵（参考图 11）：五条涡线错开起角，沿台阶盘上去
+		if (kind === 10) {
+			frame(8, 6);
+			for (let i = 0; i < 5; i++) {
+				out.push(
+					drape(
+						spiral(
+							R * 0.92,
+							R * 0.18,
+							1.5,
+							(TAU * i) / 5,
+							0.9,
+							i % 2 ? 1 : 0,
+							0.5,
+						),
+						R,
+					),
+				);
+			}
+			// ⚠️ 涡线披到台阶上之后**不再需要**这条 0.66R 的环 ——
+			//    留着它就正好凑成"一圈同心圆环"（原来它存在是因为涡线本身太扁，
+			//    现在涡线自己有层次了）。省下的 1 条换给 `fins`。
+			out.push(...band(R * 0.9, R * 0.98, 12, 0.1, T(0.94), 0.94, 0.45));
+			out.push(...fins(R * 0.94, 5, 0.2, 0.1, 0.94, 0, 0.6, T(0.96)));
+			out.push(spiral(R * 0.15, R * 0.02, 1.1, 0.5, 0.2, 1, 0.9));
+			out.push(...petals(R * 0.26, 5, R * 0.08, 0.5, 0.28, 0, 0.7));
+		}
+
+		// ── 11 尖芒星阵（参考图 14）：内外两圈长短星刺 ＋ 八芒 ＋ 一圈节点
+		if (kind === 11) {
+			frame(8, 6, 0.96);
+			out.push(...spikes(R * 0.96, R * 1.16, 8, 0.2, 0.04, 0.6));
+			out.push(
+				...spikes(R * 0.96, R * 1.06, 12, 0.2 + Math.PI / 12, 0.04, 0.4),
+			);
+			out.push(...stars(R * 0.78, 8, 3, 0.2, T(0.78), 0.78, 0, 0.9));
+			out.push(...band(R * 0.8, R * 0.88, 12, 0.2, T(0.84), 0.84, 0.45));
+			out.push(...glyphs(R * 0.68, 8, 0.1, T(0.7), 0.7, 0.7));
+			out.push(wire(circle(R * 0.16, 40), T(0.16), 0.16, 1, 0.9));
+		}
+
+		// ── 12 星网阵列（参考图 02 / 06）：五芒 ＋ 内层十边形弦网（"星里再分格"）
+		if (kind === 12) {
+			frame(10, 6, 0.94);
+			out.push(wire(poly(R * 0.94, 5, 0.3), T(0.94), 0.94, 1, 0.6));
+			out.push(...stars(R * 0.94, 5, 2, 0.3, T(0.94), 0.94, 0, 0.95));
+			out.push(...web(R * 0.42, 10, 3, 0.3, T(0.44), 0.44, 1, 0.45));
+			out.push(...web(R * 0.42, 10, 4, 0.3, T(0.44), 0.44, 1, 0.35));
+			// ⚠️ 这里**不再**补第二圈 glyphs：`frame` 已经在 0.93R 上立了 10 颗，
+			//    再立 10 颗只错开 0.05 rad —— 视觉上完全重叠，白花 10 条 wire。
+			out.push(...fins(R * 0.94, 5, 0.26, 0.3, 0.94, 0, 0.8, T(0.96)));
+			out.push(spiral(R * 0.18, R * 0.02, 1.3, 0.3, 0.22, 1, 0.9));
+			out.push(...petals(R * 0.3, 5, R * 0.1, 0.3, 0.34, 1, 0.65));
+		}
+
 		return out;
 	}
 
@@ -486,8 +984,10 @@ export function createRites(): Rites {
 		//    `生成法阵` 按钮给的落点是 y = h/2 + sin(a)·h·0.24 —— 在 1258×566 上，
 		//    法阵有半个身子落在画布外，看起来就是"法阵被截断了"（其实是中心算到了外面）。
 		//    两个入口（点击 / 按钮）都从这里过，所以钳在 spawn 里最省事。
-		const padX = R * 0.94;
-		const padY = R * v.k * 0.94 + riseH * 0.45;
+		// ⚠️ 留边按 **1.02R** 而不是 0.94R：尖芒星阵的刺探到 1.16R（唯一一个越过外圈的阵型），
+		//    按 0.94 算的话落在画布边上就被切掉一截 —— "刺"变成"平头"。
+		const padX = R * 1.02;
+		const padY = R * v.k * 1.02 + riseH * 0.45;
 		cx = clamp(cx, padX, Math.max(padX, v.w - padX));
 		cy = clamp(cy, padY, Math.max(padY, v.h - padY));
 		const rite: Rite = {
@@ -669,7 +1169,9 @@ export function createRites(): Rites {
 					spawnShards(
 						r,
 						w.pts,
-						w.z * (1 - r.u),
+						// ⚠️ 碎片要落在**它原来所在的高度**上（`w.z` 是比例不是像素 —— 见 `Wire.z`）。
+						//    漏掉 `riseH` 的话，一座抬高到 40px 的法阵解体时碎片全从台面冒出来。
+						w.z * r.riseH * (1 - r.u),
 						Math.round(4 * dk),
 						rand,
 						hole,
@@ -879,7 +1381,10 @@ export function createRites(): Rites {
 		if (n < 2) return;
 		const [ox, oy] = [r.cx, r.cy];
 		const k = view.k;
-		const z = w.z * lift;
+		// 🔴 高度 = "占 riseH 的比例" × 升起高度 × 升起进度。**少了 `r.riseH` 这一项**，
+		//    高度就退化成 0.1~1.0 像素 —— 整座法阵看起来完全是平的（之前的症状）。
+		const zBase = r.riseH * lift;
+		const perVertex = !!w.zs;
 		// 逐段画：每段自己的亮度由"深度"决定（前面的亮、后面的暗）
 		const total = Math.max(1, Math.round((n - 1) * progress));
 		g.beginPath();
@@ -887,8 +1392,11 @@ export function createRites(): Rites {
 		for (let i = 0; i < total; i++) {
 			const a = at(r, w, i);
 			const b = at(r, w, i + 1);
-			const [x0, y0] = project(ox, oy, a.rx, a.ry, z, k);
-			const [x1, y1] = project(ox, oy, b.rx, b.ry, z, k);
+			// 逐点高度：有 `zs` 就是一道坡（或一片竖刃），没有就是一层平台阶
+			const za = zBase * (perVertex ? (w.zs?.[i] ?? w.z) : w.z);
+			const zb = zBase * (perVertex ? (w.zs?.[i + 1] ?? w.z) : w.z);
+			const [x0, y0] = project(ox, oy, a.rx, a.ry, za, k);
+			const [x1, y1] = project(ox, oy, b.rx, b.ry, zb, k);
 			const inHalf = (v: number) => (half < 0 ? v < 0 : v >= 0);
 			if (!inHalf(a.ry) && !inHalf(b.ry)) continue;
 			if (drawing) g.lineTo(x0, y0);
@@ -905,13 +1413,17 @@ export function createRites(): Rites {
 		const depth = half > 0 ? 0.95 : 0.45;
 		const core = clamp(alpha * depth * w.base, 0, 1);
 		g.strokeStyle = tintCss(r, w.tint);
-		// 两趟描同一条路径：先一圈宽的当辉光，再一圈窄的当芯。
-		// 想用 shadowBlur 一把梭？每帧上百条折线（外圈一条就是 96 段），那一项直接吃掉整页预算。
-		g.globalAlpha = core * 0.16;
-		g.lineWidth = (1.5 + w.base * 1.7) * 2.6;
-		g.stroke();
+		const lw = Math.max(0.7, 1.5 + w.base * 1.7);
+		// 🔴 辉光那一趟只给"主要"的线（`base ≥ 0.5`）。刻度带、爻线、小卷这些细件
+		//    在一个阵型里占一半以上 —— 它们本来就不该发光，省下来的正好抵掉新增的图元。
+		if (w.base >= 0.5) {
+			g.globalAlpha = core * 0.16;
+			g.lineWidth = lw * 2.6;
+			g.stroke();
+		}
+		// 窄的那趟是"芯"：叠在辉光上，一条线才有"中间亮、边缘淡"的样子。
 		g.globalAlpha = core;
-		g.lineWidth = 1.5 + w.base * 1.7;
+		g.lineWidth = lw;
 		g.stroke();
 		g.globalAlpha = 1;
 	}
@@ -1019,8 +1531,17 @@ export function createRites(): Rites {
 					if (w.glyph && win > 0.6) {
 						// 符文节点：升起后变成立在环上的小晶体
 						const p = at(r, w, 0);
-						const [x, y] = project(r.cx, r.cy, p.rx, p.ry, w.z * lift, v.k);
-						const h = 4 + 10 * lift;
+						const [x, y] = project(
+							r.cx,
+							r.cy,
+							p.rx,
+							p.ry,
+							w.z * r.riseH * lift,
+							v.k,
+						);
+						// ⚠️ 晶体高度按**法阵半径**给。写死 4+10px 的话，法阵一大一小
+						//    （R 从 40 到 160）晶体就不成比例了。
+						const h = r.R * (0.05 + 0.1 * lift);
 						const pulse = 1 + 0.35 * Math.sin(time * 2.4 + w.rank * 9);
 						g.save();
 						g.globalAlpha = clamp(
@@ -1140,3 +1661,20 @@ export function createRites(): Rites {
 		},
 	};
 }
+
+/**
+ * 各阵型的 wire 数（离线无头试炼台实测，R ≈ 220~300px、完全升起那一帧）。
+ * 🔴 这张表是**笔画预算**的唯一账本：每条线要描两趟（辉光 + 芯），同屏三座就是
+ *    三倍；过 60 开始吃帧。加图元之前先看这里还剩多少。
+ *
+ *   k00 三重圆环阵  44~56（随 `nodes` 6/8/12/16、`rings` 2~4 变）
+ *   k01 六芒星几何阵 43    k07 太极八卦阵 58 ← 最满的一个（八卦三爻 + 断爻拆两段 = 32 条）
+ *   k02 月相仪式阵  45    k08 莲花法阵   54
+ *   k03 裂纹封印阵  41~43 k09 符文卫星阵 39
+ *   k04 时空折叠阵  34    k10 玫瑰涡阵   43
+ *   k05 幽青八芒阵  49    k11 尖芒星阵   57
+ *   k06 暗金星轨阵  52    k12 星网阵列   50
+ *
+ * 满的那两个（k07 / k11）再想加东西，只能先砍：k07 把刻度带从 12 条降到 8 条、
+ * k11 把第二圈星刺从 16 根降到 12 根，都是这么腾出来的。
+ */
