@@ -190,8 +190,14 @@ export function createBlackHoleApp(): BlackHoleApp {
 		// 黑洞钉死在页面中心（`relayout` 里写死）。原来这里有一步"松手后弹回中心"的弹簧，
 		// 现在没有东西会把它推开，弹簧就只剩下一堆每帧的空转计算 —— 一起去掉。
 
-		// 吞噬脉冲：叠加有上限（spec §二 吞噬反馈），随后 1~2 秒平滑回落
-		s.pulse = approach(s.pulse, 0, 1.5, dt);
+		// 吞噬脉冲：叠加有上限（spec §二 吞噬反馈），随后平滑回落。
+		// ⚠️ 回落速度**分阶**：8 阶"能量爆发持续更久"（spec §2.3 归墟），4 阶次之。
+		s.pulse = approach(
+			s.pulse,
+			0,
+			s.stage >= 8 ? 0.95 : s.stage >= 4 ? 1.15 : 1.5,
+			dt,
+		);
 		if (s.wave >= 0) {
 			s.wave += dt;
 			if (s.wave > 1.6) s.wave = -1;

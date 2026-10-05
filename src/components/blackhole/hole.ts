@@ -578,7 +578,11 @@ export function createHoleLayer(): HoleLayer {
 		//    而那正是"数了几颗"的读数 —— 少两颗就把计数读错。一圈只 `fill()` 一次。
 		const layers: readonly (readonly [number, number, number, string])[] = [
 			// [颗数, 半径(R), 角速度系数(正负=方向), 颜色]
-			[stage >= 4 ? 8 : 4, 2.36, 1.7, "255 236 196"],
+			// 🔴 颗数是 spec 点名的**读数**（§2.3）：2 阶 4 颗、4 阶 **8 颗**。
+			//    不是 8+4=12 —— 多出来的那 4 颗会把"数光点"这件事读错（§2.4 全靠它）。
+			//    "吸积盘双层反向旋转"于是由**同数的两层各转各的**表达：4 暖金顺行 +
+			//    4 冷色逆行 = 8 颗、两个方向 —— 数得清，也看得出反向。
+			[4, 2.36, 1.7, "255 236 196"],
 			...(stage >= 4 ? ([[4, 2.24, -1.25, "150 214 255"]] as const) : []),
 			...(stage >= 8 ? ([[6, 3.1, 0.9, "255 208 150"]] as const) : []),
 		];
@@ -1139,8 +1143,10 @@ export function createHoleLayer(): HoleLayer {
 		if (s.wave >= 0) {
 			const u = clamp(s.wave / 1.5, 0, 1);
 			const strong = s.collapse >= 0;
+			// 阶数越高，吞噬那一圈扩得越远、越亮（spec §2.3 荧动"吞噬脉冲范围更大"）。
+			const wide = s.stage >= 4 ? 1.25 : s.stage >= 2 ? 1.12 : 1;
 			const rr =
-				R * 1.1 + u * Math.min(view.w, view.h) * (strong ? 0.62 : 0.42);
+				R * 1.1 + u * Math.min(view.w, view.h) * (strong ? 0.62 : 0.42) * wide;
 			g.save();
 			g.globalCompositeOperation = "lighter";
 			g.globalAlpha = (1 - u) * (strong ? 0.34 : 0.17);
